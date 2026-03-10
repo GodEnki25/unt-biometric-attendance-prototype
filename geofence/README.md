@@ -58,7 +58,7 @@ Backend docs:
 
 `http://localhost:8000/docs`
 
-### Frontend
+## Frontend
 
 Install dependencies:
 
