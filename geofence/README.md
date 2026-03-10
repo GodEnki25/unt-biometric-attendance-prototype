@@ -39,11 +39,16 @@ Create and activate a virtual environment:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+
 ```
 
-Install dependencies:
+## Backend Dependency
 
-`pip install fastapi uvicorn`
+The `requirements.txt` lists all the `Python` packages needed to run the backend
+
+Install dependencies using:
+
+`pip install -r requirements.txt`
 
 Start the backend:
 
@@ -73,13 +78,6 @@ Testing
 6. Attempt check-in
 7. Verify results in `/checkins`
 
-## Backedn Dependency
-
-The `requirements.txt` lists all the `Python` packages needed to run the backend
-
-Install dependencies using:
-
-`pip install -r requirements.txt`
 
 ## Main Files
 
