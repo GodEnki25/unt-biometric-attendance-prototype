@@ -1,15 +1,23 @@
 
 import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, Platform, Alert } from "react-native";
 import { useRouter } from "expo-router";
-import { useEffect, useState, useMemo, use } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import * as Location from "expo-location";
+import { CameraView, useCameraPermissions} from "expo-camera";
 
-const API_BASE = 
-    Platform.OS === "web" 
-    ? "http://localhost:8000"
-    : Platform.OS === "android"
-    ? "http://10.0.2.2:8000"
-    : "http://localhost:8000";
+// need this to get the phones to connect does not work yet
+//const API_BASE = 
+  //  Platform.OS === "web" 
+    //? "http://192.168.50.206:8000"
+    //: Platform.OS === "android"
+    //? "http://10.0.2.2:8000"
+    //: "http://192.168.50.206:8000";
+
+    //currently only works with web page not on phone yet.. change second IP to your personal device IP
+    const API_BASE =
+  Platform.OS === "web"
+    ? "http://127.0.0.1:8000"
+    : "http://192.168.50.206:8000";
 
     function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
         
@@ -52,19 +60,34 @@ const API_BASE =
         server_time?: string;
     }
 
+    type FaceCheckResult = {
+      ok?: boolean;
+      error?: string;
+      face_detected?: number;
+      reason?: string;
+      detail?: any;
+    }
+
 export default function CheckInScreen()
 {
     const router = useRouter();
+    const cameraRef = useRef<any>(null);
 
     const [session, setSession] = useState<Session | null>(null);
     const [loc, setLoc] = useState<UserLoation | null>(null);
     const [result, setResult] = useState<CheckInResult | null>(null);
+    const [faceResult, setFaceResult] = useState<FaceCheckResult | null>(null);
 
     const [permisssionStatus, setPermissionStatus] = useState < "unknown" | "granted" | "denied" > ("unknown");
     const [status, setStatus] = useState("Starting...");
     const [isBootLoading, setIsBootLoading] = useState(true);
     const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
     const [isCheckingIn, setIsCheckingIn] = useState(false);
+
+    const [showCamera, setShowCamera] = useState(false);
+    const [isUploadingFace, setIsuploadingFace] = useState(false);
+
+    const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
     useEffect(() => {
         initializeApp();
@@ -74,6 +97,8 @@ export default function CheckInScreen()
             try {
                 setIsBootLoading(true);
                 setResult(null);
+                setFaceResult(null);
+                setShowCamera(false);
 
                 const granted = await requestLocationPermission();
                 if (!granted) return;
@@ -168,62 +193,137 @@ export default function CheckInScreen()
 
         async function retryPermissionFlow() {
             setResult(null);
+            setFaceResult(null);
             await initializeApp();
         }
 
-        async function checkIn() {
-            if (!loc || !inside) return;
-        
+        async function sendToFaceAPI(photoUri: string) {
+          const formData = new FormData();
 
-            try {
-             setIsCheckingIn(true);
-             setStatus("Submitting check-in");
+          formData.append("file", {
+            uri: photoUri,
+            name: "photo.jpg",
+            type: "image/jpeg",
+          } as any);
 
-                const payload = {
+          const res = await fetch(`${API_BASE}/face/check`, {
+            method: "POST",
+            body: formData,
+          });
 
-                    student_id: "student-123",
-                    lat: Number(loc?.lat),
-                    lon: Number(loc?.lon),
-                    accuracy_m: Number(loc?.accuracy)
-                };
+          const data = await res.json();
 
-                const res = await fetch (`${API_BASE}/checkin`, {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify(payload),
-                });
+          if (!res.ok) {
+            throw new Error(data?.detail || data.error || "Face check failed");
+          }
 
-                const data = await res.json();
+          return data;
 
-                if(!res.ok) {
-                 setResult({
-                    ok: false,
-                    reason: data?.detail ? JSON.stringify(data.detail) : "Server error",
-                    });
+        }
 
-                    setStatus("Check-in failed");
-                    return;
-                }
+        async function submitAttendanceCheckIn() {
+          if(!loc || !inside) return;
 
-                setResult(data);
-                setStatus(data.ok ? "Check-in complete" : "Check-in rejected");
+          const payload = {
+            student_id: "student-123",
+            lat: Number(loc.lat),
+            lon: Number(loc.lon),
+            accuracy_m: Number(loc.accuracy),
+          };
+
+          const res = await fetch(`${API_BASE}/checkin`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
+
+          const data = await res.json();
+
+          if(!res.ok) {
+            setResult({
+              ok: false,
+              reason: data?.detail ? JSON.stringify(data.detail) : "Server error",
+            });
+            setStatus("Check-in failed");
+            return;
+          }
+
+          setResult(data);
+          setStatus(data.ok ? "Check-in complete" : "Check-in rejected");
+
+        }
+
+        async function openCameraFlow() {
+          if(!inside) return;
+
+          setResult(null);
+          setFaceResult(null);
+
+          if(!cameraPermission) {
+            setStatus("Checking camera permission...");
+            return;
+          }
+
+          if(!cameraPermission.granted) {
+            setStatus("Requesting camera permission...")
+            const response = await requestCameraPermission();
+
+            if(!response.granted) {
+              setStatus("Camera permission denied.");
+              return;
+            }
+          }
+
+          setShowCamera(true);
+          setStatus("Cemera ready");
+        }
+
+        async function captureFaceAndCheckIn() {
+          if(!cameraRef.current || !loc || !inside) return;
+
+          try{
+            setIsCheckingIn(true);
+            setIsuploadingFace(true);
+            setResult(null);
+            setFaceResult(null);
+            setStatus("Capturing face...");
+
+            const photo = await cameraRef.current.takePictureAsync({
+              quality: 0.7,
+              skipProcessing: false,
+            });
+
+            setStatus("Verifying face...");
+            const faceData = await sendToFaceAPI(photo.uri);
+            setFaceResult(faceData);
+
+            if(!faceData?.face_detected || faceData.face_detected < 1) {
+              setStatus("No face detected");
+              setResult({
+                ok: false,
+                reason: "No face detected. Please try again.",
+              });
+              return;
             }
 
-            catch (err: any) {
+            setStatus("Face detected. Submitting check-in...");
+            await submitAttendanceCheckIn();
+          }
 
-                setResult({
-                    ok: false,
-                 reason: err.message || "Request failed",
-                });
+          catch ( err: any) {
+            setResult({
+              ok: false,
+              reason: err.message || "Face verification fialed",
+            });
+            setStatus("Check-in fialed");
+          }
 
-                setStatus("Check-in failed");
-            }
-
-            finally {
-                setIsCheckingIn(false);
-            }
+          finally {
+            setIsuploadingFace(false);
+            setIsCheckingIn(false);
+          }
         }
     
         const distance = useMemo(() => {
@@ -283,23 +383,23 @@ export default function CheckInScreen()
         
     
 
- return (
+     return (
       <View style={styles.mainContent}>
         <Text style={styles.statusText}>Status: {status}</Text>
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Session</Text>
-          <Text style={styles.cardText}>ID: {session?.id}</Text>
-          <Text style={styles.cardText}>Radius: {session?.radius_m} m</Text>
-          <Text style={styles.cardText}>Open: {String(session?.is_open)}</Text>
+          <Text style={styles.cardText}>ID: {session.id}</Text>
+          <Text style={styles.cardText}>Radius: {session.radius_m} m</Text>
+          <Text style={styles.cardText}>Open: {String(session.is_open)}</Text>
         </View>
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Your Location</Text>
-          <Text style={styles.cardText}>Latitude: {loc?.lat}</Text>
-          <Text style={styles.cardText}>Longitude: {loc?.lon}</Text>
+          <Text style={styles.cardText}>Latitude: {loc.lat}</Text>
+          <Text style={styles.cardText}>Longitude: {loc.lon}</Text>
           <Text style={styles.cardText}>
-            Accuracy: {Number(loc?.accuracy).toFixed(1)} m
+            Accuracy: {Number(loc.accuracy).toFixed(1)} m
           </Text>
         </View>
 
@@ -334,18 +434,84 @@ export default function CheckInScreen()
           </Text>
         </Pressable>
 
-        <Pressable
-          onPress={checkIn}
-          disabled={!inside || isCheckingIn}
-          style={[
-            styles.primaryButton,
-            (!inside || isCheckingIn) && styles.disabledButton,
-          ]}
-        >
-          <Text style={styles.primaryButtonText}>
-            {isCheckingIn ? "Checking In..." : "Check In"}
-          </Text>
-        </Pressable>
+        {!showCamera ? (
+          <Pressable
+            onPress={openCameraFlow}
+            disabled={!inside || isCheckingIn}
+            style={[
+              styles.primaryButton,
+              (!inside || isCheckingIn) && styles.disabledButton,
+            ]}
+          >
+            <Text style={styles.primaryButtonText}>
+              Continue to Face Scan
+            </Text>
+          </Pressable>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Face Verification</Text>
+
+            {!cameraPermission?.granted ? (
+              <View style={styles.centerContent}>
+                <Text style={styles.cardText}>
+                  Camera permission is required to continue.
+                </Text>
+                <Pressable
+                  style={styles.primaryButton}
+                  onPress={openCameraFlow}
+                >
+                  <Text style={styles.primaryButtonText}>Allow Camera</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                <CameraView
+                  ref={cameraRef}
+                  style={styles.camera}
+                  facing="front"
+                />
+
+                <Pressable
+                  onPress={captureFaceAndCheckIn}
+                  disabled={isUploadingFace || isCheckingIn}
+                  style={[
+                    styles.primaryButton,
+                    (isUploadingFace || isCheckingIn) && styles.disabledButton,
+                  ]}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    {isUploadingFace || isCheckingIn
+                      ? "Verifying..."
+                      : "Capture Face & Check In"}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => {
+                    setShowCamera(false);
+                    setFaceResult(null);
+                    setStatus("Ready");
+                  }}
+                  style={styles.secondaryButton}
+                >
+                  <Text style={styles.secondaryButtonText}>Close Camera</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        )}
+
+        {faceResult && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Face Result</Text>
+            <Text style={styles.cardText}>
+              Faces Detected: {String(faceResult.face_detected ?? 0)}
+            </Text>
+            {faceResult.error ? (
+              <Text style={styles.cardText}>Error: {faceResult.error}</Text>
+            ) : null}
+          </View>
+        )}
 
         {result && (
           <View style={styles.card}>
@@ -396,7 +562,6 @@ export default function CheckInScreen()
   );
 }
 
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -435,13 +600,13 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   centerContent: {
-    flex: 1,
     justifyContent: "center",
     alignItems: "center",
     gap: 14,
   },
   mainContent: {
     gap: 14,
+    paddingBottom: 24,
   },
   card: {
     backgroundColor: "white",
@@ -469,6 +634,14 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 16,
     fontWeight: "bold",
+  },
+  camera: {
+    width: "100%",
+    height: 320,
+    borderRadius: 12,
+    overflow: "hidden",
+    marginBottom: 12,
+    backgroundColor: "#000",
   },
   primaryButton: {
     backgroundColor: "#111827",
