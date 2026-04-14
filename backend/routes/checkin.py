@@ -57,7 +57,7 @@ async def checkin(
     cursor = conn.cursor()
 
     try:
-        # 🔥 AUTO SESSION DETECTION
+        # AUTO SESSION DETECTION
         cursor.execute("""
         SELECT session_id, session_date, start_time, end_time
         FROM attendance_sessions
@@ -71,7 +71,7 @@ async def checkin(
 
         session_id = session["session_id"]
 
-        # 🔥 TIME VALIDATION
+        # TIME VALIDATION
         now = datetime.now()
 
         session_date = session["session_date"]
@@ -95,14 +95,14 @@ async def checkin(
                 "message": "Check-in not allowed outside session time"
             }
 
-        # 🔥 FACE PROCESSING
+        # FACE PROCESSING
         contents = await file.read()
         face_result = process_frame(contents)
 
         faces_detected = face_result.get("faces_detected", 0)
         confidence = face_result.get("confidence", 0)
 
-        # 🔥 SECURITY RULE
+        # SECURITY RULE
         if faces_detected != 1:
             return {
                 "success": False,
@@ -113,7 +113,7 @@ async def checkin(
 
         status = "present" if face_verified and location_verified else "flagged"
 
-        # 🔥 PREVENT DUPLICATE CHECK-IN
+        # PREVENT DUPLICATE CHECK-IN
         cursor.execute("""
         SELECT * FROM attendance_records
         WHERE session_id = ? AND student_id = ?
@@ -127,7 +127,7 @@ async def checkin(
                 "message": "Already checked in"
             }
 
-        # 🔥 INSERT INTO DATABASE
+        # INSERT INTO DATABASE
         cursor.execute("""
         INSERT INTO attendance_records
         (session_id, student_id, face_verified, location_verified, status)
