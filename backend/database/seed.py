@@ -90,7 +90,7 @@ def seed_data():
     conn.commit()
     conn.close()
 
-    print("✅ Seed data inserted successfully.")
+    print("Seed data inserted successfully.")
 
 
 if __name__ == "__main__":
