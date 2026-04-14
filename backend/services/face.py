@@ -24,7 +24,6 @@ def process_frame(image_bytes) -> dict:
         minSize=(30, 30)
     )
 
-    #  THIS PART MUST BE INSIDE FUNCTION
     faces_count = int(len(faces))
 
     return {
