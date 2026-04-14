@@ -1,98 +1,172 @@
-from datetime import datetime, timezone
-from typing import List
+from fastapi import APIRouter, UploadFile, File, Form
+from database.db import get_db_connection
+from services.face import process_frame
+from datetime import datetime
 
-from fastapi import APIRouter
-from pydantic import BaseModel, Field
-
-from services.geofence import evaluate_geofence
-
-router = APIRouter(tags=["checkin"])
-
-SESSION = {
-    #for tetsing use your own lon and lat
-    "id": "demo-1",
-    "center_lat": 32.97513,
-    "center_lon": "-96.33246", 
-    "radius_m": 75.0,
-    "is_open": True,
-}
-
-CHECKINS = []
-
-class SessionOut(BaseModel):
-    id: str
-    center_lat: float
-    center_lon: float
-    radius_m: float
-    is_open: bool
+router = APIRouter()
 
 
-class CheckInIn(BaseModel):
-    student_id: str = Field(min_length=1, max_length=64)
-    lat: float
-    lon: float
-    accuracy_m: float = Field(ge=0, le=20000)
+# =========================
+# CREATE SESSION
+# =========================
+@router.post("/session")
+def create_session(data: dict):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute("""
+        INSERT INTO attendance_sessions 
+        (course_id, session_date, start_time, end_time)
+        VALUES (?, ?, ?, ?)
+        """, (
+            data.get("course_id"),
+            data.get("session_date"),
+            data.get("start_time"),
+            data.get("end_time")
+        ))
+
+        conn.commit()
+        session_id = cursor.lastrowid
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+    finally:
+        conn.close()
+
+    return {
+        "success": True,
+        "session_id": session_id
+    }
 
 
-class CheckInOut(BaseModel):
-    ok: bool
-    reason: str
-    distance_m: float
-    allowed_distance_m: float
-    server_time: str
+# =========================
+# CHECK-IN (CORE FEATURE)
+# =========================
+@router.post("/checkin")
+async def checkin(
+    user_id: int = Form(...),
+    location_verified: bool = Form(...),
+    file: UploadFile = File(...)
+):
+    if user_id is None:
+        return {"success": False, "message": "Missing user_id"}
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # 🔥 AUTO SESSION DETECTION
+        cursor.execute("""
+        SELECT session_id, session_date, start_time, end_time
+        FROM attendance_sessions
+        ORDER BY session_id DESC LIMIT 1
+        """)
+
+        session = cursor.fetchone()
+
+        if not session:
+            return {"success": False, "message": "No active session"}
+
+        session_id = session["session_id"]
+
+        # 🔥 TIME VALIDATION
+        now = datetime.now()
+
+        session_date = session["session_date"]
+        start_time = session["start_time"]
+        end_time = session["end_time"]
+
+        def parse_datetime(dt_str):
+            try:
+                 return datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+            except:
+                 return datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
 
 
-@router.get("/session", response_model=SessionOut)
-def get_session():
-    return SESSION
+        start_datetime = parse_datetime(f"{session_date} {start_time}")
+        end_datetime = parse_datetime(f"{session_date} {end_time}")
 
-@router.post("/session", response_model=SessionOut)
-def update_session(session: SessionOut):
-    global SESSION
-    SESSION = session.model_dump()
-    return SESSION
 
-@router.post("/checkin", response_model=CheckInOut)
-def cehck_in(payload: CheckInIn):
-    if not SESSION["is_open"]:
-        return CheckInOut(
-            ok=False,
-            reason="Session closed",
-            distance_m=0,
-            allowed_distance_m=0,
-            server_time=datetime.now(timezone.utc).isoformat(),
-        )
-    
-    result = evaluate_geofence(
-        user_lat=payload.lat,
-        user_lon=payload.lon,
-        accuracy_m=payload.accuracy_m,
-        center_lat=SESSION["center_lat"],
-        center_lon=SESSION["center_lon"],
-        radius_m=SESSION["radius_m"],
-    )
+        if not (start_datetime <= now <= end_datetime):
+            return {
+                "success": False,
+                "message": "Check-in not allowed outside session time"
+            }
 
-    CHECKINS.append(
-        {
-            "student_id": payload.student_id,
-            "lat": payload.lat,
-            "lon": payload.lon,
-            "accuracy_m": payload.accuracy_m,
-            "distance_m": result["distance_m"],
-            "allowed_m": result["allowed_distance_m"],
-            "ok": result["ok"],
-            "time_utc": datetime.now(timezone.utc).isoformat(),
-        }
-    )
+        # 🔥 FACE PROCESSING
+        contents = await file.read()
+        face_result = process_frame(contents)
 
-    return CheckInOut(
-        ok=result["ok"],
-        reason=result["reason"],
-        distance_m=result["distance_m"],
-        allowed_distance_m=result["allowed_distance_m"],
-        server_time=datetime.now(timezone.utc).isoformat(),
-    )
+        faces_detected = face_result.get("faces_detected", 0)
+        confidence = face_result.get("confidence", 0)
 
+        # 🔥 SECURITY RULE
+        if faces_detected != 1:
+            return {
+                "success": False,
+                "message": "Invalid number of faces detected"
+            }
+
+        face_verified = confidence >= 0.75
+
+        status = "present" if face_verified and location_verified else "flagged"
+
+        # 🔥 PREVENT DUPLICATE CHECK-IN
+        cursor.execute("""
+        SELECT * FROM attendance_records
+        WHERE session_id = ? AND student_id = ?
+        """, (session_id, user_id))
+
+        existing = cursor.fetchone()
+
+        if existing:
+            return {
+                "success": False,
+                "message": "Already checked in"
+            }
+
+        # 🔥 INSERT INTO DATABASE
+        cursor.execute("""
+        INSERT INTO attendance_records
+        (session_id, student_id, face_verified, location_verified, status)
+        VALUES (?, ?, ?, ?, ?)
+        """, (
+            session_id,
+            user_id,
+            int(face_verified),
+            int(location_verified),
+            status
+        ))
+
+        conn.commit()
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+    finally:
+        conn.close()
+
+    return {
+        "success": True,
+        "status": status,
+        "confidence": confidence,
+        "faces_detected": faces_detected
+    }
+
+
+# =========================
+# VIEW CHECK-INS
+# =========================
 @router.get("/checkins")
-def list_checkins() -> List[dict]:
-    return CHECKINS
+def get_checkins():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM attendance_records")
+    records = cursor.fetchall()
+
+    conn.close()
+
+    return [dict(row) for row in records]
