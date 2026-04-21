@@ -1,15 +1,10 @@
 import numpy as np
 
-def check_liveness(prev_embedding, current_embedding, threshold=0.02):
+def check_liveness(prev_bbox, current_bbox, threshold=3):
 
-    if prev_embedding is None:
+    if prev_bbox is None:
         return False
 
-    diff = np.linalg.norm(current_embedding - prev_embedding)
+    diff = np.linalg.norm(current_bbox - prev_bbox)
 
-    print("Liveness diff:", diff)
-
-    if diff > threshold:
-        return True
-    else:
-        return False
+    return diff > threshold
