@@ -17,7 +17,7 @@ import { CameraView, useCameraPermissions} from "expo-camera";
     const API_BASE =
   Platform.OS === "web"
     ? "http://127.0.0.1:8000"
-    : "http://192.168.50.206:8000";
+    : "http://10.161.29.182:8000";
 
     function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
         
