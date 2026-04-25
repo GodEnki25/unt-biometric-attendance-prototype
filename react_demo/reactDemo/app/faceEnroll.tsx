@@ -1,10 +1,22 @@
 
-import { View, Text, StyleSheet, Pressable, Image, ImageBackground  } from "react-native";
+import { View, Text, StyleSheet, Pressable, Image, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
+import { useState } from "react";
+import { CameraView } from "expo-camera";
 
-export default function FirstTimeEnrollScreen()
+export default function FaceEnrollScreen()
 {
     const router = useRouter();
+    const [captureCount, setCaptureCount] = useState(0);
+
+    function handleCapture() {
+        const nextCount = captureCount + 1;
+        setCaptureCount(nextCount);
+
+        if (nextCount >= 3) {
+            router.push("/login");
+        }
+    }
 
     return (
         <ImageBackground
@@ -20,7 +32,7 @@ export default function FirstTimeEnrollScreen()
                     <Text style={styles.backButtonText}>{"⬅"}</Text>
                 </Pressable>
 
-                <Text style={styles.headerTitle}>Consent Form</Text>
+                <Text style={styles.headerTitle}>Face Enrollment</Text>
 
                 <Image
                     source={require("../assets/logo.png")}
@@ -29,21 +41,14 @@ export default function FirstTimeEnrollScreen()
             </View>
 
             <View style={styles.content}>
-                <View style={styles.permissionBox}>
-                    <Text style={styles.title}>Camera Permission</Text>
-                    <Text style={styles.message}>
-                        This app needs permission to use your camera.
-                    </Text>
-
-                    <View style={styles.buttonRow}>
-                        <Pressable style={styles.acceptButton} onPress={() => router.push("/faceEnroll")}>
-                            <Text style={styles.buttonText}>Accept</Text>
-                        </Pressable>
-                        <Pressable style={styles.declineButton}  onPress={() => router.push("/login")}>
-                            <Text style={styles.buttonText}>Decline</Text>
-                        </Pressable>
-                    </View>
+                <View style={styles.cameraBox}>
+                    <CameraView style={styles.cameraPreview} facing="front" />
                 </View>
+
+                <Pressable style={styles.captureButton} onPress={handleCapture}>
+                    <Text style={styles.captureButtonText}>Capture</Text>
+                </Pressable>
+                <Text style={styles.capturedImageCount}>Image Captured: {captureCount} / 3</Text>
             </View>
         </View>
         </ImageBackground>
@@ -100,51 +105,34 @@ const styles = StyleSheet.create({
         alignItems: "center",
         padding: 20
     },
-    permissionBox: {
+    cameraBox: {
         width: "100%",
-        maxWidth: 350,
-        padding: 25,
-        borderRadius: 12,
-        backgroundColor: "white",
-        shadowColor: "#000",
-        shadowOpacity: 0.2,
-        shadowRadius: 6,
-        elevation: 5
+        maxWidth: 380,
+        height: 400,
+        borderRadius: 20,
+        overflow: "hidden",
+        marginBottom: 90,
+        backgroundColor: "#000"
     },
-    title: {
-        fontSize: 22,
-        fontWeight: "bold",
-        marginBottom: 10,
-        textAlign: "center"
-    },
-    message: {
-        fontSize: 16,
-        textAlign: "center",
-        marginBottom: 20
-    },
-    buttonRow: {
-        flexDirection: "row",
-        justifyContent: "space-between"
-    },
-    acceptButton: {
+    cameraPreview: {
         flex: 1,
-        marginRight: 10,
-        backgroundColor: "green",
-        padding: 12,
-        borderRadius: 8,
+    },
+    captureButton: {
+        backgroundColor: "#0f5c00",
+        paddingVertical: 14,
+        paddingHorizontal: 30,
+        borderRadius: 10,
+        marginBottom: 20,
         alignItems: "center"
     },
-    declineButton: {
-        flex: 1,
-        marginLeft: 10,
-        backgroundColor: "red",
-        padding: 12,
-        borderRadius: 8,
-        alignItems: "center"
-    },
-    buttonText: {
+    captureButtonText: {
         color: "white",
         fontSize: 16,
+        fontWeight: "bold"
+    },
+    capturedImageCount: {
+        color: "#0a3a00",
+        fontSize: 42,
         fontWeight: "bold"
     }
 });

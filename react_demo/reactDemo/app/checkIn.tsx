@@ -546,7 +546,7 @@ export default function CheckInScreen()
     <View style={styles.container}>
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{"<"}</Text>
+          <Text style={styles.backButtonText}>{"⬅"}</Text>
         </Pressable>
 
         <Text style={styles.headerTitle}>Check In</Text>
