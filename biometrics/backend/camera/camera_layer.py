@@ -1,47 +1,24 @@
 import cv2
 
-def start_camera():
+class Camera:
+    def __init__(self):
+        self.cap = None
 
-    # Open default camera
-    cap = cv2.VideoCapture(0)
+    def start(self):
+        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 
-    # Check if camera opened successfully
-    if not cap.isOpened():
-        print("Error: Cannot open camera")
-        return
+        if not self.cap.isOpened():
+            raise RuntimeError("Camera not accessible")
 
-    # Set camera resolution (HD)
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-    # Set FPS (may depend on hardware)
-    cap.set(cv2.CAP_PROP_FPS, 30)
-
-    print("Camera started. Press 'q' to exit.")
-
-    while True:
-
-        # Capture frame
-        ret, frame = cap.read()
-
+    def get_frame(self):
+        ret, frame = self.cap.read()
         if not ret:
-            print("Failed to grab frame")
-            break
+            return None
+        return frame
 
-        # Display frame
-        cv2.imshow("Camera Feed", frame)
-
-        # Exit when 'q' is pressed
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            print("Exiting camera...")
-            break
-
-    # Release camera
-    cap.release()
-
-    # Close all OpenCV windows
-    cv2.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    start_camera()
+    def stop(self):
+        if self.cap:
+            self.cap.release()

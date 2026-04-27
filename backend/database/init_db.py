@@ -1,4 +1,6 @@
-from database.db import get_db_connection
+import sys
+import os
+from db import get_db_connection
 
 def init_db():
     conn = get_db_connection()
