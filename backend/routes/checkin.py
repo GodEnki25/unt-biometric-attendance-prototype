@@ -2,8 +2,39 @@ from fastapi import APIRouter, UploadFile, File, Form
 from database.db import get_db_connection
 from services.face import process_frame
 from datetime import datetime
+import math
 
 router = APIRouter()
+
+# =========================
+# GEOFENCE CONFIG
+# Demo classroom/check-in location
+# =========================
+
+CLASS_LAT = 32.9751
+CLASS_LON = -96.3324
+GEOFENCE_RADIUS_M = 75.0
+MAX_ACCURACY_M = 100.0
+
+def haversine_meters(lat1, lon1, lat2, lon2):
+    earth_radius_m = 6371000
+
+    lat1_rad = math.radians(lat1)
+    lat2_rad = math.radians(lat2)
+
+    delta_lat = math.radians(lat2 - lat1)
+    delta_lon = math.radians(lon2 - lon1)
+
+    a = (
+        math.sin(delta_lat / 2) ** 2
+        + math.cos(lat1_rad)
+        * math.cos(lat2_rad)
+        * math.sin(delta_lon / 2) ** 2
+    )
+
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    return earth_radius_m * c
 
 
 # =========================
@@ -47,7 +78,9 @@ def create_session(data: dict):
 @router.post("/checkin")
 async def checkin(
     user_id: int = Form(...),
-    location_verified: bool = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    accuracy: float = Form(...),
     file: UploadFile = File(...)
 ):
     if user_id is None:
@@ -93,6 +126,28 @@ async def checkin(
             return {
                 "success": False,
                 "message": "Check-in not allowed outside session time"
+            }
+
+        # GEOFENCE VALIDATION
+        distance_m = haversine_meters(
+            CLASS_LAT,
+            CLASS_LON,
+            latitude,
+            longitude
+        )
+
+        location_verified = (
+            distance_m <= GEOFENCE_RADIUS_M
+            and accuracy <= MAX_ACCURACY_M
+        )
+
+        if not location_verified:
+            return {
+                "success": False,
+                "message": "Location outside allowed geofence",
+                "distance_m": round(distance_m, 2),
+                "allowed_radius_m": GEOFENCE_RADIUS_M,
+                "accuracy_m": accuracy
             }
 
         # FACE PROCESSING
@@ -152,7 +207,11 @@ async def checkin(
         "success": True,
         "status": status,
         "confidence": confidence,
-        "faces_detected": faces_detected
+        "faces_detected": faces_detected,
+        "location_verified": location_verified,
+        "distance_m": round(distance_m, 2),
+        "allowed_radius_m": GEOFENCE_RADIUS_M,
+        "accuracy_m": accuracy
     }
 
 

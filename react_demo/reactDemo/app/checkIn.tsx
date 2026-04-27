@@ -19,6 +19,11 @@ import { CameraView, useCameraPermissions} from "expo-camera";
     ? "http://127.0.0.1:8000"
     : "http://10.161.29.182:8000";
 
+    // Demo classroom geofence coordinates for attendance validation
+    const CLASS_LAT = 32.9751;
+    const CLASS_LON = -96.3324;
+    const GEOFENCE_RADIUS_M = 75;
+
     function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
         
         const R = 6371000; // Earth radius in meters
@@ -141,15 +146,39 @@ export default function CheckInScreen()
 
         async function fetchSession() {
 
-            setStatus("Fetching session...");
-            const res = await fetch(`${API_BASE}/session`);
+          try{
+            setStatus("Creating session...");
+
+            const res = await fetch(`${API_BASE}/session`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                course_id: 1,
+                session_date: new Date().toISOString().split("T")[0],
+                start_time: "00:00",
+                end_time: "23:59",
+              }),
+            });
 
             if (!res.ok) {
-                throw new Error("Failed to fetch session");
+              throw new Error("Failed to create session");
             }
 
             const data = await res.json();
+
+            console.log("Session created:", data);
+
             setSession(data);
+            setStatus("Session ready");
+          }
+
+          catch (err) {
+            console.error(err);
+            setStatus("Session error");
+          }
+
         }
 
         async function getUserLocation(refresh = false) {
@@ -221,39 +250,46 @@ export default function CheckInScreen()
 
         }
 
+        // Sends location data to backend for geofence validation before attendance check-in
         async function submitAttendanceCheckIn() {
-          if(!loc || !inside) return;
+          if (!loc) return;
 
-          const payload = {
-            student_id: "student-123",
-            lat: Number(loc.lat),
-            lon: Number(loc.lon),
-            accuracy_m: Number(loc.accuracy),
-          };
+        const formData = new FormData();
 
-          const res = await fetch(`${API_BASE}/checkin`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
+        formData.append("user_id", "1");
+        formData.append("latitude", String(loc.lat));
+        formData.append("longitude", String(loc.lon));
+        formData.append("accuracy", String(loc.accuracy ?? 999));
+
+        const res = await fetch(`${API_BASE}/checkin`, {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || data.success === false) {
+          setResult({
+            ok: false,
+            reason: data?.message || data?.error || "Server error",
+            distance_m: data?.distance_m,
+            allowed_distance_m: data?.allowed_radius_m,
           });
-
-          const data = await res.json();
-
-          if(!res.ok) {
-            setResult({
-              ok: false,
-              reason: data?.detail ? JSON.stringify(data.detail) : "Server error",
-            });
-            setStatus("Check-in failed");
-            return;
-          }
-
-          setResult(data);
-          setStatus(data.ok ? "Check-in complete" : "Check-in rejected");
-
+          setStatus("Check-in failed");
+          return;
         }
+
+        setResult({
+          ok: data.location_verified,
+          reason: data.location_verified
+          ? "Location verified"
+          : "Outside allowed geofence",
+          distance_m: data.distance_m,
+          allowed_distance_m: data.allowed_radius_m,
+        });
+
+        setStatus(data.location_verified ? "Geofence verified" : "Outside geofence");
+      }
 
         async function openCameraFlow() {
           if(!inside) return;
@@ -325,26 +361,21 @@ export default function CheckInScreen()
             setIsCheckingIn(false);
           }
         }
-    
+
+        // Calculate live distance between student location and classroom geofence center
         const distance = useMemo(() => {
 
-            if (!session || !loc) return null;
-            return haversineMeters (
-                loc.lat,
-                loc.lon,
-                session.center_lat,
-                session.center_lon
+            if(!loc) return null;
+            return haversineMeters(
+              loc.lat,
+              loc.lon,
+              CLASS_LAT,
+              CLASS_LON
             );
-        }, [session, loc]);
-
-        const allowed = useMemo(() => {
-
-            if(!session || !loc) return null;
-            return session.radius_m + Math.min(loc.accuracy, 50);
-
-        }, [session, loc]);
-
-        const inside = distance !== null && allowed !== null && distance <= allowed;
+        }, [loc]);
+        
+        const allowed = GEOFENCE_RADIUS_M;
+        const inside = distance !== null && distance <= allowed;
 
         const renderContent = () => {
 
@@ -406,10 +437,10 @@ export default function CheckInScreen()
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Fence Check</Text>
           <Text style={styles.cardText}>
-            Distance: {distance?.toFixed(1)} m
+            Distance: {distance != null ? distance.toFixed(1) : "N/A"} m
           </Text>
           <Text style={styles.cardText}>
-            Allowed: {allowed?.toFixed(1)} m
+            Allowed: {allowed != null ? allowed.toFixed(1) : "75.0"} m
           </Text>
           <Text
             style={[

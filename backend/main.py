@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 # Import routers
 from routes.auth_routes import router as auth_router
@@ -8,6 +9,20 @@ from routes.checkin import router as checkin_router
 app = FastAPI(
     title="UNT Biometric Attendance Backend",
     version="1.0"
+)
+
+# Enable CORS so Expo/Web frontend can communicate with FastAPI backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:19006",
+        "http://127.0.0.1:19006",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Include all routes
