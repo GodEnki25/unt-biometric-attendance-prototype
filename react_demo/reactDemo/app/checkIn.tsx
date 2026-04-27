@@ -5,23 +5,16 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import * as Location from "expo-location";
 import { CameraView, useCameraPermissions} from "expo-camera";
 
-// need this to get the phones to connect does not work yet
-//const API_BASE = 
-  //  Platform.OS === "web" 
-    //? "http://192.168.50.206:8000"
-    //: Platform.OS === "android"
-    //? "http://10.0.2.2:8000"
-    //: "http://192.168.50.206:8000";
-
-    //currently only works with web page not on phone yet.. change second IP to your personal device IP
-    const API_BASE =
-  Platform.OS === "web"
-    ? "http://127.0.0.1:8000"
-    : "http://10.161.29.182:8000";
+const API_BASE = 
+    Platform.OS === "web" 
+    ? "http://192.168.50.206:8000"
+    : Platform.OS === "android"
+    ? "http://10.0.2.2:8000"
+    : "http://192.168.50.206:8000";
 
     // Demo classroom geofence coordinates for attendance validation
-    const CLASS_LAT = 32.9751;
-    const CLASS_LON = -96.3324;
+    const CLASS_LAT = 33.18584015274567; //change to lat of location wanted
+    const CLASS_LON = -96.805340872654; //change to lon of location
     const GEOFENCE_RADIUS_M = 75;
 
     function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
@@ -121,28 +114,91 @@ export default function CheckInScreen()
             }
         }
 
-        async function requestLocationPermission() {
+  async function requestLocationPermission() {
+    try {
+      console.log("========== LOCATION PERMISSION START ==========");
 
-            try {
-                setStatus("Requesting location permission...");
-                const { status } = await Location.requestForegroundPermissionsAsync();
+      setStatus("Checking location services...");
 
-                if (status !== "granted") {
-                    setPermissionStatus("denied");
-                    setStatus("Location permission denied.");
-                    return false;
-                }
+      // Debug 1:
+      // Verify phone GPS/location services are physically enabled
+      const servicesEnabled = await Location.hasServicesEnabledAsync();
 
-                setPermissionStatus("granted");
-                return true;
-            }
-            
-            catch (err: any) {
-                setPermissionStatus("denied");
-                setStatus(`Permission error: ${err.message}`);
-                return false;
-            }
-        }
+      console.log("LOCATION SERVICES ENABLED:", servicesEnabled);
+
+      if (!servicesEnabled) {
+        console.log("DEBUG: Device location services are OFF");
+
+        setPermissionStatus("denied");
+        setStatus("Location services are turned off on this device.");
+
+        return false;
+      }
+
+      setStatus("Requesting location permission...");
+
+      // Debug 2:
+      // Ask Expo Go for foreground location permission
+      const { status, canAskAgain, granted, expires } =
+        await Location.requestForegroundPermissionsAsync();
+
+      console.log("LOCATION PERMISSION RESPONSE:", {
+        status,
+        granted,
+        canAskAgain,
+        expires,
+      });
+
+      // Debug 3:
+      // Permission denied by user or blocked in settings
+      if (status !== "granted") {
+        console.log("DEBUG: Permission was NOT granted");
+
+        setPermissionStatus("denied");
+
+        if (!canAskAgain) {
+          console.log(
+            "DEBUG: Permission permanently blocked — must enable in phone settings"
+          );
+
+          setStatus(
+            "Location permission is blocked. Enable it in phone settings."
+          );
+        } 
+        else {
+        console.log("DEBUG: User denied permission");
+
+        setStatus("Location permission denied.");
+      }
+
+      return false;
+    }
+
+      // Debug 4:
+      // Permission success
+      console.log("DEBUG: Location permission GRANTED");
+
+      setPermissionStatus("granted");
+      setStatus("Location permission granted.");
+
+      console.log("========== LOCATION PERMISSION SUCCESS ==========");
+
+      return true;
+    } 
+      catch (err: any) {
+      // Debug 5:
+      // Unexpected Expo/internal error
+      console.log("========== LOCATION PERMISSION ERROR ==========");
+      console.log("FULL ERROR OBJECT:", err);
+      console.log("ERROR MESSAGE:", err?.message);
+      console.log("ERROR STACK:", err?.stack);
+
+      setPermissionStatus("denied");
+      setStatus(`Permission error: ${err?.message || "Unknown error"}`);
+
+      return false;
+    }
+  }
 
         async function fetchSession() {
 
@@ -194,7 +250,8 @@ export default function CheckInScreen()
                 }
 
                 const current = await Location.getCurrentPositionAsync({
-                    accuracy: Location.Accuracy.High,
+                    accuracy: Location.Accuracy.Balanced,
+                    mayShowUserSettingsDialog: true,
                 });
                 
                 setLoc({
@@ -226,6 +283,9 @@ export default function CheckInScreen()
             await initializeApp();
         }
 
+        //Sends captured photo to backedn face API
+        //Current logic only checks if a face exists in the image (doesnt actually work)
+        //Replace this later with full facial recognition logic
         async function sendToFaceAPI(photoUri: string) {
           const formData = new FormData();
 
@@ -291,6 +351,9 @@ export default function CheckInScreen()
         setStatus(data.location_verified ? "Geofence verified" : "Outside geofence");
       }
 
+        //Opens camera flow after geofence validation passes
+        //User must be inside allwed classroom radius before camera opens
+        //Camera permission is requested here if not already gratned
         async function openCameraFlow() {
           if(!inside) return;
 
@@ -316,6 +379,10 @@ export default function CheckInScreen()
           setStatus("Cemera ready");
         }
 
+        //Captures live photo from front camera
+        //If no face is detected -> block attendance check-in (Does not actually work)
+        //If face is detected -> continue to submit attendance
+        //Replace face detection section here with actual biometric comparison logic
         async function captureFaceAndCheckIn() {
           if(!cameraRef.current || !loc || !inside) return;
 
@@ -414,43 +481,33 @@ export default function CheckInScreen()
         
     
 
-     return (
-      <View style={styles.mainContent}>
-        <Text style={styles.statusText}>Status: {status}</Text>
+return (
+  <View style={styles.mainContent}>
+    <Text style={styles.classTitle}>CSCE 4901</Text>
+    <Text style={styles.classRoom}>Classroom 266</Text>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Session</Text>
-          <Text style={styles.cardText}>ID: {session.id}</Text>
-          <Text style={styles.cardText}>Radius: {session.radius_m} m</Text>
-          <Text style={styles.cardText}>Open: {String(session.is_open)}</Text>
+    {!showCamera ? (
+      <>
+        <View
+          style={[
+            styles.statusCircle,
+            inside ? styles.insideCircle : styles.outsideCircle,
+          ]}
+        >
+          <Text style={styles.statusIcon}>
+            {inside ? "✓" : "✕"}
+          </Text>
+
+          <Text style={styles.statusLabel}>
+            {inside ? "INSIDE\nCLASSROOM" : "OUTSIDE\nCLASSROOM"}
+          </Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Your Location</Text>
-          <Text style={styles.cardText}>Latitude: {loc.lat}</Text>
-          <Text style={styles.cardText}>Longitude: {loc.lon}</Text>
-          <Text style={styles.cardText}>
-            Accuracy: {Number(loc.accuracy).toFixed(1)} m
-          </Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Fence Check</Text>
-          <Text style={styles.cardText}>
-            Distance: {distance != null ? distance.toFixed(1) : "N/A"} m
-          </Text>
-          <Text style={styles.cardText}>
-            Allowed: {allowed != null ? allowed.toFixed(1) : "75.0"} m
-          </Text>
-          <Text
-            style={[
-              styles.geofenceStatus,
-              { color: inside ? "#15803d" : "#b91c1c" },
-            ]}
-          >
-            {inside ? "INSIDE GEOFENCE" : "OUTSIDE GEOFENCE"}
-          </Text>
-        </View>
+        <Text style={styles.sessionText}>
+          {inside
+            ? "Session Ends: 02:00 PM"
+            : "Move closer to Classroom 266\nto check in"}
+        </Text>
 
         <Pressable
           onPress={refreshLocation}
@@ -465,112 +522,91 @@ export default function CheckInScreen()
           </Text>
         </Pressable>
 
-        {!showCamera ? (
-          <Pressable
-            onPress={openCameraFlow}
-            disabled={!inside || isCheckingIn}
-            style={[
-              styles.primaryButton,
-              (!inside || isCheckingIn) && styles.disabledButton,
-            ]}
-          >
-            <Text style={styles.primaryButtonText}>
-              Continue to Face Scan
-            </Text>
-          </Pressable>
-        ) : (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Face Verification</Text>
+        <Pressable
+          onPress={openCameraFlow}
+          disabled={!inside || isCheckingIn}
+          style={[
+            styles.checkInButton,
+            (!inside || isCheckingIn) && styles.disabledButton,
+          ]}
+        >
+          <Text style={styles.checkInButtonText}>
+            Continue to Face Scan
+          </Text>
+        </Pressable>
 
-            {!cameraPermission?.granted ? (
-              <View style={styles.centerContent}>
-                <Text style={styles.cardText}>
-                  Camera permission is required to continue.
-                </Text>
-                <Pressable
-                  style={styles.primaryButton}
-                  onPress={openCameraFlow}
-                >
-                  <Text style={styles.primaryButtonText}>Allow Camera</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <>
-                <CameraView
-                  ref={cameraRef}
-                  style={styles.camera}
-                  facing="front"
-                />
+        <Text style={styles.lastAttendance}>
+          Last Attendance: 03/06
+        </Text>
+      </>
+    ) : (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Face Verification</Text>
 
-                <Pressable
-                  onPress={captureFaceAndCheckIn}
-                  disabled={isUploadingFace || isCheckingIn}
-                  style={[
-                    styles.primaryButton,
-                    (isUploadingFace || isCheckingIn) && styles.disabledButton,
-                  ]}
-                >
-                  <Text style={styles.primaryButtonText}>
-                    {isUploadingFace || isCheckingIn
-                      ? "Verifying..."
-                      : "Capture Face & Check In"}
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => {
-                    setShowCamera(false);
-                    setFaceResult(null);
-                    setStatus("Ready");
-                  }}
-                  style={styles.secondaryButton}
-                >
-                  <Text style={styles.secondaryButtonText}>Close Camera</Text>
-                </Pressable>
-              </>
-            )}
-          </View>
-        )}
-
-        {faceResult && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Face Result</Text>
+        {!cameraPermission?.granted ? (
+          <View style={styles.centerContent}>
             <Text style={styles.cardText}>
-              Faces Detected: {String(faceResult.face_detected ?? 0)}
+              Camera permission is required to continue.
             </Text>
-            {faceResult.error ? (
-              <Text style={styles.cardText}>Error: {faceResult.error}</Text>
-            ) : null}
+
+            <Pressable
+              style={styles.checkInButton}
+              onPress={openCameraFlow}
+            >
+              <Text style={styles.checkInButtonText}>
+                Allow Camera
+              </Text>
+            </Pressable>
           </View>
-        )}
+        ) : (
+          <>
+            <CameraView
+              ref={cameraRef}
+              style={styles.camera}
+              facing="front"
+            />
 
-        {result && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Server Result</Text>
-            <Text style={styles.cardText}>OK: {String(result.ok)}</Text>
-            <Text style={styles.cardText}>Reason: {result.reason}</Text>
-
-            {typeof result.distance_m === "number" && (
-              <Text style={styles.cardText}>
-                Distance: {result.distance_m.toFixed(1)} m
+            <Pressable
+              onPress={captureFaceAndCheckIn}
+              disabled={isUploadingFace || isCheckingIn}
+              style={[
+                styles.checkInButton,
+                (isUploadingFace || isCheckingIn) &&
+                  styles.disabledButton,
+              ]}
+            >
+              <Text style={styles.checkInButtonText}>
+                {isUploadingFace || isCheckingIn
+                  ? "Verifying..."
+                  : "Capture Face & Check In"}
               </Text>
-            )}
+            </Pressable>
 
-            {typeof result.allowed_distance_m === "number" && (
-              <Text style={styles.cardText}>
-                Allowed Distance: {result.allowed_distance_m.toFixed(1)} m
+            <Pressable
+              onPress={() => {
+                setShowCamera(false);
+                setFaceResult(null);
+                setStatus("Ready");
+              }}
+              style={styles.secondaryButton}
+            >
+              <Text style={styles.secondaryButtonText}>
+                Close Camera
               </Text>
-            )}
-
-            {result.server_time && (
-              <Text style={styles.cardText}>
-                Server Time: {result.server_time}
-              </Text>
-            )}
-          </View>
+            </Pressable>
+          </>
         )}
       </View>
-    );
+    )}
+
+    {result && (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Check-In Result</Text>
+        <Text style={styles.cardText}>{result.reason}</Text>
+      </View>
+    )}
+  </View>
+);
   };
 
   return (
@@ -701,4 +737,79 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.5,
   },
+  classTitle: {
+  fontSize: 24,
+  fontWeight: "bold",
+  color: "#15803d",
+  textAlign: "center",
+},
+
+classRoom: {
+  fontSize: 16,
+  color: "#444",
+  marginBottom: 30,
+  textAlign: "center",
+},
+
+statusCircle: {
+  width: 180,
+  height: 180,
+  borderRadius: 90,
+  justifyContent: "center",
+  alignItems: "center",
+  marginBottom: 24,
+  alignSelf: "center",
+},
+
+insideCircle: {
+  backgroundColor: "#16a34a",
+},
+
+outsideCircle: {
+  backgroundColor: "#dc2626",
+},
+
+statusIcon: {
+  fontSize: 52,
+  color: "white",
+  fontWeight: "bold",
+},
+
+statusLabel: {
+  color: "white",
+  fontSize: 16,
+  fontWeight: "bold",
+  textAlign: "center",
+  marginTop: 10,
+},
+
+sessionText: {
+  fontSize: 16,
+  textAlign: "center",
+  marginBottom: 24,
+  color: "#166534",
+  fontWeight: "600",
+},
+
+checkInButton: {
+  backgroundColor: "#15803d",
+  paddingVertical: 16,
+  borderRadius: 30,
+  alignItems: "center",
+  marginTop: 10,
+},
+
+checkInButtonText: {
+  color: "white",
+  fontSize: 17,
+  fontWeight: "bold",
+},
+
+lastAttendance: {
+  marginTop: 24,
+  textAlign: "center",
+  fontSize: 14,
+  color: "#444",
+  fontWeight: "600",
+},
 });

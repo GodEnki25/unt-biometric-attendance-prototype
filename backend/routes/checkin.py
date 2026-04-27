@@ -11,8 +11,8 @@ router = APIRouter()
 # Demo classroom/check-in location
 # =========================
 
-CLASS_LAT = 32.9751
-CLASS_LON = -96.3324
+CLASS_LAT = 32.9537118 #change to lat of location wanted
+CLASS_LON = -96.3257509 #change to lon of location wanted
 GEOFENCE_RADIUS_M = 75.0
 MAX_ACCURACY_M = 100.0
 
