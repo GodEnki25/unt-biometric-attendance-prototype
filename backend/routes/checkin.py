@@ -41,20 +41,22 @@ def haversine_meters(lat1, lon1, lat2, lon2):
 # CREATE SESSION
 # =========================
 @router.post("/session")
-def create_session(data: dict):
+def create_session():
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
+        now = datetime.now()
+
         cursor.execute("""
         INSERT INTO attendance_sessions 
         (course_id, session_date, start_time, end_time)
         VALUES (?, ?, ?, ?)
         """, (
-            data.get("course_id"),
-            data.get("session_date"),
-            data.get("start_time"),
-            data.get("end_time")
+            1,  # dummy course_id
+            now.strftime("%Y-%m-%d"),
+            "00:00",
+            "23:59"
         ))
 
         conn.commit()
@@ -70,7 +72,6 @@ def create_session(data: dict):
         "success": True,
         "session_id": session_id
     }
-
 
 # =========================
 # CHECK-IN (CORE FEATURE)
