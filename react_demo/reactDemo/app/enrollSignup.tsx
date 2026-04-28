@@ -2,7 +2,7 @@
 import { View, Text, TextInput, Button, StyleSheet, Image, Pressable, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
 
-export default function LoginScreen()
+export default function EnrollSignup()
 {
     const router = useRouter();
 
@@ -21,12 +21,12 @@ export default function LoginScreen()
                 <TextInput style={styles.input} placeholder="Username" />
                 <TextInput style={styles.input} placeholder="Password" secureTextEntry={true} />
 
-                <Pressable style={styles.loginButton} onPress={() => router.push("/dashboard")}>
-                    <Text style={styles.loginButtonText}>Login</Text>
+                <Pressable style={styles.loginButton} onPress={() => router.push("/firstTimeEnroll")}>
+                    <Text style={styles.loginButtonText}>Signup</Text>
                 </Pressable>
 
-                <Pressable onPress={() => router.push("/enrollSignup")}>
-                    <Text style={styles.enrollLink}>Enroll Face</Text>
+                <Pressable onPress={() => router.push("/login")}>
+                    <Text style={styles.enrollLink}>Back to login</Text>
                 </Pressable>
             </View>
             
