@@ -137,6 +137,86 @@ All design artifacts, diagrams, and prototypes are stored in:
 
 ---
 
+## Development Setup
+
+## Backend Setup (FastAPI)
+
+```bash
+cd backend
+python -m venv .venv
+```
+
+### Activate Virtual Environment
+
+#### Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+#### WSL/Linux/Mac
+
+```bash
+source .venv/bin/acticate
+```
+
+### Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+## Frontend Setup (Expo)
+
+```bash
+cd react_demo/reactDemo
+nmp install
+```
+
+## One-Command Startup
+
+From the project root:
+```bash
+npm install
+npm run dev
+```
+
+This starts both:
+  - FastAPI Backend
+  - Expo Frontend
+
+Using Concurrently for demo convenience.
+
+## Mobile Testing Important Note
+
+For physical phone testing using Expo Go:
+
+```ts
+const API_BASE =
+  Platfrom.OS === "web"
+    ? "http://127.0.0.1:8000"
+    : "http://YOUR-DESKTOP-IP:8000";
+```
+
+### Important
+
+  - Use your computer's local IP address
+  - Do NOT use localhost on mobile
+  - Phone + computer must be on the same Wi-Fi
+  - Backend must be running before check-in works
+
+## Demo Notes
+
+For presentation day:
+
+  1. Run `npm run dev`
+  2. Open Expo Go on mobile device
+  3. Allow Camera permissions
+  4. Allow Location permissions
+  5. Verify geofence before biometric check-in
+
+---
+
 ## Team
 
 - **Sorel** – Backend Engineer  
