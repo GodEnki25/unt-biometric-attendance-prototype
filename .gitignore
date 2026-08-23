@@ -142,3 +142,12 @@ vite.config.ts.timestamp-*
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Python virtual environments
+.venv/
+venv/
+
+# Local SQLite databases
+*.db
+*.sqlite
+*.sqlite3

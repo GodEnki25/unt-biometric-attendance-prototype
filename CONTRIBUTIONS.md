@@ -8,6 +8,7 @@ This document tracks the contributions made by each team member throughout the d
 - Served as team lead.
 - Developed and maintained database functionality.
 - Contributed to backend development and integration.
+- Developed end-to-end testing for the complete attendance workflow
 - Managed portions of the project repository and team integrations.
 - Managed Trello and team deadlines.
 - Contributed to project documentation and development setup.
