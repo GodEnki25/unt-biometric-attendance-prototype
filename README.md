@@ -8,42 +8,33 @@ Attendance verification occurs only when a student’s device enters a predefine
 
 ## Design Principles
 
-- Mobile-first implementation using on-device sensors
-- Classroom boundary detection instead of continuous location tracking
-- Face scanning used only at check-in time
-- No direct access to Canvas databases
-- Instructor-controlled attendance authority
-- Privacy-conscious, opt-in operation
+- Mobile-first implementation using on-device sensors  
+- Classroom boundary detection instead of continuous location tracking  
+- Face scanning used only at check-in time  
+- No direct access to Canvas databases  
+- Instructor-controlled attendance authority  
+- Privacy-conscious, opt-in operation  
 
 ---
 
 ## Core Capabilities
 
-- Mobile face scanning for attendance confirmation
-- Geofence-based classroom entry and exit detection
-- Timestamped arrival and departure events
-- Local attendance record storage using a Canvas-aligned schema
-- Instructor dashboard for manual edits and corrections
-- Exportable attendance records for LMS entry or review
+- Mobile face scanning for attendance confirmation  
+- Geofence-based classroom entry and exit detection  
+- Timestamped arrival and departure events  
+- Local attendance record storage using a Canvas-aligned schema  
+- Instructor dashboard for manual edits and corrections  
+- Exportable attendance records for LMS entry or review  
 
 ---
 
 ## System Components
 
-- **/mobile**  
-  Student-facing mobile application for geofence detection and face scanning
-
-- **/backend**  
-  Local API services, attendance record storage, and business logic
-
-- **/ml**  
-  On-device or local biometric recognition pipeline
-
-- **/frontend**  
-  Instructor dashboard for attendance review and overrides
-
-- **/docs**  
-  Project charter, system vision, and architecture documentation
+/mobile – Student-facing mobile application  
+/backend – API services, attendance record storage, and business logic  
+/ml – On-device or local biometric recognition pipeline  
+/frontend – Instructor dashboard for attendance review and overrides  
+/docs – Project charter, system vision, and architecture documentation  
 
 ---
 
@@ -55,6 +46,186 @@ Location services are used only to detect classroom boundary entry and exit even
 
 ---
 
-## Project Status
+## Project Progress
 
-Sprint 0 – Architecture definition, SDLC setup, and mobile workflow planning
+### Sprint 0 – Foundation & Setup
+
+- Defined system architecture and system workflow  
+- Created GitHub repository and structured project directories  
+- Initialized Trello board for task and sprint management  
+- Established Software Development Life Cycle (SDLC) approach  
+- Drafted Project Charter and System Vision documentation  
+
+---
+
+### Sprint 1 – Requirements & Planning
+
+- Developed Requirement Matrix with individual ownership  
+- Created User Stories for all system roles:
+  - Instructor  
+  - Student  
+  - Admin  
+
+- Defined System Requirements Specification (SRS)  
+- Built Project Plan document  
+- Created Work Breakdown Structure (WBS)  
+- Identified project risks, assumptions, and constraints  
+
+---
+
+### Sprint 2 – System Design & Prototype
+
+- Designed annotated wireframes for key screens:
+  - Login / Enrollment screen  
+  - Student face scan interface  
+  - Student dashboard  
+  - Instructor dashboard  
+
+- Developed non-interactive UI prototypes  
+- Created system design diagrams:
+  - System Architecture Diagram  
+  - Data Flow Diagram (DFD)  
+  - Entity Relationship Diagram (ERD)  
+  - Class Diagram  
+  - State Transition Diagram  
+
+- Defined biometric processing workflow:
+  - Initial enrollment captures and stores a facial template  
+  - Subsequent scans are compared against stored templates  
+  - Matching is performed locally using edge processing  
+
+- Designed system features:
+  - Geofence-based attendance validation  
+  - Session-based attendance tracking  
+  - Instructor-controlled overrides and edits  
+  - CSV export for attendance reporting  
+
+---
+
+## Current Status
+
+The project is currently in the **Design Phase**, with all major system components, workflows, and interfaces defined. The next phase will focus on development, integration, and testing of the system.
+
+---
+
+## Privacy & Ethics Considerations
+
+- Facial recognition operates on an opt-in basis  
+- Biometric data is processed locally (no cloud storage)  
+- Students can request deletion of their biometric data  
+- No continuous tracking outside of classroom boundaries  
+- Instructor oversight ensures fairness and accountability  
+
+---
+
+## Key Innovation
+
+This system combines two verification layers:
+
+- **Geofencing (location validation)**  
+- **Facial recognition (identity validation)**  
+
+This dual-validation approach improves attendance accuracy while maintaining privacy and minimizing misuse.
+
+---
+
+## Documentation
+
+All design artifacts, diagrams, and prototypes are stored in:
+
+/docs/sprint2/
+
+---
+
+## Development Setup
+
+## Backend Setup (FastAPI)
+
+```bash
+cd backend
+python -m venv .venv
+```
+
+### Activate Virtual Environment
+
+#### Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+#### WSL/Linux/Mac
+
+```bash
+source .venv/bin/acticate
+```
+
+### Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+## Frontend Setup (Expo)
+
+```bash
+cd react_demo/reactDemo
+nmp install
+```
+
+## One-Command Startup
+
+From the project root:
+```bash
+npm install
+npm run dev
+```
+
+This starts both:
+  - FastAPI Backend
+  - Expo Frontend
+
+Using Concurrently for demo convenience.
+
+## Mobile Testing Important Note
+
+For physical phone testing using Expo Go:
+
+```ts
+const API_BASE =
+  Platfrom.OS === "web"
+    ? "http://127.0.0.1:8000"
+    : "http://YOUR-DESKTOP-IP:8000";
+```
+
+### Important
+
+  - Use your computer's local IP address
+  - Do NOT use localhost on mobile
+  - Phone + computer must be on the same Wi-Fi
+  - Backend must be running before check-in works
+
+## Demo Notes
+
+For presentation day:
+
+  1. Run `npm run dev`
+  2. Open Expo Go on mobile device
+  3. Allow Camera permissions
+  4. Allow Location permissions
+  5. Verify geofence before biometric check-in
+
+---
+
+## Team
+
+- **Sorel** – Backend Engineer  
+- **Andrew** – Instructor Interface, Ethics & QA  
+- **Andres** – Mobile Application & Geofence Engineer  
+- **Shayan** – Biometric Recognition & Edge Processing Engineer  
+
+---
+
+## Disclaimer
+
+This system is a prototype developed for academic purposes. It is not intended for production deployment without further security, compliance, and institutional integration.
