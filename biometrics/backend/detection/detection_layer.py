@@ -1,7 +1,7 @@
 from insightface.app import FaceAnalysis
 
 face_app = FaceAnalysis(providers=['CPUExecutionProvider'])
-face_app.prepare(ctx_id=-1, det_size=(320, 320))
+face_app.prepare(ctx_id=-1, det_size=(640, 640))
 
 
 def detect_faces(frame):
