@@ -1,5 +1,5 @@
 
-import { View, Text, StyleSheet, Pressable, Image } from "react-native";
+import { View, Text, StyleSheet, Pressable, Image, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
 
 export default function FirstTimeEnrollScreen()
@@ -7,6 +7,11 @@ export default function FirstTimeEnrollScreen()
     const router = useRouter();
 
     return (
+        <ImageBackground
+            source={require("../assets/background.png")}
+            style={styles.background}
+            imageStyle={styles.backgroundImage}
+        >
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
@@ -31,28 +36,36 @@ export default function FirstTimeEnrollScreen()
                     </Text>
 
                     <View style={styles.buttonRow}>
-                        <Pressable style={styles.acceptButton}>
+                        <Pressable style={styles.acceptButton} onPress={() => router.push("/faceEnroll")}>
                             <Text style={styles.buttonText}>Accept</Text>
                         </Pressable>
 
-                        <Pressable style={styles.declineButton}>
+                        <Pressable style={styles.declineButton}  onPress={() => router.push("/login")}>
                             <Text style={styles.buttonText}>Decline</Text>
                         </Pressable>
                     </View>
                 </View>
             </View>
         </View>
+        </ImageBackground>
     );
 }
 
 const styles = StyleSheet.create({
+    background: {
+        flex: 1,
+
+    },
+    backgroundImage: {
+        transform: [{ scale:1.3 }]
+    },
     container: {
         flex: 1,
         backgroundColor: "#f2f2f2"
     },
     header: {
         height: 90,
-        backgroundColor: "white",
+        backgroundColor: "#0f5c00",
         paddingHorizontal: 20,
         paddingTop: 40,
         flexDirection: "row",
@@ -65,13 +78,16 @@ const styles = StyleSheet.create({
     },
     backButtonText: {
         fontSize: 26,
-        fontWeight: "bold"
+        fontWeight: "bold",
+        color: "white"
+        
     },
     headerTitle: {
         flex: 1,
         fontSize: 22,
         fontWeight: "bold",
-        textAlign: "center"
+        textAlign: "center",
+        color: "white"
     },
     headerLogo: {
         width: 45,

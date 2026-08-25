@@ -2,45 +2,44 @@
 import { View, Text, TextInput, Button, StyleSheet, Image, Pressable, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
 
-export default function LoginScreen()
+export default function EnrollSignup()
 {
     const router = useRouter();
 
     return (
+
         <View style={styles.container}>
+
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>UNT Student Login</Text>
             </View>
+
             <View style={styles.content}>
                 <Image source={require("../assets/logo.png")} style={styles.logo} />
-
-                {/* <Text style={styles.title}>Login</Text> */}
+                
 
                 <TextInput style={styles.input} placeholder="Username" />
                 <TextInput style={styles.input} placeholder="Password" secureTextEntry={true} />
-                {/*
-                <Button
-                    title="Login"
-                    onPress={() => router.push("/dashboard")}
-                />
-                */}
-                <Pressable style={styles.loginButton} onPress={() => router.push("/dashboard")}>
-                    <Text style={styles.loginButtonText}>Login</Text>
+
+                <Pressable style={styles.loginButton} onPress={() => router.push("/firstTimeEnroll")}>
+                    <Text style={styles.loginButtonText}>Signup</Text>
                 </Pressable>
 
-                <Pressable onPress={() => router.push("/firstTimeEnroll")}>
-                    <Text style={styles.enrollLink}>Enroll Face</Text>
+                <Pressable onPress={() => router.push("/login")}>
+                    <Text style={styles.enrollLink}>Back to login</Text>
                 </Pressable>
+            </View>
+            
         </View>
-    </View>
     );
 }
 
 const styles = StyleSheet.create({
+    
+
     container: {
         flex: 1,
-        justifyContent: "center",
-        padding: 20
+        backgroundColor: "#e7ffe7"
     },
     header: {
         height: 90,
@@ -83,13 +82,6 @@ const styles = StyleSheet.create({
         borderRadius: 5,
         backgroundColor: "white"
     },
-    enrollLink: {
-        marginTop: 15,
-        textAlign: "center",
-        color: "green",
-        textDecorationLine: "underline",
-        fontSize: 16
-    },
     loginButton: {
         backgroundColor: "#00853E",
         paddingVertical: 12,
@@ -103,4 +95,11 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "bold"
     },
+    enrollLink: {
+        marginTop: 15,
+        textAlign: "center",
+        color: "green",
+        textDecorationLine: "underline",
+        fontSize: 16
+    }
 });

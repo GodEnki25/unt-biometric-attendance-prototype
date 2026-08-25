@@ -1,5 +1,5 @@
 
-import { View, Text, StyleSheet, Image, Pressable } from "react-native";
+import { View, Text, StyleSheet, Image, Pressable, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
 
 export default function AttendanceHistoryScreen()
@@ -14,11 +14,16 @@ export default function AttendanceHistoryScreen()
     ];
 
     return (
+        <ImageBackground
+            source={require("../assets/background.png")}
+            style={styles.background}
+            imageStyle={styles.backgroundImage}
+        >
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
                 <Pressable onPress={() => router.back()} style={styles.backButton}>
-                    <Text style={styles.backButtonText}>{"<"}</Text>
+                    <Text style={styles.backButtonText}>{"⬅"}</Text>
                 </Pressable>
 
                 <Text style={styles.headerTitle}>Attendance History</Text>
@@ -34,31 +39,47 @@ export default function AttendanceHistoryScreen()
                 <View style={styles.tableBox}>
                     {/* Table Header */}
                     <View style={[styles.row, styles.headerRow]}>
-                        <Text style={[styles.cell, styles.headerCell]}>Date</Text>
-                        <Text style={[styles.cell, styles.headerCell]}>Status</Text>
-                        <Text style={[styles.cell, styles.headerCell]}>Entry</Text>
-                        <Text style={[styles.cell, styles.headerCell]}>Exit</Text>
+                        <Text style={[styles.cell, styles.headerCell, styles.headerCellText]}>Date</Text>
+                        <Text style={[styles.cell, styles.headerCell, styles.headerCellText]}>Status</Text>
+                        <Text style={[styles.cell, styles.headerCell, styles.headerCellText]}>Entry</Text>
+                        <Text style={[styles.cell, styles.headerCell, styles.headerCellText]}></Text>
+                        <Text style={[styles.cell, styles.headerCell, styles.headerCellText]}>Exit</Text>
                     </View>
 
                     {/* Table Rows */}
                     {attendanceData.map((item, index) => (
                         <View key={index} style={styles.row}>
                             <Text style={styles.cell}>{item.date}</Text>
-                            <Text style={styles.cell}>{item.status}</Text>
+                            <Text style={[styles.cell,
+                                item.status === "Absent"
+                                    ? styles.statusAbsent
+                                    : item.status === "Late"
+                                    ? styles.statusLate
+                                    : styles.statusPresent,
+                                ]}
+                            >{item.status}</Text>
                             <Text style={styles.cell}>{item.entry}</Text>
+                            <Text style={styles.cell}>{item.dashSpace}</Text>
                             <Text style={styles.cell}>{item.exit}</Text>
                         </View>
                     ))}
                 </View>
             </View>
         </View>
+        </ImageBackground>
     );
 }
 
 const styles = StyleSheet.create({
+    background: {
+        flex: 1,
+
+    },
+    backgroundImage: {
+        transform: [{ scale:1.3 }]
+    },
     container: {
         flex: 1,
-        backgroundColor: "#f2f2f2"
     },
     header: {
         height: 90,
@@ -75,13 +96,15 @@ const styles = StyleSheet.create({
     },
     backButtonText: {
         fontSize: 26,
-        fontWeight: "bold"
+        fontWeight: "bold",
+        color: "white"
     },
     headerTitle: {
         flex: 1,
         fontSize: 22,
         fontWeight: "bold",
-        textAlign: "center"
+        textAlign: "center",
+        color: "white"
     },
     headerLogo: {
         width: 45,
@@ -123,5 +146,17 @@ const styles = StyleSheet.create({
     headerCell: {
         fontWeight: "bold",
         fontSize: 15
+    },
+    headerCellText: {
+        color: "green"
+    },
+    statusPresent: {
+        color: "green"
+    },
+    statusLate: {
+        color: "goldenrod"
+    },
+    statusAbsent: {
+        color: "red"
     }
 });

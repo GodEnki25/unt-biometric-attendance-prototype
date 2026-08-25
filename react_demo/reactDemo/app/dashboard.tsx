@@ -1,5 +1,5 @@
 
-import { View, Text, StyleSheet, Image, Pressable } from "react-native";
+import { View, Text, StyleSheet, Image, Pressable, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
 
 export default function DashboardScreen()
@@ -7,6 +7,11 @@ export default function DashboardScreen()
     const router = useRouter();
 
     return (
+        <ImageBackground
+            source={require("../assets/background.png")}
+            style={styles.background}
+            imageStyle={styles.backgroundImage}
+        >
         <View style={styles.container}>
             {/* Header */}
             <View style={styles.header}>
@@ -48,17 +53,25 @@ export default function DashboardScreen()
                 <Text style={styles.attendanceButtonText}>Attendance History</Text>
             </Pressable>
         </View>
+        </ImageBackground>
     );
 }
 
 const styles = StyleSheet.create({
+    background: {
+        flex: 1,
+
+    },
+    backgroundImage: {
+        transform: [{ scale:1.3 }]
+    },
     container: {
         flex: 1,
         backgroundColor: "#f2f2f2"
     },
     header: {
         height: 90,
-        backgroundColor: "white",
+        backgroundColor: "#0f5c00",
         paddingHorizontal: 20,
         paddingTop: 40,
         flexDirection: "row",
@@ -71,13 +84,15 @@ const styles = StyleSheet.create({
     },
     backButtonText: {
         fontSize: 26,
-        fontWeight: "bold"
+        fontWeight: "bold",
+        color: "white"
     },
     headerTitle: {
         flex: 1,
         fontSize: 22,
         fontWeight: "bold",
-        textAlign: "center"
+        textAlign: "center",
+        color: "white"
     },
     headerLogo: {
         width: 45,
@@ -113,7 +128,7 @@ const styles = StyleSheet.create({
         marginBottom: 4
     },
     checkInButton: {
-        backgroundColor: "blue",
+        backgroundColor: "#00853E",
         paddingVertical: 12,
         paddingHorizontal: 18,
         borderRadius: 10
@@ -127,7 +142,7 @@ const styles = StyleSheet.create({
         position: "absolute",
         bottom: 25,
         left: 20,
-        backgroundColor: "black",
+        backgroundColor: "#0f5c00",
         paddingVertical: 12,
         paddingHorizontal: 18,
         borderRadius: 10
@@ -135,6 +150,22 @@ const styles = StyleSheet.create({
     attendanceButtonText: {
         color: "white",
         fontSize: 15,
+        fontWeight: "bold"
+    },
+    questionButton: {
+        position: "absolute",
+        bottom: 25,
+        right: 20,
+        width: 60,
+        height: 60,
+        backgroundColor: "#0f5c00",
+        borderRadius: 30,
+        alignItems: "center",
+        justifyContent: "center"
+    },
+    questionButtonText: {
+        color: "white",
+        fontSize: 20,
         fontWeight: "bold"
     }
 });
