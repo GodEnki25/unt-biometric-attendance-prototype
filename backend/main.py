@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routes.auth_routes import router as auth_router
 from routes.face import router as face_router
 from routes.checkin import router as checkin_router
+from routes.geofence import router as geofence_router
 
 app = FastAPI(
     title="UNT Biometric Attendance Backend",
@@ -29,6 +30,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(face_router)
 app.include_router(checkin_router)
+app.include_router(geofence_router)
 
 
 # Root route (optional but good for testing)
