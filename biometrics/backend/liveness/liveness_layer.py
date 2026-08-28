@@ -47,6 +47,8 @@ def check_open_mouth(landmarks):
     """Check if the person has their mouth open based on landmarks"""
     top_mouth = landmarks[13]
     bottom_mouth = landmarks[14]
+    left_mouth = landmarks[61]
+    right_mouth = landmarks[291]
 
     mouth_width = ((right_mouth.x - left_mouth.x) ** 2 + (right_mouth.y - left_mouth.y) ** 2) ** 0.5
     mouth_height = ((top_mouth.x - bottom_mouth.x) ** 2 + (top_mouth.y - bottom_mouth.y) ** 2) ** 0.5

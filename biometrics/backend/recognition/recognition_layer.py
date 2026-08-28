@@ -1,5 +1,7 @@
 import numpy as np
 
+# calculating the cosine similarity between two vectors (angular distance)
+# higher values indicate smaller angular distance (more similar)
 def cosine_similarity(a, b):
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
