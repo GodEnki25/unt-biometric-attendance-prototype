@@ -16,7 +16,7 @@ import { CameraView, useCameraPermissions} from "expo-camera";
     const API_BASE =
   Platform.OS === "web"
     ? "http://127.0.0.1:8000"
-    : "http://192.168.1.229:8000";
+    : "http://10.161.29.182:8000";
 
     function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
         
@@ -57,7 +57,7 @@ import { CameraView, useCameraPermissions} from "expo-camera";
         distance_m?: number;
         allowed_distance_m?: number;
         server_time?: string;
-    }
+    };
 
     // UPDATED FOR NEW BIOMETRIC API
     type FaceCheckResult = {
@@ -67,7 +67,17 @@ import { CameraView, useCameraPermissions} from "expo-camera";
       matches?: number;
       error?: string;
       detail?: any;
-    }
+    };
+
+    type GeofenceResult = {
+      inside: boolean;
+      allow_biometric: boolean;
+      reason: string;
+      radius_m?: number;
+      accuracy_buffer_m?: number;
+      allowed_radius_m?: number;
+      engine?: string;
+    };
 
 export default function CheckInScreen()
 {
@@ -94,6 +104,9 @@ export default function CheckInScreen()
 
     const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
+    const [inside, setInside] = useState(false);
+    const [geofenceResult, setGeofenceResult] = useState<GeofenceResult | null>(null);
+
     useEffect(() => {
         initializeApp();
         }, []);
@@ -111,7 +124,7 @@ export default function CheckInScreen()
                 await fetchSession();
                 await getUserLocation();
 
-                setStatus("Ready");
+               
             }
             catch (err: any){
                 setStatus("Error: " + err.message);
@@ -147,7 +160,7 @@ export default function CheckInScreen()
         async function fetchSession() {
 
             setStatus("Fetching session...");
-            const res = await fetch(`${API_BASE}/session`);
+            const res = await fetch(`${API_BASE}/geofence/session`);
 
             if (!res.ok) {
                 throw new Error("Failed to fetch session");
@@ -155,6 +168,45 @@ export default function CheckInScreen()
 
             const data = await res.json();
             setSession(data);
+        }
+
+        async function verifyGeofence(currentLoc: UserLoation) {
+          try{
+            setStatus("Checking geofence...");
+
+            const res = await fetch(`${API_BASE}/geofence/check`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                lat: currentLoc.lat,
+                lon: currentLoc.lon,
+                accuracy_m: currentLoc.accuracy,
+              }),
+            });
+
+            const data: GeofenceResult = await res.json();
+
+            if(!res.ok) {
+              throw new Error("Geofence check failed");
+            }
+
+            setGeofenceResult(data);
+            setInside(data.inside === true && data.allow_biometric === true);
+
+            setStatus(data.inside ? "Inside geofence" : "Outside geofence");
+
+            return data.inside === true;
+          }
+
+          catch (err: any) {
+            setInside(false);
+            setGeofenceResult(null);
+            setStatus(`Geofence error: ${err.message}`);
+            return false;
+          }
+          
         }
 
         async function getUserLocation(refresh = false) {
@@ -173,13 +225,15 @@ export default function CheckInScreen()
                     accuracy: Location.Accuracy.High,
                 });
                 
-                setLoc({
-                    lat: current.coords.latitude,
-                    lon: current.coords.longitude,
-                    accuracy: current.coords.accuracy ?? 999,
-                });
+                const currentLoc = {
+                  lat: current.coords.latitude,
+                  lon: current.coords.longitude,
+                  accuracy: current.coords.accuracy ?? 999,
+                };
 
-                setStatus("Ready");
+                setLoc(currentLoc);
+
+                await verifyGeofence(currentLoc);
             }
             
             catch (err: any) {
@@ -441,26 +495,6 @@ export default function CheckInScreen()
             setIsCheckingIn(false);
           }
         }
-    
-        const distance = useMemo(() => {
-
-            if (!session || !loc) return null;
-            return haversineMeters (
-                loc.lat,
-                loc.lon,
-                session.center_lat,
-                session.center_lon
-            );
-        }, [session, loc]);
-
-        const allowed = useMemo(() => {
-
-            if(!session || !loc) return null;
-            return session.radius_m + Math.min(loc.accuracy, 50);
-
-        }, [session, loc]);
-
-        const inside = distance !== null && allowed !== null && distance <= allowed;
 
         const renderContent = () => {
 
@@ -521,12 +555,6 @@ export default function CheckInScreen()
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Fence Check</Text>
-          <Text style={styles.cardText}>
-            Distance: {distance?.toFixed(1)} m
-          </Text>
-          <Text style={styles.cardText}>
-            Allowed: {allowed?.toFixed(1)} m
-          </Text>
           <Text
             style={[
               styles.geofenceStatus,

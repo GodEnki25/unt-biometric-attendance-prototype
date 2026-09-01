@@ -11,8 +11,8 @@ router = APIRouter(
 # Temporary active session until the instructor-side controls are wired in.
 MOCK_SESSION = {
     "id": "demo-1",
-    "center_lat": 32.953836,
-    "center_lon": -96.325880,
+    "center_lat": 32.5353638,
+    "center_lon":  -96.3324661252,
     "radius_m": 75.0,
     "is_open": True,
 }
@@ -50,6 +50,8 @@ def check_student_location(payload: GeofenceCheckRequest):
     buffer_m = min(payload.accuracy_m, 50.0)
     allowed_radius_m = MOCK_SESSION["radius_m"] + buffer_m
 
+    #Tile38 is the authorative geofence engine
+    #Frontend only receives the reulsting inside/outside decision.
     inside = check_geofence(
         session_id=MOCK_SESSION["id"],
         user_lat=payload.lat,
