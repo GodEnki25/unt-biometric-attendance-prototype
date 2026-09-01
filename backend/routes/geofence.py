@@ -11,8 +11,8 @@ router = APIRouter(
 # Temporary active session until the instructor-side controls are wired in.
 MOCK_SESSION = {
     "id": "demo-1",
-    "center_lat": 32.953836,
-    "center_lon": -96.325880,
+    "center_lat": 32.5353638,
+    "center_lon":  -96.3324661252,
     "radius_m": 75.0,
     "is_open": True,
 }

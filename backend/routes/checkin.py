@@ -2,40 +2,10 @@ from fastapi import APIRouter, UploadFile, File, Form
 from database.db import get_db_connection
 from services.face import process_frame
 from datetime import datetime
-import math
+
+from routes.geofence import MOCK_SESSION
 
 router = APIRouter()
-
-# =========================
-# GEOFENCE CONFIG
-# Demo classroom/check-in location
-# =========================
-
-CLASS_LAT = 32.9537118 #change to lat of location wanted
-CLASS_LON = -96.3257509 #change to lon of location wanted
-GEOFENCE_RADIUS_M = 75.0
-MAX_ACCURACY_M = 100.0
-
-def haversine_meters(lat1, lon1, lat2, lon2):
-    earth_radius_m = 6371000
-
-    lat1_rad = math.radians(lat1)
-    lat2_rad = math.radians(lat2)
-
-    delta_lat = math.radians(lat2 - lat1)
-    delta_lon = math.radians(lon2 - lon1)
-
-    a = (
-        math.sin(delta_lat / 2) ** 2
-        + math.cos(lat1_rad)
-        * math.cos(lat2_rad)
-        * math.sin(delta_lon / 2) ** 2
-    )
-
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    return earth_radius_m * c
-
 
 # =========================
 # CREATE SESSION
@@ -128,27 +98,36 @@ async def checkin(
                 "message": "Check-in not allowed outside session time"
             }
 
-        # GEOFENCE VALIDATION
-        distance_m = haversine_meters(
-            CLASS_LAT,
-            CLASS_LON,
-            latitude,
-            longitude
+        # GEOFENCE VALIDATION - TILE38
+        
+        if not MOCK_SESSION["is_open"]:
+            return{
+                "success": False,
+                "message": "Geofence session is closed"
+            }
+
+        accuracy_buffer_m = min(accuracy, 50.0)
+
+        allowed_radius_m = (
+            MOCK_SESSION["radius_m"] + accuracy_buffer_m
         )
 
-        location_verified = (
-            distance_m <= GEOFENCE_RADIUS_M
-            and accuracy <= MAX_ACCURACY_M
+        location_verified = check_geofence (
+            session_id=MOCK_SESSION["id"],
+            user_lat=latitude,
+            user_lon=longitude,
+            radius_m=allowed_radius_m,
         )
 
         if not location_verified:
             return {
                 "success": False,
                 "message": "Location outside allowed geofence",
-                "distance_m": round(distance_m, 2),
-                "allowed_radius_m": GEOFENCE_RADIUS_M,
-                "accuracy_m": accuracy
+                "allowed_radius_m": allowed_radius_m,
+                "accuracy_m": accuracy,
+                "engine": "tile38"
             }
+        
 
         # FACE PROCESSING
         contents = await file.read()
@@ -209,9 +188,9 @@ async def checkin(
         "confidence": confidence,
         "faces_detected": faces_detected,
         "location_verified": location_verified,
-        "distance_m": round(distance_m, 2),
-        "allowed_radius_m": GEOFENCE_RADIUS_M,
-        "accuracy_m": accuracy
+        "allowed_radius_m": allowed_radius_m,
+        "accuracy_m": accuracy,
+        "engine": "tile38"
     }
 
 
