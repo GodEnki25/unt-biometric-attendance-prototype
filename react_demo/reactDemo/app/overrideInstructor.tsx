@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Image, Pressable, ImageBackground, ScrollView, 
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState } from "react";
-export default function InstructorDashboard()
+export default function InstructorOverride()
 {
     const router = useRouter();
     const insets = useSafeAreaInsets();
@@ -76,7 +76,7 @@ export default function InstructorDashboard()
                         style={styles.logoBox}
                     />
 
-                    <Text style={styles.dashboardTitle}>Instructor Dashboard</Text>
+                    <Text style={styles.dashboardTitle}>Override WORK IN PROGRESS</Text>
 
                     <View style={styles.profileBox}>
                         <Text style={styles.profileText}>Professor Emptynow</Text>
@@ -237,12 +237,9 @@ export default function InstructorDashboard()
 
                     {/* Bottom Buttons */}
                     <View style={styles.bottomButtonsRow}>
-                        <TouchableOpacity style={styles.smallButton} onPress={() => router.push("/overrideInstructor")}> {/* add this when ready
+                        <TouchableOpacity style={styles.smallButton}> {/* add this when ready
                         onPress={() => router.push("/overrideInstructor")}*/}
-                            <Text style={styles.smallButtonText}>Override</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.smallButton} onPress={downloadCSVFile}>
-                            <Text style={styles.smallButtonText}>Export CSV</Text>
+                            <Text style={styles.smallButtonText}>Back to Dashboard</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity style={styles.smallButton} onPress={refreshPage}>
