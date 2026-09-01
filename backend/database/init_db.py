@@ -71,7 +71,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS face_profiles (
         face_profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER UNIQUE,
-        embedding_path TEXT,
+        embedding_path BLOB,
         FOREIGN KEY (user_id) REFERENCES users(user_id)
     );
     """)

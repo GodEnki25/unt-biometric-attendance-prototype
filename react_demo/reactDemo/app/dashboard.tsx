@@ -1,10 +1,11 @@
 
 import { View, Text, StyleSheet, Image, Pressable, ImageBackground } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 
 export default function DashboardScreen()
 {
     const router = useRouter();
+    const {userId} = useLocalSearchParams();
 
     return (
         <ImageBackground
@@ -38,7 +39,12 @@ export default function DashboardScreen()
 
                     <Pressable
                         style={styles.checkInButton}
-                        onPress={() => router.push("/checkIn")}
+                        onPress={() => router.push({
+                            pathname: "/checkIn",
+                            params: {
+                                userId: userId?.toString()
+                            }
+                        })}
                     >
                         <Text style={styles.checkInButtonText}>Check In</Text>
                     </Pressable>

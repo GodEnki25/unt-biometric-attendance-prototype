@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from services.auth_service import login_user
+from backend.services.auth_service import login_user
 
 router = APIRouter()
 

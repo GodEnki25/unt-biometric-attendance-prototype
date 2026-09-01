@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from services.tile38_service import save_geofence, check_geofence
+from backend.services.tile38_service import save_geofence, check_geofence
 
 router = APIRouter(
     prefix="/geofence",

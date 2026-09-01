@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Form
-from database.db import get_db_connection
-from services.face import process_frame
+from backend.database.db import get_db_connection
+from backend.services.face import process_frame
 from datetime import datetime
 import math
 

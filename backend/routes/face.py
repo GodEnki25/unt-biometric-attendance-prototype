@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File
-from services.face import process_frame
+from backend.services.face import process_frame
 
 router = APIRouter(prefix="/face", tags=["face"])
 

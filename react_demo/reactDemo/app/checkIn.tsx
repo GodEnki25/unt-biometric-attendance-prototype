@@ -1,6 +1,5 @@
-
 import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, Platform, Alert } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useState, useMemo, useRef } from "react";
 import * as Location from "expo-location";
 import { CameraView, useCameraPermissions} from "expo-camera";
@@ -17,7 +16,7 @@ import { CameraView, useCameraPermissions} from "expo-camera";
     const API_BASE =
   Platform.OS === "web"
     ? "http://127.0.0.1:8000"
-    : "http://10.161.29.182:8000";
+    : "http://192.168.1.229:8000";
 
     function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
         
@@ -60,17 +59,23 @@ import { CameraView, useCameraPermissions} from "expo-camera";
         server_time?: string;
     }
 
+    // UPDATED FOR NEW BIOMETRIC API
     type FaceCheckResult = {
-      ok?: boolean;
+      status?: string;
+      user?: string;
+      confidence?: number;
+      matches?: number;
       error?: string;
-      face_detected?: number;
-      reason?: string;
       detail?: any;
     }
 
 export default function CheckInScreen()
 {
     const router = useRouter();
+
+    // Get the userId that was passed from dashboard.tsx
+    const { userId } = useLocalSearchParams();
+
     const cameraRef = useRef<any>(null);
 
     const [session, setSession] = useState<Session | null>(null);
@@ -197,29 +202,47 @@ export default function CheckInScreen()
             await initializeApp();
         }
 
+
+        // ------------------------------------------------
+        // BIOMETRIC VERIFICATION API
+        // ------------------------------------------------
+
         async function sendToFaceAPI(photoUri: string) {
-          const formData = new FormData();
 
-          formData.append("file", {
-            uri: photoUri,
-            name: "photo.jpg",
-            type: "image/jpeg",
-          } as any);
+            const formData = new FormData();
 
-          const res = await fetch(`${API_BASE}/face/check`, {
-            method: "POST",
-            body: formData,
-          });
+            // Make sure a logged-in user ID was received
+            if (!userId) {
+              throw new Error("User ID not found.");
+            }
 
-          const data = await res.json();
+            // Send the actual authenticated user's database ID
+            formData.append("user_id", userId.toString());
 
-          if (!res.ok) {
-            throw new Error(data?.detail || data.error || "Face check failed");
-          }
+            formData.append("file", {
+              uri: photoUri,
+              name: "photo.jpg",
+              type: "image/jpeg",
+            } as any);
 
-          return data;
+            const res = await fetch(`${API_BASE}/verify`, {
+              method: "POST",
+              body: formData,
+            });
 
+            const data = await res.json();
+
+            if (!res.ok) {
+              throw new Error(
+                data?.detail ||
+                data?.error ||
+                "Face verification failed"
+              );
+            }
+
+            return data;
         }
+
 
         async function submitAttendanceCheckIn() {
           if(!loc || !inside) return;
@@ -280,47 +303,140 @@ export default function CheckInScreen()
           setStatus("Cemera ready");
         }
 
+
+        // ------------------------------------------------
+        // BIOMETRIC CAPTURE + VERIFICATION
+        // ------------------------------------------------
+
         async function captureFaceAndCheckIn() {
+
           if(!cameraRef.current || !loc || !inside) return;
 
-          try{
+          try {
+
             setIsCheckingIn(true);
             setIsuploadingFace(true);
             setResult(null);
             setFaceResult(null);
-            setStatus("Capturing face...");
 
-            const photo = await cameraRef.current.takePictureAsync({
-              quality: 0.7,
-              skipProcessing: false,
-            });
+            while (true) {
 
-            setStatus("Verifying face...");
-            const faceData = await sendToFaceAPI(photo.uri);
-            setFaceResult(faceData);
+              setStatus("Capturing face...");
 
-            if(!faceData?.face_detected || faceData.face_detected < 1) {
-              setStatus("No face detected");
+              const photo = await cameraRef.current.takePictureAsync({
+                quality: 0.7,
+                skipProcessing: false,
+              });
+
+
+              setStatus("Verifying face...");
+
+              const faceData = await sendToFaceAPI(photo.uri);
+
+              setFaceResult(faceData);
+
+
+              if (faceData.status === "no_face_detected") {
+
+                setStatus("No face detected");
+
+                setResult({
+                  ok: false,
+                  reason: "No face detected. Please try again.",
+                });
+
+                return;
+              }
+
+
+              if (faceData.status === "liveness_check_failed") {
+
+                setStatus("Liveness check failed");
+
+                setResult({
+                  ok: false,
+                  reason: "Liveness check failed. Please try again.",
+                });
+
+                return;
+              }
+
+
+              if (faceData.status === "user_not_recognized") {
+
+                setStatus("User not recognized");
+
+                setResult({
+                  ok: false,
+                  reason: "User not recognized. Please try again.",
+                });
+
+                return;
+              }
+
+
+              if (faceData.status === "face_not_enrolled") {
+
+                setStatus("Face enrollment required");
+
+                setResult({
+                  ok: false,
+                  reason: "No enrolled face profile was found.",
+                });
+
+                return;
+              }
+
+
+              if (faceData.status === "scanning") {
+
+                setStatus(
+                  `Verifying face... ${faceData.matches ?? 0} / 3`
+                );
+
+                await new Promise(resolve =>
+                  setTimeout(resolve, 300)
+                );
+
+                continue;
+              }
+
+
+              if (faceData.status === "verified") {
+
+                setStatus("Face verified. Submitting check-in...");
+
+                await submitAttendanceCheckIn();
+
+                setShowCamera(false);
+
+                return;
+              }
+
+
+              setStatus("Unexpected verification response");
+
               setResult({
                 ok: false,
-                reason: "No face detected. Please try again.",
+                reason: "Unexpected biometric verification response.",
               });
+
               return;
             }
-
-            setStatus("Face detected. Submitting check-in...");
-            await submitAttendanceCheckIn();
           }
 
-          catch ( err: any) {
+          catch (err: any) {
+
             setResult({
               ok: false,
-              reason: err.message || "Face verification fialed",
+              reason: err.message || "Face verification failed",
             });
-            setStatus("Check-in fialed");
+
+            setStatus("Check-in failed");
           }
 
           finally {
+
             setIsuploadingFace(false);
             setIsCheckingIn(false);
           }
@@ -501,17 +617,39 @@ export default function CheckInScreen()
           </View>
         )}
 
+
         {faceResult && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Face Result</Text>
-            <Text style={styles.cardText}>
-              Faces Detected: {String(faceResult.face_detected ?? 0)}
+
+            <Text style={styles.cardTitle}>
+              Face Result
             </Text>
+
+            <Text style={styles.cardText}>
+              Status: {faceResult.status ?? "Unknown"}
+            </Text>
+
+            {typeof faceResult.confidence === "number" && (
+              <Text style={styles.cardText}>
+                Confidence: {faceResult.confidence.toFixed(3)}
+              </Text>
+            )}
+
+            {typeof faceResult.matches === "number" && (
+              <Text style={styles.cardText}>
+                Matches: {faceResult.matches} / 3
+              </Text>
+            )}
+
             {faceResult.error ? (
-              <Text style={styles.cardText}>Error: {faceResult.error}</Text>
+              <Text style={styles.cardText}>
+                Error: {faceResult.error}
+              </Text>
             ) : null}
+
           </View>
         )}
+
 
         {result && (
           <View style={styles.card}>
