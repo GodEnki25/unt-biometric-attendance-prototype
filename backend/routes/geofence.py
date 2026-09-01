@@ -50,6 +50,8 @@ def check_student_location(payload: GeofenceCheckRequest):
     buffer_m = min(payload.accuracy_m, 50.0)
     allowed_radius_m = MOCK_SESSION["radius_m"] + buffer_m
 
+    #Tile38 is the authorative geofence engine
+    #Frontend only receives the reulsting inside/outside decision.
     inside = check_geofence(
         session_id=MOCK_SESSION["id"],
         user_lat=payload.lat,
