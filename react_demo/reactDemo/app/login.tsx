@@ -15,7 +15,7 @@ import { useState } from "react";
 const API_BASE =
     Platform.OS === "web"
         ? "http://127.0.0.1:8000"
-        : "http://10.161.29.182:8000";
+        : "http://192.168.1.213:8000";
 
 
 export default function LoginScreen()

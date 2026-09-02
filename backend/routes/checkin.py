@@ -4,9 +4,10 @@ from backend.services.face import process_frame
 from datetime import datetime
 
 from backend.services.tile38_service import check_geofence
-from routes.geofence import MOCK_SESSION
+from backend.routes.geofence import MOCK_SESSION
 
 router = APIRouter()
+
 
 # =========================
 # CREATE SESSION
@@ -18,9 +19,9 @@ def create_session(data: dict):
 
     try:
         cursor.execute("""
-        INSERT INTO attendance_sessions 
-        (course_id, session_date, start_time, end_time)
-        VALUES (?, ?, ?, ?)
+            INSERT INTO attendance_sessions
+            (course_id, session_date, start_time, end_time)
+            VALUES (?, ?, ?, ?)
         """, (
             data.get("course_id"),
             data.get("session_date"),
@@ -32,7 +33,10 @@ def create_session(data: dict):
         session_id = cursor.lastrowid
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
     finally:
         conn.close()
@@ -55,27 +59,38 @@ async def checkin(
     file: UploadFile = File(...)
 ):
     if user_id is None:
-        return {"success": False, "message": "Missing user_id"}
+        return {
+            "success": False,
+            "message": "Missing user_id"
+        }
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
+        # =========================
         # AUTO SESSION DETECTION
+        # =========================
         cursor.execute("""
-        SELECT session_id, session_date, start_time, end_time
-        FROM attendance_sessions
-        ORDER BY session_id DESC LIMIT 1
+            SELECT session_id, session_date, start_time, end_time
+            FROM attendance_sessions
+            ORDER BY session_id DESC
+            LIMIT 1
         """)
 
         session = cursor.fetchone()
 
         if not session:
-            return {"success": False, "message": "No active session"}
+            return {
+                "success": False,
+                "message": "No active session"
+            }
 
         session_id = session["session_id"]
 
+        # =========================
         # TIME VALIDATION
+        # =========================
         now = datetime.now()
 
         session_date = session["session_date"]
@@ -84,14 +99,23 @@ async def checkin(
 
         def parse_datetime(dt_str):
             try:
-                 return datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
-            except:
-                 return datetime.strptime(dt_str, "%Y-%m-%d %H:%M")
+                return datetime.strptime(
+                    dt_str,
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            except ValueError:
+                return datetime.strptime(
+                    dt_str,
+                    "%Y-%m-%d %H:%M"
+                )
 
+        start_datetime = parse_datetime(
+            f"{session_date} {start_time}"
+        )
 
-        start_datetime = parse_datetime(f"{session_date} {start_time}")
-        end_datetime = parse_datetime(f"{session_date} {end_time}")
-
+        end_datetime = parse_datetime(
+            f"{session_date} {end_time}"
+        )
 
         if not (start_datetime <= now <= end_datetime):
             return {
@@ -99,10 +123,11 @@ async def checkin(
                 "message": "Check-in not allowed outside session time"
             }
 
-        # GEOFENCE VALIDATION - TILE38
-        
+        # =========================
+        # GEOFENCE VALIDATION
+        # =========================
         if not MOCK_SESSION["is_open"]:
-            return{
+            return {
                 "success": False,
                 "message": "Geofence session is closed"
             }
@@ -113,7 +138,7 @@ async def checkin(
             MOCK_SESSION["radius_m"] + accuracy_buffer_m
         )
 
-        location_verified = check_geofence (
+        location_verified = check_geofence(
             session_id=MOCK_SESSION["id"],
             user_lat=latitude,
             user_lon=longitude,
@@ -128,16 +153,25 @@ async def checkin(
                 "accuracy_m": accuracy,
                 "engine": "tile38"
             }
-        
 
+        # =========================
         # FACE PROCESSING
+        # =========================
         contents = await file.read()
+
         face_result = process_frame(contents)
 
-        faces_detected = face_result.get("faces_detected", 0)
-        confidence = face_result.get("confidence", 0)
+        faces_detected = face_result.get(
+            "faces_detected",
+            0
+        )
 
-        # SECURITY RULE
+        confidence = face_result.get(
+            "confidence",
+            0
+        )
+
+        # Exactly one face must be visible.
         if faces_detected != 1:
             return {
                 "success": False,
@@ -146,13 +180,24 @@ async def checkin(
 
         face_verified = confidence >= 0.75
 
-        status = "present" if face_verified and location_verified else "flagged"
+        status = (
+            "present"
+            if face_verified and location_verified
+            else "flagged"
+        )
 
+        # =========================
         # PREVENT DUPLICATE CHECK-IN
+        # =========================
         cursor.execute("""
-        SELECT * FROM attendance_records
-        WHERE session_id = ? AND student_id = ?
-        """, (session_id, user_id))
+            SELECT *
+            FROM attendance_records
+            WHERE session_id = ?
+            AND student_id = ?
+        """, (
+            session_id,
+            user_id
+        ))
 
         existing = cursor.fetchone()
 
@@ -162,11 +207,19 @@ async def checkin(
                 "message": "Already checked in"
             }
 
-        # INSERT INTO DATABASE
+        # =========================
+        # SAVE ATTENDANCE
+        # =========================
         cursor.execute("""
-        INSERT INTO attendance_records
-        (session_id, student_id, face_verified, location_verified, status)
-        VALUES (?, ?, ?, ?, ?)
+            INSERT INTO attendance_records
+            (
+                session_id,
+                student_id,
+                face_verified,
+                location_verified,
+                status
+            )
+            VALUES (?, ?, ?, ?, ?)
         """, (
             session_id,
             user_id,
@@ -178,7 +231,10 @@ async def checkin(
         conn.commit()
 
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {
+            "success": False,
+            "error": str(e)
+        }
 
     finally:
         conn.close()
@@ -203,7 +259,42 @@ def get_checkins():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT * FROM attendance_records")
+    cursor.execute("""
+        SELECT
+            u.user_id AS student_id,
+            u.full_name AS student_name,
+
+            ar.attendance_id,
+            ar.session_id,
+            ar.check_in_time,
+            ar.face_verified,
+            ar.location_verified,
+
+            CASE
+                WHEN ar.attendance_id IS NULL THEN 'absent'
+                ELSE ar.status
+            END AS status
+
+        FROM course_enrollments ce
+
+        JOIN users u
+            ON u.user_id = ce.student_id
+
+        LEFT JOIN attendance_records ar
+            ON ar.attendance_id = (
+                SELECT ar2.attendance_id
+                FROM attendance_records ar2
+                WHERE ar2.student_id = u.user_id
+                ORDER BY ar2.attendance_id DESC
+                LIMIT 1
+            )
+
+        WHERE ce.course_id = 1
+        AND u.role = 'student'
+
+        ORDER BY u.full_name
+    """)
+
     records = cursor.fetchall()
 
     conn.close()
