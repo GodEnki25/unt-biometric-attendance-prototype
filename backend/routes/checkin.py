@@ -3,6 +3,7 @@ from backend.database.db import get_db_connection
 from backend.services.face import process_frame
 from datetime import datetime
 
+from backend.services.tile38_service import check_geofence
 from routes.geofence import MOCK_SESSION
 
 router = APIRouter()
