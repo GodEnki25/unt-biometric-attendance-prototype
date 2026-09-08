@@ -305,12 +305,34 @@ npm install
 
 ## One-Command Development Startup
 
+The project includes a helper script named `start-dev.sh` in the project root.
+
+### Prerequisite
+
+If using WSL2 with Docker Desktop, start Docker Desktop in Windows first and wait until it is fully running.
+
 From the project root:
 
-``` bash
-npm install
-npm run dev
+```bash
+chmod +x start-dev.sh
+./start-dev.sh
 ```
+
+The script will
+
+- Verify Docker is available through WSL.
+- Start the Tile38 Docker container.
+- Start the FastAPI backend.
+- Start the Expo frontend using tunnel mode.
+
+When running:
+
+- FastAPI: `http://127.0.0.1:8000`
+- Swagger API docs: `http://127.0.0.1:8000/docs`
+- Tile38: `localhost:9851`
+
+Press `Ctrl+c` to stop FastAPI and Expo.
+ - Tile38 remains running in Docker after the script exits.
 
 > This starts the development services used by the project, including the FastAPI backend and Expo frontend.
 
