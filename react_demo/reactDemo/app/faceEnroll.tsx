@@ -6,139 +6,405 @@ import {
     Image
 } from "react-native";
 
-import { useRouter } from "expo-router";
-import { useState, useRef } from "react";
-import { CameraView } from "expo-camera";
+import {
+    CameraView,
+    useCameraPermissions
+} from "expo-camera";
+
+import { File } from "expo-file-system";
+import { fetch } from "expo/fetch";
+
+import {
+    useLocalSearchParams,
+    useRouter
+} from "expo-router";
+
+import {
+    useEffect,
+    useRef,
+    useState
+} from "react";
+
+
+const API_BASE = "http://192.168.1.229:8000";
 
 
 export default function FaceEnrollScreen() {
 
     const router = useRouter();
 
-    // Keeps track of how many valid captures
-    // the backend has accepted
-    const [captureCount, setCaptureCount] = useState(0);
+    const params = useLocalSearchParams();
 
-    // Gives us direct access to the CameraView
-    const cameraRef = useRef<CameraView | null>(null);
+    const userId = params.userId?.toString();
 
 
-    async function handleCapture() {
+    const [permission, requestPermission] =
+        useCameraPermissions();
 
-        // Get the current camera instance
-        const camera = cameraRef.current;
 
-        // Stop if camera is not ready
+    const [cameraReady, setCameraReady] =
+        useState(false);
+
+
+    const [captureCount, setCaptureCount] =
+        useState(0);
+
+
+    const [statusMessage, setStatusMessage] =
+        useState(
+            "Position your face inside the frame"
+        );
+
+
+    const cameraRef =
+        useRef<CameraView | null>(null);
+
+
+    const isCapturing =
+        useRef(false);
+
+
+    const stopScanning =
+        useRef(false);
+
+
+    async function captureFrame() {
+
+        if (stopScanning.current) {
+            return;
+        }
+
+
+        if (isCapturing.current) {
+            return;
+        }
+
+
+        if (!cameraReady) {
+            return;
+        }
+
+
+        const camera =
+            cameraRef.current;
+
+
         if (!camera) {
             return;
         }
 
 
+        if (!userId) {
+
+            setStatusMessage(
+                "User information missing"
+            );
+
+            return;
+        }
+
+
+        isCapturing.current = true;
+
+
         try {
 
-            // Capture an actual image from the front camera
-            const photo = await camera.takePictureAsync({
-                quality: 0.8
-            });
+            const photo =
+                await camera.takePictureAsync({
+                    quality: 0.7,
+                    skipProcessing: true
+                });
 
-            // Stop if image capture failed
-            if (!photo) {
+
+            if (!photo?.uri) {
+
+                setStatusMessage(
+                    "Unable to capture camera frame"
+                );
+
                 return;
             }
 
 
-            // Create FormData because FastAPI expects:
-            // user_id + image file
-            const formData = new FormData();
+            const formData =
+                new FormData();
 
 
-            // TEMPORARY USER ID
-            // Later replace this with the actual user ID
-            // returned after signup/login
             formData.append(
                 "user_id",
-                "1"
+                userId
             );
 
 
-            // Add captured image to the request
+            const imageFile =
+                new File(photo.uri);
+
+
             formData.append(
                 "file",
-                {
-                    uri: photo.uri,
-                    name: "face.jpg",
-                    type: "image/jpeg"
-                } as any
+                imageFile
             );
 
 
-            // Send image to FastAPI enrollment route
-            const response = await fetch(
-                "http://YOUR_PC_IP:8000/enroll",
-                {
-                    method: "POST",
-                    body: formData
-                }
+            const response =
+                await fetch(
+                    `${API_BASE}/enroll`,
+                    {
+                        method: "POST",
+                        body: formData
+                    }
+                );
+
+
+            const result =
+                await response.json();
+
+
+            console.log(
+                "Enrollment response:",
+                result
             );
 
 
-            // Convert FastAPI JSON response
-            // into a JavaScript object
-            const result = await response.json();
+            if (
+                result.status ===
+                "invalid_face_count"
+            ) {
+
+                setStatusMessage(
+                    "Keep only one face visible"
+                );
+
+                return;
+            }
 
 
-            // Useful while testing
-            console.log("Enrollment response:", result);
+            if (
+                result.status ===
+                "face_outside_frame"
+            ) {
+
+                setStatusMessage(
+                    "Keep your face inside the guide"
+                );
+
+                return;
+            }
 
 
-            // Backend successfully accepted the frame
-            // but still needs more captures
-            if (result.status === "collecting") {
+            if (
+                result.status ===
+                "move_closer"
+            ) {
+
+                setStatusMessage(
+                    "Move closer to the camera"
+                );
+
+                return;
+            }
+
+
+            if (
+                result.status ===
+                "center_face"
+            ) {
+
+                setStatusMessage(
+                    "Center your face"
+                );
+
+                return;
+            }
+
+
+            if (
+                result.status ===
+                "embedding_failed"
+            ) {
+
+                setStatusMessage(
+                    "Face scan failed. Hold still."
+                );
+
+                return;
+            }
+
+
+            if (
+                result.status ===
+                "collecting"
+            ) {
 
                 setCaptureCount(
                     result.captures
                 );
-            }
 
 
-            // Enrollment finished successfully
-            if (result.status === "enrolled") {
-
-                setCaptureCount(5);
-
-                // Move user to login screen
-                router.push("/login");
-            }
-
-
-            // Backend detected no valid single face
-            if (result.status === "invalid_face_count") {
-
-                console.log(
-                    "Please make sure only one face is visible."
+                setStatusMessage(
+                    "Scanning..."
                 );
+
+                return;
             }
 
 
-            // Backend could not decode the image
-            if (result.status === "invalid_frame") {
+            if (
+                result.status ===
+                "enrolled"
+            ) {
 
-                console.log(
-                    "Invalid camera frame."
+                stopScanning.current =
+                    true;
+
+
+                setCaptureCount(10);
+
+
+                setStatusMessage(
+                    "Enrollment complete"
                 );
+
+
+                setTimeout(() => {
+
+                    router.replace(
+                        "/login"
+                    );
+
+                }, 700);
             }
 
         }
 
         catch (error) {
 
-            // Happens if React cannot reach FastAPI
-            // or another request error occurs
             console.log(
                 "Enrollment error:",
                 error
             );
+
+
+            setStatusMessage(
+                "Unable to connect to biometric server"
+            );
         }
+
+        finally {
+
+            isCapturing.current =
+                false;
+        }
+    }
+
+
+    useEffect(() => {
+
+        if (!permission) {
+            return;
+        }
+
+
+        if (!permission.granted) {
+
+            requestPermission();
+        }
+
+    }, [permission]);
+
+
+    useEffect(() => {
+
+        if (!cameraReady) {
+            return;
+        }
+
+
+        if (!permission?.granted) {
+            return;
+        }
+
+
+        stopScanning.current =
+            false;
+
+
+        const interval =
+            setInterval(() => {
+
+                captureFrame();
+
+            }, 1200);
+
+
+        return () => {
+
+            stopScanning.current =
+                true;
+
+            clearInterval(interval);
+        };
+
+    }, [
+        cameraReady,
+        permission?.granted,
+        userId
+    ]);
+
+
+    function handleBack() {
+
+        stopScanning.current =
+            true;
+
+        router.back();
+    }
+
+
+    if (!permission) {
+
+        return (
+
+            <View style={styles.container}>
+
+                <Text>
+                    Loading camera permission...
+                </Text>
+
+            </View>
+        );
+    }
+
+
+    if (!permission.granted) {
+
+        return (
+
+            <View style={styles.permissionContainer}>
+
+                <Text style={styles.permissionText}>
+                    Camera permission is required
+                    for face enrollment.
+                </Text>
+
+
+                <Pressable
+                    style={styles.permissionButton}
+                    onPress={requestPermission}
+                >
+
+                    <Text
+                        style={
+                            styles.permissionButtonText
+                        }
+                    >
+                        Allow Camera
+                    </Text>
+
+                </Pressable>
+
+            </View>
+        );
     }
 
 
@@ -149,24 +415,32 @@ export default function FaceEnrollScreen() {
             <View style={styles.header}>
 
                 <Pressable
-                    onPress={() => router.back()}
+                    onPress={handleBack}
                     style={styles.backButton}
                 >
 
-                    <Text style={styles.backButtonText}>
+                    <Text
+                        style={
+                            styles.backButtonText
+                        }
+                    >
                         {"⬅"}
                     </Text>
 
                 </Pressable>
 
 
-                <Text style={styles.headerTitle}>
+                <Text
+                    style={styles.headerTitle}
+                >
                     Face Enrollment
                 </Text>
 
 
                 <Image
-                    source={require("../assets/logo.png")}
+                    source={require(
+                        "../assets/logo.png"
+                    )}
                     style={styles.headerLogo}
                 />
 
@@ -179,29 +453,46 @@ export default function FaceEnrollScreen() {
 
                     <CameraView
                         ref={cameraRef}
-                        style={styles.cameraPreview}
+                        style={
+                            styles.cameraPreview
+                        }
                         facing="front"
+                        onCameraReady={() => {
+
+                            console.log(
+                                "Camera ready"
+                            );
+
+                            setCameraReady(true);
+                        }}
+                    />
+
+
+                    <View
+                        pointerEvents="none"
+                        style={styles.faceGuide}
                     />
 
                 </View>
 
 
-                <Pressable
-                    style={styles.captureButton}
-                    onPress={handleCapture}
+                <Text
+                    style={
+                        styles.instructionText
+                    }
                 >
-
-                    <Text style={styles.captureButtonText}>
-                        Capture
-                    </Text>
-
-                </Pressable>
+                    {statusMessage}
+                </Text>
 
 
-                <Text style={styles.capturedImageCount}>
-
-                    Image Captured: {captureCount} / 5
-
+                <Text
+                    style={
+                        styles.capturedImageCount
+                    }
+                >
+                    Scanning Face:
+                    {" "}
+                    {captureCount} / 10
                 </Text>
 
             </View>
@@ -211,151 +502,208 @@ export default function FaceEnrollScreen() {
 }
 
 
-const styles = StyleSheet.create({
+const styles =
+    StyleSheet.create({
 
-    background: {
-        flex: 1
-    },
+        background: {
+            flex: 1
+        },
 
-    backgroundImage: {
-        transform: [
-            {
-                scale: 1.3
-            }
-        ]
-    },
+        backgroundImage: {
+            transform: [
+                {
+                    scale: 1.3
+                }
+            ]
+        },
 
-    container: {
-        flex: 1
-    },
+        container: {
+            flex: 1
+        },
 
 
-    header: {
+        header: {
 
-        height: 90,
+            height: 90,
 
-        backgroundColor: "#0f5c00",
+            backgroundColor: "#0f5c00",
 
-        paddingHorizontal: 20,
+            paddingHorizontal: 20,
 
-        paddingTop: 40,
+            paddingTop: 40,
 
-        alignItems: "center",
+            alignItems: "center",
 
-        borderBottomWidth: 1,
+            borderBottomWidth: 1,
 
-        borderBottomColor: "#ddd",
+            borderBottomColor: "#ddd",
 
-        flexDirection: "row"
-    },
+            flexDirection: "row"
+        },
 
 
-    backButton: {
-        width: 40
-    },
+        backButton: {
+            width: 40
+        },
 
 
-    backButtonText: {
+        backButtonText: {
 
-        fontSize: 26,
+            fontSize: 26,
 
-        fontWeight: "bold",
+            fontWeight: "bold",
 
-        color: "white"
-    },
+            color: "white"
+        },
 
 
-    headerTitle: {
+        headerTitle: {
 
-        flex: 1,
+            flex: 1,
 
-        fontSize: 22,
+            fontSize: 22,
 
-        fontWeight: "bold",
+            fontWeight: "bold",
 
-        textAlign: "center",
+            textAlign: "center",
 
-        color: "white"
-    },
+            color: "white"
+        },
 
 
-    headerLogo: {
+        headerLogo: {
 
-        width: 45,
+            width: 45,
 
-        height: 45,
+            height: 45,
 
-        borderRadius: 8
-    },
+            borderRadius: 8
+        },
 
 
-    content: {
+        content: {
 
-        flex: 1,
+            flex: 1,
 
-        justifyContent: "center",
+            justifyContent: "center",
 
-        alignItems: "center",
+            alignItems: "center",
 
-        padding: 20
-    },
+            padding: 20
+        },
 
 
-    cameraBox: {
+        cameraBox: {
 
-        width: "100%",
+            width: "100%",
 
-        maxWidth: 380,
+            maxWidth: 380,
 
-        height: 400,
+            height: 400,
 
-        borderRadius: 20,
+            borderRadius: 20,
 
-        overflow: "hidden",
+            overflow: "hidden",
 
-        marginBottom: 90,
+            marginBottom: 30,
 
-        backgroundColor: "#000"
-    },
+            backgroundColor: "#000",
 
+            position: "relative"
+        },
 
-    cameraPreview: {
-        flex: 1
-    },
 
+        cameraPreview: {
+            flex: 1
+        },
 
-    captureButton: {
 
-        backgroundColor: "#0f5c00",
+        faceGuide: {
 
-        paddingVertical: 14,
+            position: "absolute",
 
-        paddingHorizontal: 30,
+            width: 220,
 
-        borderRadius: 10,
+            height: 280,
 
-        marginBottom: 20,
+            top: 55,
 
-        alignItems: "center"
-    },
+            alignSelf: "center",
 
+            borderWidth: 4,
 
-    captureButtonText: {
+            borderColor: "white",
 
-        color: "white",
+            borderRadius: 120
+        },
 
-        fontSize: 16,
 
-        fontWeight: "bold"
-    },
+        instructionText: {
 
+            color: "#0a3a00",
 
-    capturedImageCount: {
+            fontSize: 18,
 
-        color: "#0a3a00",
+            fontWeight: "600",
 
-        fontSize: 42,
+            marginBottom: 20,
 
-        fontWeight: "bold"
-    }
-});
+            textAlign: "center"
+        },
+
+
+        capturedImageCount: {
+
+            color: "#0a3a00",
+
+            fontSize: 32,
+
+            fontWeight: "bold",
+
+            textAlign: "center"
+        },
+
+
+        permissionContainer: {
+
+            flex: 1,
+
+            alignItems: "center",
+
+            justifyContent: "center",
+
+            padding: 30
+        },
+
+
+        permissionText: {
+
+            fontSize: 18,
+
+            textAlign: "center",
+
+            marginBottom: 25
+        },
+
+
+        permissionButton: {
+
+            backgroundColor: "#0f5c00",
+
+            paddingVertical: 14,
+
+            paddingHorizontal: 30,
+
+            borderRadius: 10
+        },
+
+
+        permissionButtonText: {
+
+            color: "white",
+
+            fontSize: 16,
+
+            fontWeight: "bold"
+        }
+    });

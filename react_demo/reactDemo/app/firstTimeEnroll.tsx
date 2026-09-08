@@ -1,68 +1,182 @@
+import {
+    View,
+    Text,
+    StyleSheet,
+    Pressable,
+    Image,
+    ImageBackground
+} from "react-native";
 
-import { View, Text, StyleSheet, Pressable, Image, ImageBackground } from "react-native";
-import { useRouter } from "expo-router";
+import {
+    useLocalSearchParams,
+    useRouter
+} from "expo-router";
 
-export default function FirstTimeEnrollScreen()
-{
+
+export default function FirstTimeEnrollScreen() {
+
     const router = useRouter();
 
+    const params = useLocalSearchParams();
+
+    const userId = params.userId?.toString();
+
+
+    function handleAccept() {
+
+        if (!userId) {
+
+            console.log(
+                "Missing userId from signup"
+            );
+
+            return;
+        }
+
+
+        router.push({
+            pathname: "/faceEnroll",
+
+            params: {
+                userId: userId
+            }
+        });
+    }
+
+
+    function handleDecline() {
+
+        router.replace("/login");
+    }
+
+
     return (
+
         <ImageBackground
             source={require("../assets/background.png")}
             style={styles.background}
             imageStyle={styles.backgroundImage}
         >
-        <View style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <Pressable onPress={() => router.back()} style={styles.backButton}>
-                    <Text style={styles.backButtonText}>{"<"}</Text>
-                </Pressable>
 
-                <Text style={styles.headerTitle}>Consent Form</Text>
+            <View style={styles.container}>
 
-                <Image
-                    source={require("../assets/logo.png")}
-                    style={styles.headerLogo}
-                />
-            </View>
 
-            {/* Permission Box */}
-            <View style={styles.content}>
-                <View style={styles.permissionBox}>
-                    <Text style={styles.title}>Camera Permission</Text>
-                    <Text style={styles.message}>
-                        This app needs permission to use your camera.
+                {/* Header */}
+
+                <View style={styles.header}>
+
+                    <Pressable
+                        onPress={() => router.back()}
+                        style={styles.backButton}
+                    >
+
+                        <Text style={styles.backButtonText}>
+                            {"<"}
+                        </Text>
+
+                    </Pressable>
+
+
+                    <Text style={styles.headerTitle}>
+                        Consent Form
                     </Text>
 
-                    <View style={styles.buttonRow}>
-                        <Pressable style={styles.acceptButton} onPress={() => router.push("/faceEnroll")}>
-                            <Text style={styles.buttonText}>Accept</Text>
-                        </Pressable>
 
-                        <Pressable style={styles.declineButton}  onPress={() => router.push("/login")}>
-                            <Text style={styles.buttonText}>Decline</Text>
-                        </Pressable>
-                    </View>
+                    <Image
+                        source={require("../assets/logo.png")}
+                        style={styles.headerLogo}
+                    />
+
                 </View>
+
+
+                {/* Permission Box */}
+
+                <View style={styles.content}>
+
+                    <View style={styles.permissionBox}>
+
+
+                        <Text style={styles.title}>
+                            Camera Permission
+                        </Text>
+
+
+                        <Text style={styles.message}>
+
+                            This app needs permission to use your camera
+                            for biometric face enrollment.
+
+                            {"\n\n"}
+
+                            Your face will be scanned automatically and
+                            processed to create your biometric profile.
+
+                        </Text>
+
+
+                        <View style={styles.buttonRow}>
+
+
+                            <Pressable
+                                style={styles.acceptButton}
+                                onPress={handleAccept}
+                            >
+
+                                <Text style={styles.buttonText}>
+                                    Accept
+                                </Text>
+
+                            </Pressable>
+
+
+                            <Pressable
+                                style={styles.declineButton}
+                                onPress={handleDecline}
+                            >
+
+                                <Text style={styles.buttonText}>
+                                    Decline
+                                </Text>
+
+                            </Pressable>
+
+
+                        </View>
+
+                    </View>
+
+                </View>
+
             </View>
-        </View>
+
         </ImageBackground>
     );
 }
 
-const styles = StyleSheet.create({
-    background: {
-        flex: 1,
 
+const styles = StyleSheet.create({
+
+    background: {
+        flex: 1
     },
+
+
     backgroundImage: {
-        transform: [{ scale:1.3 }]
+        transform: [
+            {
+                scale: 1.3
+            }
+        ]
     },
+
+
     container: {
         flex: 1,
         backgroundColor: "#f2f2f2"
     },
+
+
     header: {
         height: 90,
         backgroundColor: "#0f5c00",
@@ -73,15 +187,20 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: "#ddd"
     },
+
+
     backButton: {
         width: 40
     },
+
+
     backButtonText: {
         fontSize: 26,
         fontWeight: "bold",
         color: "white"
-        
     },
+
+
     headerTitle: {
         flex: 1,
         fontSize: 22,
@@ -89,17 +208,23 @@ const styles = StyleSheet.create({
         textAlign: "center",
         color: "white"
     },
+
+
     headerLogo: {
         width: 45,
         height: 45,
         borderRadius: 8
     },
+
+
     content: {
         flex: 1,
         justifyContent: "center",
         alignItems: "center",
         padding: 20
     },
+
+
     permissionBox: {
         width: "100%",
         maxWidth: 350,
@@ -111,21 +236,29 @@ const styles = StyleSheet.create({
         shadowRadius: 6,
         elevation: 5
     },
+
+
     title: {
         fontSize: 22,
         fontWeight: "bold",
         marginBottom: 10,
         textAlign: "center"
     },
+
+
     message: {
         fontSize: 16,
         textAlign: "center",
         marginBottom: 20
     },
+
+
     buttonRow: {
         flexDirection: "row",
         justifyContent: "space-between"
     },
+
+
     acceptButton: {
         flex: 1,
         marginRight: 10,
@@ -134,6 +267,8 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         alignItems: "center"
     },
+
+
     declineButton: {
         flex: 1,
         marginLeft: 10,
@@ -142,6 +277,8 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         alignItems: "center"
     },
+
+
     buttonText: {
         color: "white",
         fontSize: 16,

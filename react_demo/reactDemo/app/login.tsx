@@ -15,27 +15,23 @@ import { useState } from "react";
 const API_BASE =
     Platform.OS === "web"
         ? "http://127.0.0.1:8000"
-        : "http://192.168.1.213:8000";
+        : "http://192.168.1.229:8000";
 
 
 export default function LoginScreen()
 {
     const router = useRouter();
 
-    // Stores what the user types
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
 
-    // Used to display login errors
     const [error, setError] = useState("");
 
-    // Prevents multiple login requests at once
     const [isLoggingIn, setIsLoggingIn] = useState(false);
 
 
     async function handleLogin()
     {
-        // Basic check before sending request
         if (!email || !password)
         {
             setError("Please enter your email and password.");
@@ -48,7 +44,6 @@ export default function LoginScreen()
             setError("");
 
 
-            // Send email + password to backend/routes/auth_routes.py
             const response = await fetch(`${API_BASE}/login`, {
                 method: "POST",
 
@@ -57,40 +52,24 @@ export default function LoginScreen()
                 },
 
                 body: JSON.stringify({
-                    email: email,
+                    email: email.trim().toLowerCase(),
                     password: password,
                 }),
             });
 
 
-            // Convert backend JSON response into JavaScript object
             const data = await response.json();
 
 
-            // Your backend returns success: false
-            // when credentials are incorrect
             if (!data.success)
             {
-                setError(data.message || "Login failed.");
+                setError(
+                    data.message || "Login failed."
+                );
+
                 return;
             }
 
-
-            /*
-                Backend gives us:
-
-                {
-                    success: true,
-                    user: {
-                        id: ...,
-                        name: ...,
-                        role: ...
-                    }
-                }
-
-                We take the database user_id from data.user.id
-                and send it to dashboard.
-            */
 
             const userId = data.user.id;
 
@@ -106,9 +85,14 @@ export default function LoginScreen()
 
         catch (err)
         {
-            console.log("Login error:", err);
+            console.log(
+                "Login error:",
+                err
+            );
 
-            setError("Could not connect to the server.");
+            setError(
+                "Could not connect to the server."
+            );
         }
 
         finally
@@ -122,9 +106,11 @@ export default function LoginScreen()
         <View style={styles.container}>
 
             <View style={styles.header}>
+
                 <Text style={styles.headerTitle}>
                     UNT Student Login
                 </Text>
+
             </View>
 
 
@@ -142,6 +128,7 @@ export default function LoginScreen()
                     value={email}
                     onChangeText={setEmail}
                     autoCapitalize="none"
+                    keyboardType="email-address"
                 />
 
 
@@ -155,16 +142,19 @@ export default function LoginScreen()
 
 
                 {error ? (
+
                     <Text style={styles.errorText}>
                         {error}
                     </Text>
+
                 ) : null}
 
 
                 <Pressable
                     style={[
                         styles.loginButton,
-                        isLoggingIn && styles.disabledButton
+                        isLoggingIn &&
+                        styles.disabledButton
                     ]}
                     onPress={handleLogin}
                     disabled={isLoggingIn}
@@ -172,9 +162,11 @@ export default function LoginScreen()
 
                     <Text style={styles.loginButtonText}>
 
-                        {isLoggingIn
-                            ? "Logging in..."
-                            : "Login"}
+                        {
+                            isLoggingIn
+                                ? "Logging in..."
+                                : "Login"
+                        }
 
                     </Text>
 
@@ -182,7 +174,9 @@ export default function LoginScreen()
 
 
                 <Pressable
-                    onPress={() => router.push("/firstTimeEnroll")}
+                    onPress={() =>
+                        router.push("/enrollSignup")
+                    }
                 >
 
                     <Text style={styles.enrollLink}>

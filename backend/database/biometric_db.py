@@ -9,10 +9,10 @@ def save_face_embedding(user_id, embedding):
     embedding_blob = embedding.astype(np.float32).tobytes()
 
     cursor.execute("""
-        INSERT INTO face_profiles (user_id, embedding)
+        INSERT INTO face_profiles (user_id, embedding_path)
         VALUES (?, ?)
         ON CONFLICT(user_id)
-        DO UPDATE SET embedding = excluded.embedding
+        DO UPDATE SET embedding_path = excluded.embedding_path
     """, (user_id, embedding_blob))
 
     conn.commit()
@@ -24,7 +24,7 @@ def get_face_embedding(user_id):
     cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT embedding
+        SELECT embedding_path
         FROM face_profiles
         WHERE user_id = ?
     """, (user_id,))
@@ -32,10 +32,10 @@ def get_face_embedding(user_id):
     result = cursor.fetchone()
     conn.close()
 
-    if result is None or result["embedding"] is None:
+    if result is None or result["embedding_path"] is None:
         return None
 
     return np.frombuffer(
-        result["embedding"],
+        result["embedding_path"],
         dtype=np.float32
     )

@@ -1,3 +1,4 @@
+
 from fastapi import APIRouter, UploadFile, File, Form
 
 import cv2
@@ -7,8 +8,9 @@ from biometrics.backend.enrollment.enrollment_layer import EnrollmentManager
 from biometrics.backend.verification.verification_layer import Verifier
 from backend.database.biometric_db import get_face_embedding
 
+
 # ------------------------------------------------
-# FASTAPI APPLICATION
+# FASTAPI ROUTER
 # ------------------------------------------------
 
 router = APIRouter()
@@ -18,9 +20,10 @@ router = APIRouter()
 # ENROLLMENT MANAGER
 # ------------------------------------------------
 
-# Keeps enrollment embeddings between incoming frames
+# Keeps enrollment embeddings between incoming frames.
+# Enrollment completes after 10 valid captures.
 enrollment_manager = EnrollmentManager(
-    required_captures=5
+    required_captures=10
 )
 
 
@@ -90,7 +93,6 @@ async def enroll_face(
             "status": "invalid_frame"
         }
 
-
     # Pass the user and frame into the enrollment manager
     #
     # EnrollmentManager handles:
@@ -145,19 +147,12 @@ async def verify_face(
                 "status": "face_not_enrolled"
             }
 
-
-        # ------------------------------------------------
-        # Your existing Verifier expects a DATABASE.
-        #
         # Since we already know which logged-in user
         # is being verified, create a database containing
         # only that user.
-        # ------------------------------------------------
-
         user_database = {
             str(user_id): stored_embedding
         }
-
 
         # Create Verifier and keep it alive between frames
         verification_sessions[user_id] = Verifier(
@@ -199,3 +194,4 @@ async def verify_face(
 
     # Send result back to React Native
     return result
+
