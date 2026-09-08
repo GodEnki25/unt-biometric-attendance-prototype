@@ -39,6 +39,12 @@ type StudentRow = {
     status: string;
 };
 
+type GeofenceOption = {
+    name: string;
+    lat: number;
+    lon: number;
+};
+
 
 export default function InstructorDashboard() {
     const router = useRouter();
@@ -59,6 +65,22 @@ export default function InstructorDashboard() {
     const [selectedItem3, setSelectedItem3] =
         useState("Date");
 
+    const [selectedGeofence, setSelectedGeofence] =
+        useState<GeofenceOption>({
+            name: "Current Test Location",
+            lat: 32.5353638,
+            lon: -96.3324661252
+        });
+
+    const [radiusM, setRadiusM] =
+        useState(75);
+
+    const [sessionActive, setSessionActive] =
+        useState(false);
+
+    const [sessionStatus, setSessionStatus] =
+        useState("No active session");
+
 
     const allowed_courses = [
         "CSCE 4901.501",
@@ -77,6 +99,21 @@ export default function InstructorDashboard() {
         "09/01/26",
         "08/31/26",
         "08/28/26"
+    ];
+
+    const allowed_geofences: GeofenceOption[] = [
+        {
+            name: "Current Test Location",
+            lat: 32.5353638,
+            lon: -96.3324661252
+        }
+    ];
+
+    const allowed_radii = [
+        25,
+        50,
+        75,
+        100
     ];
 
 
@@ -239,6 +276,97 @@ const formatTime = (dateTime: string) => {
     };
 
 
+
+    const startSession = async () => {
+        try {
+            const response = await fetch(
+                `${API_BASE}/geofence/session/start`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        center_lat: selectedGeofence.lat,
+                        center_lon: selectedGeofence.lon,
+                        radius_m: radiusM
+                    })
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    `Server returned ${response.status}`
+                );
+            }
+
+            const data = await response.json();
+
+            console.log(
+                "Geofence session started:",
+                data
+            );
+
+            setSessionActive(true);
+            setSessionStatus(
+                `Session Active - ${selectedGeofence.name} (${radiusM}m)`
+            );
+
+        } catch (error) {
+            console.error(
+                "Failed to start geofence session:",
+                error
+            );
+
+            Alert.alert(
+                "Start Session Failed",
+                "Could not start the geofence session."
+            );
+        }
+    };
+
+
+    const endSession = async () => {
+        try {
+            const response = await fetch(
+                `${API_BASE}/geofence/session/end`,
+                {
+                    method: "POST"
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    `Server returned ${response.status}`
+                );
+            }
+
+            const data = await response.json();
+
+            console.log(
+                "Geofence session ended:",
+                data
+            );
+
+            setSessionActive(false);
+            setSessionStatus(
+                "No active session"
+            );
+
+        } catch (error) {
+            console.error(
+                "Failed to end geofence session:",
+                error
+            );
+
+            Alert.alert(
+                "End Session Failed",
+                "Could not end the geofence session."
+            );
+        }
+    };
+
+
     const downloadCSVFile = () => {
         if (Platform.OS !== "web") {
             Alert.alert(
@@ -330,6 +458,102 @@ const formatTime = (dateTime: string) => {
 
                 {/* Course / Room / Date Bar */}
                 <View style={styles.infoBar}>
+
+                    {/* Geofence */}
+                    <View style={styles.infoSection}>
+
+                        <Text style={styles.infoLabel}>
+                            Geofence:
+                        </Text>
+
+                        <TouchableOpacity
+                            style={styles.dropdownButton}
+                            onPress={() =>
+                                toggleDropdown(4)
+                            }
+                        >
+                            <Text style={styles.buttonText}>
+                                {selectedGeofence.name}
+                            </Text>
+
+                            <Text style={styles.arrow}>
+                                {openDropdown === 4
+                                    ? "▲"
+                                    : "▼"}
+                            </Text>
+                        </TouchableOpacity>
+
+                        {openDropdown === 4 && (
+                            <View style={styles.dropdownMenu}>
+                                {allowed_geofences.map(
+                                    (item) => (
+                                        <TouchableOpacity
+                                            key={item.name}
+                                            style={styles.dropdownItem}
+                                            onPress={() => {
+                                                setSelectedGeofence(item);
+                                                setOpenDropdown(null);
+                                            }}
+                                        >
+                                            <Text style={styles.itemText}>
+                                                {item.name}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )
+                                )}
+                            </View>
+                        )}
+
+                    </View>
+
+
+                    {/* Radius */}
+                    <View style={styles.infoSection}>
+
+                        <Text style={styles.infoLabel}>
+                            Radius:
+                        </Text>
+
+                        <TouchableOpacity
+                            style={styles.dropdownButton}
+                            onPress={() =>
+                                toggleDropdown(5)
+                            }
+                        >
+                            <Text style={styles.buttonText}>
+                                {radiusM} meters
+                            </Text>
+
+                            <Text style={styles.arrow}>
+                                {openDropdown === 5
+                                    ? "▲"
+                                    : "▼"}
+                            </Text>
+                        </TouchableOpacity>
+
+                        {openDropdown === 5 && (
+                            <View style={styles.dropdownMenu}>
+                                {allowed_radii.map(
+                                    (radius) => (
+                                        <TouchableOpacity
+                                            key={radius}
+                                            style={styles.dropdownItem}
+                                            onPress={() => {
+                                                setRadiusM(radius);
+                                                setOpenDropdown(null);
+                                            }}
+                                        >
+                                            <Text style={styles.itemText}>
+                                                {radius} meters
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )
+                                )}
+                            </View>
+                        )}
+
+                    </View>
+
 
                     {/* Course */}
                     <View style={styles.infoSection}>
@@ -537,7 +761,13 @@ const formatTime = (dateTime: string) => {
                     >
 
                         <TouchableOpacity
-                            style={styles.startButton}
+                            style={[
+                                styles.startButton,
+                                sessionActive &&
+                                    styles.disabledButton
+                            ]}
+                            onPress={startSession}
+                            disabled={sessionActive}
                         >
                             <Text
                                 style={
@@ -550,7 +780,13 @@ const formatTime = (dateTime: string) => {
 
 
                         <TouchableOpacity
-                            style={styles.endButton}
+                            style={[
+                                styles.endButton,
+                                !sessionActive &&
+                                    styles.disabledButton
+                            ]}
+                            onPress={endSession}
+                            disabled={!sessionActive}
                         >
                             <Text
                                 style={
@@ -562,6 +798,10 @@ const formatTime = (dateTime: string) => {
                         </TouchableOpacity>
 
                     </View>
+
+                    <Text style={styles.sessionStatusText}>
+                        {sessionStatus}
+                    </Text>
 
 
                     {/* Student Table */}
@@ -894,6 +1134,18 @@ const styles = StyleSheet.create({
         color: "white",
         fontSize: 18,
         fontWeight: "bold"
+    },
+
+    disabledButton: {
+        opacity: 0.4
+    },
+
+    sessionStatusText: {
+        textAlign: "center",
+        fontSize: 16,
+        fontWeight: "bold",
+        color: "#0b7d3b",
+        marginBottom: 20
     },
 
     tableContainer: {

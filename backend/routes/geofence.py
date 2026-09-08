@@ -17,6 +17,10 @@ MOCK_SESSION = {
     "is_open": True,
 }
 
+class StartGeofenceSessionRequest(BaseModel):
+    center_lat: float
+    center_lon: float
+    radius_m: float = Field(ge=5, le=1000)
 
 class GeofenceCheckRequest(BaseModel):
     lat: float
@@ -28,6 +32,36 @@ class GeofenceCheckRequest(BaseModel):
 def get_active_geofence_session():
     return MOCK_SESSION
 
+@router.post("/session/start")
+def start_geofence_session(payload: StartGeofenceSessionRequest):
+
+    MOCK_SESSION["center_lat"] = payload.center_lat
+    MOCK_SESSION["center_lon"] = payload.center_lon
+    MOCK_SESSION["radius_m"] = payload.radius_m
+    MOCK_SESSION["is_open"] = True
+
+    save_geofence(
+        session_id=MOCK_SESSION["id"],
+        center_lat=MOCK_SESSION["center_lat"],
+        center_lon=MOCK_SESSION["center_lon"],
+    )
+
+    return {
+        "message": "Geofence session started",
+        "session": MOCK_SESSION,
+        "engine": "tile38",
+    }
+
+@router.post("/session/end")
+def end_geofence_session():
+
+    MOCK_SESSION["is_open"] = False
+
+    return {
+        "message": "Geofence session ended",
+        "session": MOCK_SESSION,
+        "engine": "tile38",
+    }
 
 @router.post("/check")
 def check_student_location(payload: GeofenceCheckRequest):
