@@ -1,18 +1,67 @@
 
-import { View, Text, StyleSheet, Image, Pressable, ImageBackground, ScrollView, TouchableOpacity } from "react-native";
-import { useRouter } from "expo-router";
+import { View, Text, StyleSheet, Image, Pressable, ImageBackground, ScrollView, TouchableOpacity, Platform, Alert } from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+
+
+const API_BASE =
+    Platform.OS === "web"
+        ? "http://127.0.0.1:8000"
+        : "http://192.168.1.213:8000";
+
+// 9/15/26
+// Andrew added First Entry Time as the first time they 
+// entered class so that the attendance status can be done
+// Andrew thinks you might need to make some adjustments to the table later
+// also added the time total for total time in class
+// basically needs an equation that takes 
+// (first entry time - first exit time) + if there is (entry time if there is one - next exit time or 
+// whenever the session ends) however many times they have changes
+//not sure if these changes break the override but thats the stuff.
+// Next commit will probably be the actual override process which involves the auditInstructor file 
+// being the audit thing on the wireframes thing. will probably have the status clickable and take
+// you to the audit screen.
+// Probably take the student ID as info and pass it through to the audit list and use that but
+// i dont know how to change the actual information so Sorrel will probably have to implement
+// the database changes here since I can't access it probably.
+// Sorry for the inconvenience 
+type CheckinRecord = {
+    attendance_id: number;
+    session_id: number;
+    student_id: number;
+    student_name: string;
+    first_check_in_time: string; // 9/15/26 changes here
+    total_time: string; // 9/15/26 changes here
+    check_in_time: string;
+    face_verified: number;
+    location_verified: number;
+    status: string;
+};
+
+type StudentRow = {
+    name: string;
+    firstentrytime: string; // 9/15/26 changes here
+    entrytime: string;
+    exittime: string;
+    totaltime: string; // 9/15/26 changes here
+    status: string;
+};
+
+
+
 export default function InstructorOverride()
 {
+    const [popupVisible, setPopupVisible] = useState<boolean>(false)
     const router = useRouter();
     const insets = useSafeAreaInsets();
-    const students = [
-        { name: "Sorel A.", entrytime: "9:01am",  exittime: "-", status: "Present" },
-        { name: "Andrew K", entrytime: "9:05am", exittime: "-", status: "Present" },
-        { name: "Andres M.", entrytime: "-", exittime: "-", status: "Absent" },
-        { name: "Shayan K.", entrytime: "9:58am", exittime: "-", status: "Late" }
-    ];
+    const [loading, setLoading] = useState(false);
+    const { course, room, date } = useLocalSearchParams<{
+        course?: string;
+        room?: string;
+        date?: string;
+    }>();
+    const [students, setStudents] = useState<StudentRow[]>([]);
 
     const getStatusStyle = (status: string) =>
     {
@@ -31,39 +80,13 @@ export default function InstructorOverride()
 
         return styles.defaultStatusText;
     };
-    const [openDropdown, setOpenDropdown] = useState<number | null>(null);
-    const [selectedItem1, setSelectedItem1] = useState('Choose Course'); 
-    const [selectedItem2, setSelectedItem2] = useState('Room Number');
-    const [selectedItem3, setSelectedItem3] = useState('Date');//track selected item
-    //most likely have multiple copies of this to choose classes and all the other stuff instead of just having select an item.
-    const [isOpen, setIsOpen] = useState(false); //track if dropdown menu open
-    const allowed_courses = ['CSCE 4901.501', 'CSCE 4902.501', 'CSCE 4902.502']; //example list of dropdown
-    const allowed_rooms = ['266', '267', '420', '67'];
-    const allowed_dates = ['09/01/26', '08/31/26', '08/28/26'];
-    const toggleDropdown = (dropdownNumber: number) => {
-        if (openDropdown === dropdownNumber) {
-            setOpenDropdown(null);
-        } else {
-            setOpenDropdown(dropdownNumber);
-        }
-    };
 
     const refreshPage = () => {
         window.location.reload();
     };
-    const downloadCSVFile = () => { // should be for downloading the csv file need update
-        const text = 'apple'; // text for now. will need to update later
-        const blob = new Blob([text], {
-            type: 'text/plain',
-        });
-        const url = URL.createObjectURL(blob);// Create a temporary URL for the file
-        const link = document.createElement('a'); // Create a temporary HTML download link
-        link.href = url;// Set the link to the temporary file
-        link.download = 'test.txt';// Set the filename
-        document.body.appendChild(link);// Add the link to the webpage
-        link.click();// Automatically click the link to start the download
-        document.body.removeChild(link);// Remove the temporary link
-        URL.revokeObjectURL(url); // Clean up the temporary URL
+
+    const togglePopup = () => {
+        setPopupVisible((prev) => !prev);
     };
 
     return (
@@ -76,8 +99,9 @@ export default function InstructorOverride()
                         style={styles.logoBox}
                     />
 
-                    <Text style={styles.dashboardTitle}>Override WORK IN PROGRESS</Text>
-
+                    <Text style={styles.dashboardTitle}>Override Dashboard</Text>
+                    {/* This is just a note for later but we should add the name for this here.
+                    probably get the username of the stuff and put it here. */}
                     <View style={styles.profileBox}>
                         <Text style={styles.profileText}>Professor Emptynow</Text>
                         <Image
@@ -89,156 +113,232 @@ export default function InstructorOverride()
 
                 {/* Course / Room / Date Bar */}
                 <View style={styles.infoBar}>
-                    <Text style={styles.infoText}>
-                        <Text style={styles.bold}>Course:</Text> 
-                            <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() => toggleDropdown(1)}
-                        > {/* selectedItem1 is courses */}
-                            <Text style={styles.buttonText}>{selectedItem1}</Text> 
-                            {/* update list to choose the first item instead of this. place holder for now CSCE 4901*/}
-                            <Text style={styles.arrow}>{openDropdown === 1 ? '▲' : '▼'}</Text>
-                        </TouchableOpacity>
-                        {openDropdown === 1 && (
-                            <View style={styles.dropdownMenu}>
-                                {allowed_courses.map((item) => (
-                                    <TouchableOpacity
-                                        key={item}
-                                        style={styles.dropdownItem}
-                                        onPress={() => {
-                                            setSelectedItem1(item);
-                                            setOpenDropdown(null);
-                                        }}
-                                        >
-                                        <Text style={styles.itemText}>{item}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                            )}
-                    </Text>
+                    <View style={styles.infoField}>
+                        <Text style={styles.infoText}>
+                            <Text style={styles.bold}>Course: </Text>
+                            {!course || course === "Choose Course"
+                                ? "Not selected"
+                                : course}
+                        </Text>
+                    </View>
 
-                    <Text style={styles.infoText}>
-                        <Text style={styles.bold}>Room:</Text>                             
-                            <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() => toggleDropdown(2)}
-                        > {/* selectedItem2 is rooms */}
-                            <Text style={styles.buttonText}>{selectedItem2}</Text> 
-                            {/* update list to choose the first item instead of this. place holder for now CSCE 4901*/}
-                            <Text style={styles.arrow}>{openDropdown === 2 ? '▲' : '▼'}</Text>
-                        </TouchableOpacity>
-                        {openDropdown === 2 && (
-                            <View style={styles.dropdownMenu}>
-                                {allowed_rooms.map((item) => (
-                                    <TouchableOpacity
-                                        key={item}
-                                        style={styles.dropdownItem}
-                                        onPress={() => {
-                                            setSelectedItem2(item);
-                                            setOpenDropdown(null);
-                                        }}
-                                        >
-                                        <Text style={styles.itemText}>{item}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                            )}
-                    </Text>
+                    <View style={styles.infoField}>
+                        <Text style={styles.infoText}>
+                            <Text style={styles.bold}>Room: </Text>
+                            {!room || room === "Room Number"
+                                ? "Not selected"
+                                : room}
+                        </Text>
+                    </View>
 
-                    <Text style={styles.infoText}>
-                        <Text style={styles.bold}>Date:</Text> 
-                            <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() => toggleDropdown(3)} > {/* change when copied */} {/* selectedItem3 is dates */} 
-                            <Text style={styles.buttonText}>{selectedItem3}</Text> {/* change when copied */}
-                            {/* update list to choose the first item instead of this. place holder for now CSCE 4901*/}
-                            <Text style={styles.arrow}>{openDropdown === 3 ? '▲' : '▼'}</Text> {/* change when copied */}
-                        </TouchableOpacity>
-                        {openDropdown === 3 && ( //change when copied
-                            <View style={styles.dropdownMenu}>
-                                {allowed_dates.map((item) => ( // change when copied
-                                    <TouchableOpacity
-                                        key={item}
-                                        style={styles.dropdownItem}
-                                        onPress={() => {
-                                            setSelectedItem3(item); // change when copied
-                                            setOpenDropdown(null);
-                                        }}
-                                        >
-                                        <Text style={styles.itemText}>{item}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                            )}
-                    </Text>
+                    <View style={styles.infoField}>
+                        <Text style={styles.infoText}>
+                            <Text style={styles.bold}>Date: </Text>
+                            {!date || date === "Date"
+                                ? "Not selected"
+                                : date}
+                        </Text>
+                    </View>
                 </View>
 
                 {/* Main Content */}
                 <ScrollView contentContainerStyle={styles.mainContent}>
-                    {/* Start / End Buttons */}
-                    <View style={styles.sessionButtonsRow}>
-                        <TouchableOpacity style={styles.startButton}>
-                            <Text style={styles.sessionButtonText}>Start Session</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.endButton}>
-                            <Text style={styles.sessionButtonText}>End Session</Text>
-                        </TouchableOpacity>
-                    </View>
 
                     {/* Student Table */}
-                    <View style={styles.tableContainer}>
-                        <View style={styles.tableHeaderRow}>
-                            <Text style={[styles.tableHeaderText, styles.colStudent]}>
+                    {course === "Choose Course" || room === "Room Number" || date === "Date" ? (
+                        <View style={styles.invalidInputBox}>
+                            <Text style={styles.invalidInputText}>
+                                Missing Course, Room, or Date input. Please select valid Options.
+                            </Text>
+                        </View>
+                    ) : (
+                    <View
+                        style={styles.tableContainer}
+                    >
+
+                        <View
+                            style={
+                                styles.tableHeaderRow
+                            }
+                        >
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colStudent
+                                ]} 
+                            >
                                 Student
                             </Text>
-
-                            <Text style={[styles.tableHeaderText, styles.colTime]}>
-                                Latest Entry Time
-                            </Text> {/* If exit time is greater then entry then exit is --*/}
-
-                            <Text style={[styles.tableHeaderText, styles.colTime]}>
-                                Latest Exit Time
+                            {/* 9/15/26 changes here for First Entry Time */}
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                                First Entry Time
                             </Text>
 
-                            <Text style={[styles.tableHeaderText, styles.colStatus]}>
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                                Latest Entry Time
+                            </Text>
+
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                                Latest Exit Time
+                            </Text>
+                            {/* 9/15/26 changes here for First Entry Time */}
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                            Total Time in Class
+                            </Text>
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colStatus
+                                ]}
+                            >
                                 Status
                             </Text>
                         </View>
 
-                        {students.map((student, index) =>
-                        {
-                            return (
-                                <View key={index} style={styles.tableRow}>
-                                    <Text style={[styles.tableCellText, styles.colStudent]}>
-                                        {student.name}
-                                    </Text>
 
-                                    <Text style={[styles.tableCellText, styles.colTime]}>
-                                        {student.entrytime}
-                                    </Text>
-                                    <Text style={[styles.tableCellText, styles.colTime]}>
-                                        {student.exittime}
-                                    </Text>
+                        {loading ? (
+                            <Text
+                                style={
+                                    styles.loadingText
+                                }
+                            >
+                                Loading attendance...
+                            </Text>
 
-                                    <Text
-                                        style={[
-                                            styles.tableCellText,
-                                            styles.colStatus,
-                                            getStatusStyle(student.status)
-                                        ]}
-                                    >
-                                        {student.status} {/* removed V and put it in override */}
-                                    </Text>
+                        ) : students.length === 0 ? (
+
+                            <Text
+                                style={
+                                    styles.loadingText
+                                }
+                            >
+                                No attendance records found.
+                            </Text>
+
+                        ) : (
+
+                            students.map(
+                                (
+                                    student,
+                                    index
+                                ) => (
+                                    <View
+                                        key={index}
+                                        style={
+                                            styles.tableRow
+                                        }
+                                    >{/* 9/15/26 made this a popup so that there's a way to view 
+                                    the students information like everytime they clocked in and clocked out.
+                                    Probably something like
+                                    a small table inside there.*/}
+                                        <Pressable onPress={togglePopup}>
+                                        <Text
+                                            style={[
+                                                styles.tableCellText,
+                                                styles.colStudent,
+                                                styles.linkText
+                                            ]}
+                                        >
+                                            {
+                                                student.name
+                                            }
+                                        </Text></Pressable>
+                                        {popupVisible && ( <View style={styles.popupBox}>
+                                    <Text style={styles.popupText}>Clicking Student opens this popup.</Text>
+                                    <TouchableOpacity onPress={togglePopup}>
+                                        <Text style={styles.popupClose}>Close</Text>
+                                    </TouchableOpacity>
                                 </View>
-                            );
-                        })}
-                    </View>
+                            )}
+                                            {/* 9/15/26 changes here for First Entry Time */}
+                                        <Text
+                                            style={[
+                                                styles.tableCellText,
+                                                styles.colTime
+                                            ]}
+                                        >
+                                            {
+                                                student.firstentrytime
+                                            }
+                                        </Text>
+                                        <Text
+                                            style={[
+                                                styles.tableCellText,
+                                                styles.colTime
+                                            ]}
+                                        >
+                                            {
+                                                student.entrytime
+                                            }
+                                        </Text>
+
+                                        <Text
+                                            style={[
+                                                styles.tableCellText,
+                                                styles.colTime
+                                            ]}
+                                        >
+                                            {
+                                                student.exittime
+                                            }
+                                        </Text>
+                                            {/* 9/15/26 changes here for total time */}
+                                        <Text
+                                            style={[
+                                                styles.tableCellText,
+                                                styles.colTime
+                                            ]}
+                                        >
+                                            {
+                                                student.totaltime
+                                            }
+                                        </Text>
+                                        {/* 9/15/26 Probably make this clickable to go to the audit screen. */}
+                                        <Text
+                                            style={[
+                                                styles.tableCellText,
+                                                styles.colStatus,
+                                                getStatusStyle(
+                                                    student.status
+                                                )
+                                            ]}
+                                        >
+                                            {
+                                                student.status
+                                            }
+                                        </Text>
+                                    </View>
+                                )
+                            )
+
+                        )}
+
+                    </View>)}
+
 
                     {/* Bottom Buttons */}
                     <View style={styles.bottomButtonsRow}>
-                        <TouchableOpacity style={styles.smallButton}> {/* add this when ready
-                        onPress={() => router.push("/overrideInstructor")}*/}
+                        <TouchableOpacity style={styles.smallButton} onPress={() => router.push("/dashboardInstructor")}>
                             <Text style={styles.smallButtonText}>Back to Dashboard</Text>
                         </TouchableOpacity>
 
@@ -334,6 +434,11 @@ const styles = StyleSheet.create({
         justifyContent: "space-between"
     },
 
+    infoField: {
+        flex: 1,
+        paddingHorizontal: 10
+    },
+
     infoText: {
         color: "white",
         fontSize: 15
@@ -384,6 +489,22 @@ const styles = StyleSheet.create({
         marginHorizontal: 30
     },
 
+    invalidInputBox: {
+        height: 250,
+        marginHorizontal: 30,
+        borderWidth: 2,
+        borderColor: "#b6d7b6",
+        backgroundColor: "#f9fff9",
+        justifyContent: "center",
+        alignItems: "center"
+    },
+
+    invalidInputText: {
+        color: "#000000",
+        fontSize: 20,
+        fontWeight: "bold"
+    },
+
     tableHeaderRow: {
         flexDirection: "row",
         marginBottom: 10
@@ -393,6 +514,43 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: "bold",
         color: "#0b7d3b"
+    },
+
+    linkText: {
+        color: "#0b7d3b",
+        textDecorationLine: "underline",
+        fontWeight: "bold"
+    },
+
+    popupBox: {
+        position: "absolute",
+        top: 30,
+        left: 0,
+        width: 190,
+        backgroundColor: "#ffffff",
+        borderColor: "#cfe4d1",
+        borderWidth: 1,
+        borderRadius: 10,
+        padding: 10,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 4,
+        zIndex: 10
+    },
+
+    popupText: {
+        color: "#222",
+        fontSize: 13,
+        marginBottom: 6
+    },
+
+    popupClose: {
+        color: "#0b7d3b",
+        fontWeight: "bold",
+        fontSize: 12,
+        textAlign: "right"
     },
 
     tableRow: {
@@ -495,4 +653,10 @@ const styles = StyleSheet.create({
     itemText: {
         fontSize: 16,
     },
+    
+    loadingText: {
+        paddingVertical: 20,
+        textAlign: "center",
+        color: "#666"
+    }
 });

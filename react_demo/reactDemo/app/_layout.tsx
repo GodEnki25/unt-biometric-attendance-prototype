@@ -14,7 +14,7 @@ export default function Layout()
             <Stack.Screen name="enrollSignup" options={{ headerShown: false }} />
             <Stack.Screen name="attendanceHistory" options={{ headerShown: false }} />
             <Stack.Screen name="checkIn" options={{ headerShown: false }} />
-
+            <Stack.Screen name="overrideInstructor" options={{ headerShown: false }} />
             <Stack.Screen name="faceEnroll" options={{ headerShown: false }} />
         </Stack>
     );

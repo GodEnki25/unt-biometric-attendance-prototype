@@ -53,7 +53,9 @@ This document tracks the contributions made by each team member throughout the d
 - Contributed to project documentation and development setup.
 
 ### Captone II
-- [Add contributions throughout the semester.]
+- Implemented the Instructor's Override functions
+- Created the UI Design for the Instructor Dashboard
+- Implemented separation of Instructor and Student access
 
 ---
 

@@ -431,7 +431,7 @@ For presentation day:
 # Team
 
 -   **Sorel Agbogla** -- Team Lead / Backend & Database
--   **Andrew Kim** -- UI/UX / Instructor Interface
+-   **Andrew Kim** -- UI/UX / Interface Design
 -   **Andres Moreira** -- Geofence / Backend Integration
 -   **Shayan Karki** -- Biometric Recognition / Backend Integration
 

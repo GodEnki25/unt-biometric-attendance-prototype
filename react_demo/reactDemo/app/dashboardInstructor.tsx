@@ -19,23 +19,33 @@ const API_BASE =
         ? "http://127.0.0.1:8000"
         : "http://192.168.1.213:8000";
 
-
+// 9/15/26
+// Andrew added First Entry Time as the first time they 
+// entered class so that the attendance status can be done
+// Andrew thinks you might need to make some adjustments to the table later
+// also added the time total for total time in class
+// basically needs an equation that takes 
+// (first entry time - first exit time) + if there is (entry time if there is one - next exit time or whenever the session ends) however many times they have changes
+// Sorry for the inconvenience 
 type CheckinRecord = {
     attendance_id: number;
     session_id: number;
     student_id: number;
     student_name: string;
+    first_check_in_time: string; // 9/15/26 changes here
+    total_time: string; // 9/15/26 changes here
     check_in_time: string;
     face_verified: number;
     location_verified: number;
     status: string;
 };
 
-
 type StudentRow = {
     name: string;
+    firstentrytime: string; // 9/15/26 changes here
     entrytime: string;
     exittime: string;
+    totaltime: string; // 9/15/26 changes here
     status: string;
 };
 
@@ -228,13 +238,17 @@ const formatTime = (dateTime: string) => {
                     name:
                         record.student_name ??
                         `Student ${record.student_id}`,
-
+                    // 9/15/26 changes here below
+                    firstentrytime: formatTime(
+                        record.first_check_in_time
+                    ),
+                    
                     entrytime: formatTime(
                         record.check_in_time
                     ),
 
                     exittime: "-",
-
+                    totaltime: "-", // 9/15/26 changes here
                     status: formatStatus(
                         record.status
                     )
@@ -375,14 +389,17 @@ const formatTime = (dateTime: string) => {
             );
             return;
         }
-
+// Andrew added First Entry Time as the first time they 
+// entered class so that the attendance status can be done
+// Andrew thinks you might need to make some adjustments to the table later
+// Sorry for the inconvenience 
         const header =
-            "Student,Latest Entry Time,Latest Exit Time,Status\n";
+            "Student,First Entry Time, Latest Entry Time,Latest Exit Time,Status\n";
 
         const rows = students
             .map(
-                (student) =>
-                    `"${student.name}","${student.entrytime}","${student.exittime}","${student.status}"`
+                (student) => // 9/15/26 changes in the next line here
+                    `"${student.name}","${student.firstentrytime}","${student.entrytime}","${student.exittime}","${student.totaltime}","${student.status}"`
             )
             .join("\n");
 
@@ -822,6 +839,15 @@ const formatTime = (dateTime: string) => {
                             >
                                 Student
                             </Text>
+                            {/* 9/15/26 changes here for First Entry Time */}
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                                First Entry Time
+                            </Text>
 
                             <Text
                                 style={[
@@ -840,7 +866,15 @@ const formatTime = (dateTime: string) => {
                             >
                                 Latest Exit Time
                             </Text>
-
+                            {/* 9/15/26 changes here for total time */}
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                                Total Time in Class
+                            </Text>
                             <Text
                                 style={[
                                     styles.tableHeaderText,
@@ -894,7 +928,17 @@ const formatTime = (dateTime: string) => {
                                                 student.name
                                             }
                                         </Text>
-
+                                            {/* 9/15/26 changes here for First Entry Time */}
+                                        <Text
+                                            style={[
+                                                styles.tableCellText,
+                                                styles.colTime
+                                            ]}
+                                        >
+                                            {
+                                                student.firstentrytime
+                                            }
+                                        </Text>
                                         <Text
                                             style={[
                                                 styles.tableCellText,
@@ -916,7 +960,17 @@ const formatTime = (dateTime: string) => {
                                                 student.exittime
                                             }
                                         </Text>
-
+                                          {/* 9/15/26 changes here for total time */}
+                                        <Text
+                                            style={[
+                                                styles.tableCellText,
+                                                styles.colTime
+                                            ]}
+                                        >
+                                            {
+                                                student.totaltime
+                                            }
+                                        </Text>
                                         <Text
                                             style={[
                                                 styles.tableCellText,
@@ -938,7 +992,6 @@ const formatTime = (dateTime: string) => {
 
                     </View>
 
-
                     {/* Bottom Buttons */}
                     <View
                         style={
@@ -948,12 +1001,15 @@ const formatTime = (dateTime: string) => {
 
                         <TouchableOpacity
                             style={styles.smallButton}
-                            onPress={() =>
-                                router.push(
-                                    "/overrideInstructor"
-                                )
-                            }
-                        >
+                            onPress={() => router.push({ 
+                                pathname: "/overrideInstructor",
+                                params: {
+                                    course: selectedItem1,
+                                    room: selectedItem2,
+                                    date: selectedItem3
+                                    }
+                                })
+                            }>
                             <Text
                                 style={
                                     styles.smallButtonText
@@ -1251,12 +1307,16 @@ const styles = StyleSheet.create({
     },
 
     dropdownMenu: {
-        marginTop: 5,
+        position: "absolute",
+        top: 75, // label height + margin + button height
+        left: 0,
+        right: 0,
+        zIndex: 100,
         borderWidth: 1,
         borderColor: "#999",
         borderRadius: 8,
         backgroundColor: "white",
-        overflow: "hidden"
+        overflow: "hidden",
     },
 
     dropdownItem: {
