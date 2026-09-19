@@ -14,10 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useState } from "react";
 
 
-const API_BASE =
-    Platform.OS === "web"
-        ? "http://127.0.0.1:8000"
-        : "http://192.168.1.213:8000";
+import { API_BASE } from "@/constants/api";
 
 // 9/15/26
 // Andrew added First Entry Time as the first time they 
@@ -75,21 +72,23 @@ export default function InstructorDashboard() {
     const [selectedItem3, setSelectedItem3] =
         useState("Date");
 
-    const [selectedGeofence, setSelectedGeofence] =
-        useState<GeofenceOption>({
-            name: "Current Test Location",
-            lat: 32.5353638,
-            lon: -96.3324661252
-        });
-
-    const [radiusM, setRadiusM] =
-        useState(75);
-
     const [sessionActive, setSessionActive] =
         useState(false);
 
     const [sessionStatus, setSessionStatus] =
         useState("No active session");
+
+    const [selectedGeofence, setSelectedGeofence] =
+        useState<GeofenceOption | null> (null);
+    
+    const [locationAccuracy, setLocationAccuracy] =
+        useState<number | null> (null);
+
+    const [locationStatus, setLocationStatus] =
+        useState("Location not acquired");
+
+    const [radiusM, setRadiusM] =
+        useState(15);
 
 
     const allowed_courses = [
@@ -111,21 +110,7 @@ export default function InstructorDashboard() {
         "08/28/26"
     ];
 
-    const allowed_geofences: GeofenceOption[] = [
-        {
-            name: "Current Test Location",
-            lat: 32.5353638,
-            lon: -96.3324661252
-        }
-    ];
-
-    const allowed_radii = [
-        25,
-        50,
-        75,
-        100
-    ];
-
+    const allowed_radii = Array.from({length: 16}, (_, index) => index + 10);
 
     const getStatusStyle = (status: string) => {
         if (status === "Present") {
@@ -289,9 +274,68 @@ const formatTime = (dateTime: string) => {
         }
     };
 
+    /* 
+    Acquire the instructor device location for the geofence
+    Browswer-reported accuracy is displayed so the instructor can 
+    account for poor GPS/location conditions before starting a session.
+    */ 
+    const getInstructorLocation = () => {
+        if(Platform.OS !== "web") {
+            Alert.alert("Location", "Instructor location setup is currently supported on web.");
+            return;
+        }
+
+        if(!navigator.geolocation) {
+            Alert.alert("Location Unavailable", "This browser does not support geoloaction." );
+            return;
+        }
+
+        setLocationStatus("Acquiring location...");
+
+        navigator.geolocation.getCurrentPosition((position) => {
+            const {
+                latitude,
+                longitude,
+                accuracy
+            } = position.coords;
+
+            setSelectedGeofence({
+                name: "Instructor Current Locaiton",
+                lat: latitude,
+                lon: longitude
+            });
+
+            setLocationAccuracy(accuracy);
+
+            setLocationStatus(`Location acquired ±${Math.round(accuracy)} m`);
+        },
+        
+            (error) => {
+                console.error("Failed to acquire instructor location:", error);
+
+                setLocationStatus("Location unavailable");
+
+                Alert.alert("Location Error", "Could not get the instructor's current location.");
+
+            },
+
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
+    };
+
 
 
     const startSession = async () => {
+
+        if(!selectedGeofence){
+            Alert.alert("Location Required", "Acquire the instructor location before starting the session.");
+            return;
+        }
+        
         try {
             const response = await fetch(
                 `${API_BASE}/geofence/session/start`,
@@ -485,39 +529,37 @@ const formatTime = (dateTime: string) => {
 
                         <TouchableOpacity
                             style={styles.dropdownButton}
-                            onPress={() =>
-                                toggleDropdown(4)
-                            }
+                            onPress={getInstructorLocation}
+                            disabled={sessionActive}
                         >
                             <Text style={styles.buttonText}>
-                                {selectedGeofence.name}
-                            </Text>
-
-                            <Text style={styles.arrow}>
-                                {openDropdown === 4
-                                    ? "▲"
-                                    : "▼"}
+                                {selectedGeofence
+                                    ? "Use Current Location"
+                                    : "Acquire Location"}
                             </Text>
                         </TouchableOpacity>
 
-                        {openDropdown === 4 && (
-                            <View style={styles.dropdownMenu}>
-                                {allowed_geofences.map(
-                                    (item) => (
-                                        <TouchableOpacity
-                                            key={item.name}
-                                            style={styles.dropdownItem}
-                                            onPress={() => {
-                                                setSelectedGeofence(item);
-                                                setOpenDropdown(null);
-                                            }}
-                                        >
-                                            <Text style={styles.itemText}>
-                                                {item.name}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    )
+                        <Text style={styles.locationStatusText}>
+                            {locationStatus}
+                        </Text>
+
+                        {selectedGeofence && (
+                            <View style={styles.coordinateBox}>
+
+                                <Text style={styles.coordinateText}>
+                                    Lat: {selectedGeofence.lat.toFixed(6)}
+                                </Text>
+
+                                <Text style={styles.coordinateText}>
+                                    Lon: {selectedGeofence.lon.toFixed(6)}
+                                </Text>
+
+                                {locationAccuracy !== null && (
+                                    <Text style={styles.coordinateText}>
+                                        Accuracy: ±{Math.round(locationAccuracy)} m
+                                    </Text>
                                 )}
+
                             </View>
                         )}
 
@@ -538,7 +580,7 @@ const formatTime = (dateTime: string) => {
                             }
                         >
                             <Text style={styles.buttonText}>
-                                {radiusM} meters
+                                {radiusM} m / {Math.round(radiusM * 3.28084)} ft
                             </Text>
 
                             <Text style={styles.arrow}>
@@ -561,13 +603,19 @@ const formatTime = (dateTime: string) => {
                                             }}
                                         >
                                             <Text style={styles.itemText}>
-                                                {radius} meters
+                                                {radius} m / {Math.round(radius * 3.28084)} ft
                                             </Text>
                                         </TouchableOpacity>
                                     )
                                 )}
                             </View>
                         )}
+
+                        <Text style={styles.geofenceDisclaimer}>
+                            Geofence accuracy may vary based on GPS conditions and classroom size.
+                            If false inside/outside events occure, adjust the radius before starting
+                            the sessison.
+                        </Text>
 
                     </View>
 
@@ -780,11 +828,11 @@ const formatTime = (dateTime: string) => {
                         <TouchableOpacity
                             style={[
                                 styles.startButton,
-                                sessionActive &&
+                                (sessionActive || !selectedGeofence) &&
                                     styles.disabledButton
                             ]}
                             onPress={startSession}
-                            disabled={sessionActive}
+                            disabled={sessionActive || !selectedGeofence}
                         >
                             <Text
                                 style={
@@ -1333,6 +1381,32 @@ const styles = StyleSheet.create({
         paddingVertical: 20,
         textAlign: "center",
         color: "#666"
-    }
+    },
+
+    locationStatusText: {
+    color: "white",
+    fontSize: 12,
+    marginTop: 6
+},
+
+coordinateBox: {
+    marginTop: 6,
+    backgroundColor: "white",
+    borderRadius: 8,
+    padding: 8
+},
+
+coordinateText: {
+    color: "#0b7d3b",
+    fontSize: 12
+},
+
+geofenceDisclaimer: {
+    textAlign: "center",
+    color: "#666",
+    fontSize: 13,
+    marginHorizontal: 30,
+    marginBottom: 18
+},
 
 });

@@ -4,7 +4,7 @@ from backend.services.face import process_frame
 from datetime import datetime
 
 from backend.services.tile38_service import check_geofence
-from backend.routes.geofence import MOCK_SESSION
+from backend.routes.geofence import ACTIVE_SESSION
 
 router = APIRouter()
 
@@ -126,20 +126,20 @@ async def checkin(
         # =========================
         # GEOFENCE VALIDATION
         # =========================
-        if not MOCK_SESSION["is_open"]:
+        if not ACTIVE_SESSION["is_open"]:
             return {
                 "success": False,
                 "message": "Geofence session is closed"
             }
 
-        accuracy_buffer_m = min(accuracy, 50.0)
+        accuracy_buffer_m = min(accuracy, 10.0)
 
         allowed_radius_m = (
-            MOCK_SESSION["radius_m"] + accuracy_buffer_m
+            ACTIVE_SESSION["radius_m"] + accuracy_buffer_m
         )
 
         location_verified = check_geofence(
-            session_id=MOCK_SESSION["id"],
+            session_id=ACTIVE_SESSION["id"],
             user_lat=latitude,
             user_lon=longitude,
             radius_m=allowed_radius_m,
