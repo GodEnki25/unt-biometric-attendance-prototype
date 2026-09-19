@@ -53,10 +53,23 @@ def signup(data: dict):
     # IMPORTANT:
     # React needs this user_id so it can pass it to
     # firstTimeEnroll -> faceEnroll
+
+    token = create_access_token(
+        user_id=result["user_id"],
+        role="student"
+    )
+
     return {
         "success": True,
         "message": "Account created successfully",
-        "user_id": result["user_id"]
+        "user_id": result["user_id"],
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": result["user_id"],
+            "name": full_name,
+            "role": "student"
+        }
     }
 
 

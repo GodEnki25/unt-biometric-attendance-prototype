@@ -8,6 +8,7 @@ import {
     Alert
 } from "react-native";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 
@@ -73,8 +74,7 @@ export default function EnrollSignup() {
                         email: email.trim().toLowerCase(),
 
                         password: password,
-
-                        role: "student"
+                        
                     })
                 }
             );
@@ -116,6 +116,10 @@ export default function EnrollSignup() {
 
                 return;
             }
+
+            await AsyncStorage.setItem("access_token", result.access_token);
+            
+            await AsyncStorage.setItem("user", JSON.stringify(result.user));
 
 
             console.log(
