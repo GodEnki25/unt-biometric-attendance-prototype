@@ -8,7 +8,7 @@ import {
     Platform
 } from "react-native";
 
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 
@@ -69,10 +69,10 @@ export default function LoginScreen()
             }
 
             //Save the JWT returned by FastAPI
-            await AsyncStorage.setItem("access_token", data.access_token);
+            await SecureStore.setItem("access_token", data.access_token);
 
             //Save user information
-            await AsyncStorage.setItem("user", JSON.stringify(data.user));   
+            await SecureStore.setItem("user", JSON.stringify(data.user));   
 
             const userId = data.user.id;
 
