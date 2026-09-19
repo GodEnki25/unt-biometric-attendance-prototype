@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, UploadFile, File, Form
+from fastapi import APIRouter, UploadFile, File, Form, Depends
 
 import cv2
 import numpy as np
@@ -7,6 +7,7 @@ import numpy as np
 from biometrics.backend.enrollment.enrollment_layer import EnrollmentManager
 from biometrics.backend.verification.verification_layer import Verifier
 from backend.database.biometric_db import get_face_embedding
+from backend.services.token_service import get_current_user
 
 
 # ------------------------------------------------
@@ -80,10 +81,12 @@ async def get_frame(file: UploadFile):
 
 @router.post("/enroll")
 async def enroll_face(
-    user_id: int = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
 ):
 
+    user_id = current_user["user_id"]
+    
     # Convert incoming image into an OpenCV frame
     frame = await get_frame(file)
 
@@ -115,9 +118,11 @@ async def enroll_face(
 
 @router.post("/verify")
 async def verify_face(
-    user_id: int = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
 ):
+
+    user_id = current_user["user_id"]
 
     # Convert incoming image into OpenCV frame
     frame = await get_frame(file)

@@ -1,11 +1,13 @@
 from backend.database.db import get_db_connection
-import hashlib
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 import sqlite3
+
+ph = PasswordHasher()
 
 
 def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
+    return ph.hash(password)
 
 def create_user(
     full_name,
@@ -85,8 +87,8 @@ def login_user(email, password):
         return None
 
 
-    if user["password_hash"] == hash_password(password):
+    try:
+        ph.verify(user["password_hash"], password)
         return dict(user)
-
-
-    return None
+    except VerifyMismatchError:
+        return None

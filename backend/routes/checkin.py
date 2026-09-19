@@ -1,10 +1,11 @@
-from fastapi import APIRouter, UploadFile, File, Form
+from fastapi import APIRouter, UploadFile, File, Form, Depends
 from backend.database.db import get_db_connection
 from backend.services.face import process_frame
 from datetime import datetime
 
 from backend.services.tile38_service import check_geofence
 from backend.routes.geofence import ACTIVE_SESSION
+from backend.services.token_service import(get_current_user, require_instructor)
 
 router = APIRouter()
 
@@ -13,7 +14,7 @@ router = APIRouter()
 # CREATE SESSION
 # =========================
 @router.post("/session")
-def create_session(data: dict):
+def create_session(data: dict, current_user=Depends(require_instructor)):
     conn = get_db_connection()
     cursor = conn.cursor()
 
@@ -52,17 +53,14 @@ def create_session(data: dict):
 # =========================
 @router.post("/checkin")
 async def checkin(
-    user_id: int = Form(...),
     latitude: float = Form(...),
     longitude: float = Form(...),
     accuracy: float = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
 ):
-    if user_id is None:
-        return {
-            "success": False,
-            "message": "Missing user_id"
-        }
+
+    user_id = current_user["user_id"]
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -255,7 +253,7 @@ async def checkin(
 # VIEW CHECK-INS
 # =========================
 @router.get("/checkins")
-def get_checkins():
+def get_checkins(current_user=Depends(require_instructor)):
     conn = get_db_connection()
     cursor = conn.cursor()
 

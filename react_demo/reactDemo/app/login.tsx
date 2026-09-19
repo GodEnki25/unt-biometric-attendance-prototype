@@ -8,14 +8,12 @@ import {
     Platform
 } from "react-native";
 
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 
 
-const API_BASE =
-    Platform.OS === "web"
-        ? "http://127.0.0.1:8000"
-        : "http://192.168.1.229:8000";
+import { API_BASE } from "../constants/api";
 
 
 export default function LoginScreen()
@@ -70,9 +68,13 @@ export default function LoginScreen()
                 return;
             }
 
+            //Save the JWT returned by FastAPI
+            await AsyncStorage.setItem("access_token", data.access_token);
+
+            //Save user information
+            await AsyncStorage.setItem("user", JSON.stringify(data.user));   
 
             const userId = data.user.id;
-
 
             router.push({
                 pathname: "/dashboard",

@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useState } from "react";
 
 
-import { API_BASE } from "@/constants/api";
+import { API_BASE } from "../constants/api";
 
 // 9/15/26
 // Andrew added First Entry Time as the first time they 

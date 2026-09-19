@@ -1,7 +1,8 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from backend.services.tile38_service import save_geofence, check_geofence
+from backend.services.token_service import (get_current_user, require_instructor)
 
 router = APIRouter(
     prefix="/geofence",
@@ -36,11 +37,11 @@ class GeofenceCheckRequest(BaseModel):
 
 
 @router.get("/session")
-def get_active_geofence_session():
+def get_active_geofence_session(current_user=Depends(get_current_user)):
     return ACTIVE_SESSION
 
 @router.post("/session/start")
-def start_geofence_session(payload: StartGeofenceSessionRequest):
+def start_geofence_session(payload: StartGeofenceSessionRequest, current_user=Depends(require_instructor)):
 
     ACTIVE_SESSION["center_lat"] = payload.center_lat
     ACTIVE_SESSION["center_lon"] = payload.center_lon
@@ -60,7 +61,7 @@ def start_geofence_session(payload: StartGeofenceSessionRequest):
     }
 
 @router.post("/session/end")
-def end_geofence_session():
+def end_geofence_session(current_user=Depends(require_instructor)):
 
     ACTIVE_SESSION["is_open"] = False
 
@@ -71,7 +72,7 @@ def end_geofence_session():
     }
 
 @router.post("/check")
-def check_student_location(payload: GeofenceCheckRequest):
+def check_student_location(payload: GeofenceCheckRequest, current_user=Depends(get_current_user)):
     if not ACTIVE_SESSION["is_open"]:
         return {
             "inside": False,

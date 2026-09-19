@@ -5,6 +5,8 @@ from backend.services.auth_service import (
     create_user
 )
 
+from backend.services.token_service import create_access_token
+
 
 router = APIRouter()
 
@@ -20,7 +22,7 @@ def signup(data: dict):
     email = data.get("email")
     password = data.get("password")
     student_id = data.get("student_id")
-    role = data.get("role", "student")
+    role = "student"
 
 
     # Make sure required fields were received
@@ -78,9 +80,15 @@ def login(data: dict):
             "message": "Invalid credentials"
         }
 
+    token = create_access_token(
+        user_id=user["user_id"],
+        role=user["role"]
+    )
 
     return {
         "success": True,
+        "access_token": token,
+        "token_type": "bearer",
 
         "user": {
             "id": user["user_id"],

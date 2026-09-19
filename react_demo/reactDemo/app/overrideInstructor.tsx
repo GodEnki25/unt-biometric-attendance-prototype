@@ -5,10 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState, useEffect } from "react";
 
 
-const API_BASE =
-    Platform.OS === "web"
-        ? "http://127.0.0.1:8000"
-        : "http://192.168.1.213:8000";
+import { API_BASE } from "../constants/api";
 
 // 9/15/26
 // Andrew added First Entry Time as the first time they 

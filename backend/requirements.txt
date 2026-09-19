@@ -2,3 +2,8 @@ fastapi
 uvicorn
 pydantic
 redis
+opencv-python-headless
+insightface
+python-multipart
+mediapipe
+argon2-cffi

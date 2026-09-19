@@ -6,7 +6,7 @@ import { CameraView, useCameraPermissions} from "expo-camera";
 
 //API address is now stored in constants/api.ts so the frontend
 //does not need a hardcoded backend IP in each screen.
-import { API_BASE } from "@/constants/api";
+import { API_BASE } from "../constants/api";
 
     type Session = {
         id: string;
