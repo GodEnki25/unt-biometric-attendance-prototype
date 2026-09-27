@@ -1,9 +1,38 @@
 
-import { View, Text, StyleSheet, Image, Pressable, ImageBackground, ScrollView, TouchableOpacity } from "react-native";
-import { useRouter } from "expo-router";
+import { View, Text, StyleSheet, Image, Pressable, ImageBackground, ScrollView, TouchableOpacity, TextInput, Platform, Alert } from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useState } from "react";
-export default function InstructorOverride()
+
+
+const API_BASE =
+    Platform.OS === "web"
+        ? "http://127.0.0.1:8000"
+        : "http://192.168.1.213:8000";
+
+type CheckinRecord = {
+    attendance_id: number;
+    session_id: number;
+    student_id: number;
+    student_name: string;
+    first_check_in_time: string; // 9/15/26 changes here
+    total_time: string; // 9/15/26 changes here
+    check_in_time: string;
+    face_verified: number;
+    location_verified: number;
+    status: string;
+};
+
+type StudentRow = {
+    name: string;
+    firstentrytime: string; // 9/15/26 changes here
+    entrytime: string;
+    exittime: string;
+    totaltime: string; // 9/15/26 changes here
+    status: string;
+};
+
+export default function AuditInstructor()
 {
     const router = useRouter();
     const insets = useSafeAreaInsets();
@@ -13,6 +42,20 @@ export default function InstructorOverride()
         { name: "Andres M.", entrytime: "-", exittime: "-", status: "Absent" },
         { name: "Shayan K.", entrytime: "9:58am", exittime: "-", status: "Late" }
     ];
+     const { course, room, date, studentName, status } = useLocalSearchParams<{
+            course?: string;
+            room?: string;
+            date?: string;
+            studentName?: string;
+            status?: string;
+
+        }>();
+    const statusOptions = ["Present", "Absent", "Late"];
+    const [selectedStatus, setSelectedStatus] = useState(
+        status && statusOptions.includes(status) ? status : "Present"
+    );
+    const [reason, setReason] = useState("");
+    const [statusMenuOpen, setStatusMenuOpen] = useState(false);
 
     const getStatusStyle = (status: string) =>
     {
@@ -76,7 +119,7 @@ export default function InstructorOverride()
                         style={styles.logoBox}
                     />
 
-                    <Text style={styles.dashboardTitle}>Override WORK IN PROGRESS</Text>
+                    <Text style={styles.dashboardTitle}>Override</Text>
 
                     <View style={styles.profileBox}>
                         <Text style={styles.profileText}>Professor Emptynow</Text>
@@ -89,166 +132,124 @@ export default function InstructorOverride()
 
                 {/* Course / Room / Date Bar */}
                 <View style={styles.infoBar}>
-                    <Text style={styles.infoText}>
-                        <Text style={styles.bold}>Course:</Text> 
-                            <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() => toggleDropdown(1)}
-                        > {/* selectedItem1 is courses */}
-                            <Text style={styles.buttonText}>{selectedItem1}</Text> 
-                            {/* update list to choose the first item instead of this. place holder for now CSCE 4901*/}
-                            <Text style={styles.arrow}>{openDropdown === 1 ? '▲' : '▼'}</Text>
-                        </TouchableOpacity>
-                        {openDropdown === 1 && (
-                            <View style={styles.dropdownMenu}>
-                                {allowed_courses.map((item) => (
-                                    <TouchableOpacity
-                                        key={item}
-                                        style={styles.dropdownItem}
-                                        onPress={() => {
-                                            setSelectedItem1(item);
-                                            setOpenDropdown(null);
-                                        }}
-                                        >
-                                        <Text style={styles.itemText}>{item}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                            )}
-                    </Text>
+                    <View style={styles.infoField}>
+                        <Text style={styles.infoText}>
+                            <Text style={styles.bold}>Course: </Text>
+                            {!course || course === "Choose Course"
+                                ? "Not selected"
+                                : course}
+                        </Text>
+                    </View>
 
-                    <Text style={styles.infoText}>
-                        <Text style={styles.bold}>Room:</Text>                             
-                            <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() => toggleDropdown(2)}
-                        > {/* selectedItem2 is rooms */}
-                            <Text style={styles.buttonText}>{selectedItem2}</Text> 
-                            {/* update list to choose the first item instead of this. place holder for now CSCE 4901*/}
-                            <Text style={styles.arrow}>{openDropdown === 2 ? '▲' : '▼'}</Text>
-                        </TouchableOpacity>
-                        {openDropdown === 2 && (
-                            <View style={styles.dropdownMenu}>
-                                {allowed_rooms.map((item) => (
-                                    <TouchableOpacity
-                                        key={item}
-                                        style={styles.dropdownItem}
-                                        onPress={() => {
-                                            setSelectedItem2(item);
-                                            setOpenDropdown(null);
-                                        }}
-                                        >
-                                        <Text style={styles.itemText}>{item}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                            )}
-                    </Text>
+                    <View style={styles.infoField}>
+                        <Text style={styles.infoText}>
+                            <Text style={styles.bold}>Room: </Text>
+                            {!room || room === "Room Number"
+                                ? "Not selected"
+                                : room}
+                        </Text>
+                    </View>
 
-                    <Text style={styles.infoText}>
-                        <Text style={styles.bold}>Date:</Text> 
-                            <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() => toggleDropdown(3)} > {/* change when copied */} {/* selectedItem3 is dates */} 
-                            <Text style={styles.buttonText}>{selectedItem3}</Text> {/* change when copied */}
-                            {/* update list to choose the first item instead of this. place holder for now CSCE 4901*/}
-                            <Text style={styles.arrow}>{openDropdown === 3 ? '▲' : '▼'}</Text> {/* change when copied */}
-                        </TouchableOpacity>
-                        {openDropdown === 3 && ( //change when copied
-                            <View style={styles.dropdownMenu}>
-                                {allowed_dates.map((item) => ( // change when copied
-                                    <TouchableOpacity
-                                        key={item}
-                                        style={styles.dropdownItem}
-                                        onPress={() => {
-                                            setSelectedItem3(item); // change when copied
-                                            setOpenDropdown(null);
-                                        }}
-                                        >
-                                        <Text style={styles.itemText}>{item}</Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                            )}
-                    </Text>
+                    <View style={styles.infoField}>
+                        <Text style={styles.infoText}>
+                            <Text style={styles.bold}>Date: </Text>
+                            {!date || date === "Date"
+                                ? "Not selected"
+                                : date}
+                        </Text>
+                    </View>
                 </View>
 
                 {/* Main Content */}
                 <ScrollView contentContainerStyle={styles.mainContent}>
-                    {/* Start / End Buttons */}
-                    <View style={styles.sessionButtonsRow}>
-                        <TouchableOpacity style={styles.startButton}>
-                            <Text style={styles.sessionButtonText}>Start Session</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.endButton}>
-                            <Text style={styles.sessionButtonText}>End Session</Text>
-                        </TouchableOpacity>
-                    </View>
-
                     {/* Student Table */}
                     <View style={styles.tableContainer}>
-                        <View style={styles.tableHeaderRow}>
-                            <Text style={[styles.tableHeaderText, styles.colStudent]}>
-                                Student
-                            </Text>
-
-                            <Text style={[styles.tableHeaderText, styles.colTime]}>
-                                Latest Entry Time
-                            </Text> {/* If exit time is greater then entry then exit is --*/}
-
-                            <Text style={[styles.tableHeaderText, styles.colTime]}>
-                                Latest Exit Time
-                            </Text>
-
-                            <Text style={[styles.tableHeaderText, styles.colStatus]}>
-                                Status
+                        <View style={styles.formLine}>
+                            <Text style={styles.formLabel}>Student:</Text>
+                            <Text style={styles.studentName}>
+                                {typeof studentName === "string" ? studentName : "Unknown student"}
                             </Text>
                         </View>
 
-                        {students.map((student, index) =>
-                        {
-                            return (
-                                <View key={index} style={styles.tableRow}>
-                                    <Text style={[styles.tableCellText, styles.colStudent]}>
-                                        {student.name}
+                        <View style={styles.formLine}>
+                            <Text style={styles.formLabel}>Status:</Text>
+                            <View style={styles.statusField}>
+                                <TouchableOpacity
+                                    style={styles.statusDropdown}
+                                    onPress={() => setStatusMenuOpen((open) => !open)}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`Status: ${selectedStatus}`}
+                                >
+                                    <Text style={[styles.statusDropdownText, getStatusStyle(selectedStatus)]}>
+                                        {selectedStatus}
                                     </Text>
+                                    <Text style={styles.dropdownArrow}>{statusMenuOpen ? "▲" : "▼"}</Text>
+                                </TouchableOpacity>
+                                {statusMenuOpen && (
+                                    <View style={styles.statusMenu}>
+                                        {statusOptions.map((option) => (
+                                            <TouchableOpacity
+                                                key={option}
+                                                style={[
+                                                    styles.statusOption,
+                                                    option === selectedStatus && styles.selectedStatusOption
+                                                ]}
+                                                accessibilityRole="button"
+                                                accessibilityState={{ selected: option === selectedStatus }}
+                                                onPress={() => {
+                                                    setSelectedStatus(option);
+                                                    setStatusMenuOpen(false);
+                                                }}
+                                            >
+                                                <Text style={[
+                                                    styles.statusOptionText,
+                                                    getStatusStyle(option),
+                                                    option === selectedStatus && styles.selectedStatusOptionText
+                                                ]}>
+                                                    {option}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                )}
+                            </View>
+                        </View>
 
-                                    <Text style={[styles.tableCellText, styles.colTime]}>
-                                        {student.entrytime}
-                                    </Text>
-                                    <Text style={[styles.tableCellText, styles.colTime]}>
-                                        {student.exittime}
-                                    </Text>
+                        <Text
+                            pointerEvents="none"
+                            style={[styles.formLabel, styles.reasonLabel]}
+                        >
+                            Reason:
+                        </Text>
+                        <TextInput
+                            style={styles.reasonInput}
+                            value={reason}
+                            onChangeText={setReason}
+                            placeholder="Reason Given..."
+                            placeholderTextColor="#888"
+                            multiline
+                            textAlignVertical="top"
+                        />
 
-                                    <Text
-                                        style={[
-                                            styles.tableCellText,
-                                            styles.colStatus,
-                                            getStatusStyle(student.status)
-                                        ]}
-                                    >
-                                        {student.status} {/* removed V and put it in override */}
-                                    </Text>
-                                </View>
-                            );
-                        })}
-                    </View>
-
-                    {/* Bottom Buttons */}
-                    <View style={styles.bottomButtonsRow}>
-                        <TouchableOpacity style={styles.smallButton}> {/* add this when ready
-                        onPress={() => router.push("/overrideInstructor")}*/}
-                            <Text style={styles.smallButtonText}>Back to Dashboard</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.smallButton} onPress={refreshPage}>
-                            <Text style={styles.smallButtonText}>Refresh</Text>
-                        </TouchableOpacity>
+                        <View style={styles.formButtons}>
+                            <TouchableOpacity
+                                style={[styles.smallButton, styles.cancelButton]}
+                                onPress={() => router.push("/overrideInstructor")}
+                            >
+                                <Text style={styles.smallButtonText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.smallButton, styles.saveButton]}
+                                onPress={() => router.push("/dashboardInstructor")}
+                            >
+                                <Text style={styles.smallButtonText}>Save Changes</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                 </ScrollView>
             </View>
-        </View>
+            </View>
+
     );
 }
 
@@ -344,8 +345,11 @@ const styles = StyleSheet.create({
     },
 
     mainContent: {
+        flexGrow: 1,
         paddingVertical: 20,
-        paddingHorizontal: 10
+        paddingHorizontal: 10,
+        justifyContent: "flex-start",
+        alignItems: "center"
     },
 
     sessionButtonsRow: {
@@ -376,12 +380,128 @@ const styles = StyleSheet.create({
     },
 
     tableContainer: {
-        backgroundColor: "#f9fff9",
-        borderRadius: 20,
-        borderWidth: 2,
-        borderColor: "#b6d7b6",
-        padding: 15,
-        marginHorizontal: 30
+        width: "100%",
+        maxWidth: 560,
+        backgroundColor: "#ffffff",
+        borderRadius: 4,
+        borderWidth: 1,
+        borderColor: "#000000",
+        padding: 24
+    },
+
+    formLine: {
+        minHeight: 48,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        marginBottom: 12
+    },
+
+    formLabel: {
+        color: "#222222",
+        fontSize: 16,
+        fontWeight: "bold"
+    },
+
+    studentName: {
+        color: "#222222",
+        fontSize: 16,
+        flexShrink: 1
+    },
+
+    statusField: {
+        flex: 1,
+        position: "relative",
+        zIndex: 20,
+        elevation: 20
+    },
+
+    statusDropdown: {
+        minHeight: 44,
+        borderWidth: 1,
+        borderColor: "#777777",
+        borderRadius: 4,
+        paddingHorizontal: 12,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        backgroundColor: "#ffffff"
+    },
+
+    statusDropdownText: {
+        color: "#222222",
+        fontSize: 16
+    },
+
+    dropdownArrow: {
+        color: "#222222",
+        fontSize: 12
+    },
+
+    statusMenu: {
+        position: "absolute",
+        top: 46,
+        left: 0,
+        right: 0,
+        backgroundColor: "#ffffff",
+        borderColor: "#777777",
+        borderWidth: 1,
+        zIndex: 21,
+        elevation: 21
+    },
+
+    statusOption: {
+        minHeight: 42,
+        justifyContent: "center",
+        paddingHorizontal: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: "#eeeeee"
+    },
+
+    statusOptionText: {
+        color: "#222222",
+        fontSize: 16
+    },
+
+    selectedStatusOption: {
+        backgroundColor: "#f0f4f0"
+    },
+
+    selectedStatusOptionText: {
+        fontWeight: "bold"
+    },
+
+    reasonLabel: {
+        alignSelf: "flex-start",
+        lineHeight: 20,
+        marginBottom: 8
+    },
+
+    reasonInput: {
+        minHeight: 160,
+        width: "100%",
+        borderWidth: 1,
+        borderColor: "#777777",
+        borderRadius: 4,
+        padding: 12,
+        color: "#222222",
+        fontSize: 16,
+        backgroundColor: "#ffffff",
+        marginBottom: 20
+    },
+
+    formButtons: {
+        flexDirection: "row",
+        justifyContent: "flex-end",
+        gap: 12
+    },
+
+    cancelButton: {
+        backgroundColor: "#666666"
+    },
+
+    saveButton: {
+        backgroundColor: "#0b7d3b"
     },
 
     tableHeaderRow: {
@@ -495,4 +615,8 @@ const styles = StyleSheet.create({
     itemText: {
         fontSize: 16,
     },
+    infoField: {
+        flex: 1,
+        paddingHorizontal: 10
+    }
 });

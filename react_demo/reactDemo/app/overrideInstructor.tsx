@@ -86,6 +86,156 @@ export default function InstructorOverride()
         setPopupVisible((prev) => !prev);
     };
 
+    const formatTime = (dateTime: string) => {
+        if (!dateTime) {
+            return "-";
+        }
+
+        const parts = dateTime.split(" ");
+
+        if (parts.length < 2) {
+            return "-";
+        }
+
+        const timeParts = parts[1].split(":");
+
+        if (timeParts.length < 2) {
+            return "-";
+        }
+
+        const hour = parseInt(timeParts[0], 10);
+        const minute = timeParts[1];
+
+        const period = hour >= 12 ? "PM" : "AM";
+        const displayHour = hour % 12 || 12;
+
+        return `${displayHour}:${minute} ${period}`;
+    };
+
+
+    const formatStatus = (status: string) => {
+        if (!status) {
+            return "Unknown";
+        }
+
+        return (
+            status.charAt(0).toUpperCase() +
+            status.slice(1)
+        );
+    };
+
+
+    const loadCheckins = async () => {
+        try {
+            setLoading(true);
+
+            const response = await fetch(
+                `${API_BASE}/checkins`
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    `Server returned ${response.status}`
+                );
+            }
+
+            const records: CheckinRecord[] =
+                await response.json();
+
+            /* This is for testing for me specifically cause i cant get the database stuff to work
+            const records: CheckinRecord[] = [{
+                attendance_id: 1,
+                session_id: 1,
+                student_id: 1, 
+                student_name: "Person",
+                first_check_in_time: "04:20", // 9/15/26 changes here
+                total_time: "04:20", // 9/15/26 changes here
+                check_in_time: "04:20",
+                face_verified: 1,
+                location_verified: 1,
+                status: "Present"
+            }];
+            */
+            /*
+             * For now, show the latest attendance record
+             * for each student.
+             *
+             * Later we can filter this by:
+             * course
+             * session
+             * date
+             */
+            const latestByStudent =
+                new Map<number, CheckinRecord>();
+
+            records.forEach((record) => {
+                const existing =
+                    latestByStudent.get(
+                        record.student_id
+                    );
+
+                if (
+                    !existing ||
+                    record.attendance_id >
+                        existing.attendance_id
+                ) {
+                    latestByStudent.set(
+                        record.student_id,
+                        record
+                    );
+                }
+            });
+
+
+            const formattedStudents: StudentRow[] =
+                Array.from(
+                    latestByStudent.values()
+                ).map((record) => ({
+                    name:
+                        record.student_name ??
+                        `Student ${record.student_id}`,
+                    // 9/15/26 changes here below
+                    firstentrytime: formatTime(
+                        record.first_check_in_time
+                    ),
+                    
+                    entrytime: formatTime(
+                        record.check_in_time
+                    ),
+
+                    exittime: "-",
+                    totaltime: "-", // 9/15/26 changes here
+                    status: formatStatus(
+                        record.status
+                    )
+                }));
+
+
+            setStudents(formattedStudents);
+
+        } catch (error) {
+            console.error(
+                "Failed to load check-ins:",
+                error
+            );
+
+            Alert.alert(
+                "Unable to load attendance",
+                "The dashboard could not reach the backend."
+            );
+
+        } finally {
+            setLoading(false);
+        }
+    };
+
+
+    useEffect(() => {
+        loadCheckins();
+    }, []);
+
+
+
     return (
         <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
             <View style={styles.container}>
@@ -248,21 +398,24 @@ export default function InstructorOverride()
                                     the students information like everytime they clocked in and clocked out.
                                     Probably something like
                                     a small table inside there.*/}
-                                        <Pressable onPress={togglePopup}>
+                                        <Pressable
+                                            style={styles.colStudent}
+                                            onPress={togglePopup}
+                                        >
                                         <Text
                                             style={[
                                                 styles.tableCellText,
-                                                styles.colStudent,
                                                 styles.linkText
                                             ]}
                                         >
                                             {
                                                 student.name
                                             }
-                                        </Text></Pressable>
-                                        {popupVisible && ( <View style={styles.popupBox}>
-                                    <Text style={styles.popupText}>Clicking Student opens this popup.</Text>
-                                    <TouchableOpacity onPress={togglePopup}>
+                                        </Text>
+                                            </Pressable>
+                                                {popupVisible && ( <View style={styles.popupBox}>
+                                                    <Text style={styles.popupText}>Clicking Student opens this popup.</Text>
+                                                <TouchableOpacity onPress={togglePopup}>
                                         <Text style={styles.popupClose}>Close</Text>
                                     </TouchableOpacity>
                                 </View>
@@ -311,19 +464,29 @@ export default function InstructorOverride()
                                             }
                                         </Text>
                                         {/* 9/15/26 Probably make this clickable to go to the audit screen. */}
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colStatus,
-                                                getStatusStyle(
-                                                    student.status
-                                                )
-                                            ]}
+                                        <Pressable
+                                            style={styles.colStatus}
+                                            onPress={() => router.push({
+                                                pathname: "/auditInstructor",
+                                                params: {
+                                                    studentName: student.name,
+                                                    status: student.status,
+                                                    course: course,
+                                                    room: room,
+                                                    date: date
+                                                }
+                                            })}
                                         >
-                                            {
-                                                student.status
-                                            }
-                                        </Text>
+                                            <Text
+                                                style={[
+                                                    styles.tableCellText,
+                                                    getStatusStyle(student.status),
+                                                    styles.statusLinkText
+                                                ]}
+                                            >
+                                                {student.status}
+                                            </Text>
+                                        </Pressable>
                                     </View>
                                 )
                             )
@@ -519,6 +682,10 @@ const styles = StyleSheet.create({
         fontWeight: "bold"
     },
 
+    statusLinkText: {
+        textDecorationLine: "underline"
+    },
+
     popupBox: {
         position: "absolute",
         top: 30,
@@ -539,8 +706,8 @@ const styles = StyleSheet.create({
 
     popupText: {
         color: "#222",
-        fontSize: 13,
-        marginBottom: 6
+        fontSize: 13
+        
     },
 
     popupClose: {
