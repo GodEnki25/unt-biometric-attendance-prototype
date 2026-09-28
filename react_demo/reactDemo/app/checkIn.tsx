@@ -3,6 +3,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useState, useMemo, useRef } from "react";
 import * as Location from "expo-location";
 import { CameraView, useCameraPermissions} from "expo-camera";
+import * as SecureStore from "expo-secure-store";
 
 //API address is now stored in constants/api.ts so the frontend
 //does not need a hardcoded backend IP in each screen.
@@ -131,10 +132,20 @@ export default function CheckInScreen()
         async function fetchSession() {
 
             setStatus("Fetching session...");
-            const res = await fetch(`${API_BASE}/geofence/session`);
+            const token = await SecureStore.getItemAsync("access_token");
 
-            if (!res.ok) {
-                throw new Error("Failed to fetch session");
+            if (!token) {
+                throw new Error("Not logged in.");
+            }
+
+            const res = await fetch(`${API_BASE}/geofence/session`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            });
+            
+            if(!res.ok) {
+              throw new Error(`Failed to fetch session (${res.status})`);
             }
 
             const data = await res.json();
@@ -145,10 +156,13 @@ export default function CheckInScreen()
           try{
             setStatus("Checking geofence...");
 
+            const token = await SecureStore.getItemAsync("access_token");
+
             const res = await fetch(`${API_BASE}/geofence/check`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`,
               },
               body: JSON.stringify({
                 lat: currentLoc.lat,
@@ -506,62 +520,51 @@ export default function CheckInScreen()
 
      return (
       <View style={styles.mainContent}>
-        <Text style={styles.statusText}>Status: {status}</Text>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Session</Text>
-          <Text style={styles.cardText}>ID: {session.id}</Text>
-          <Text style={styles.cardText}>Radius: {session.radius_m} m</Text>
-          <Text style={styles.cardText}>Open: {String(session.is_open)}</Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Your Location</Text>
-          <Text style={styles.cardText}>Latitude: {loc.lat}</Text>
-          <Text style={styles.cardText}>Longitude: {loc.lon}</Text>
-          <Text style={styles.cardText}>
-            Accuracy: {Number(loc.accuracy).toFixed(1)} m
-          </Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Fence Check</Text>
-          <Text
-            style={[
-              styles.geofenceStatus,
-              { color: inside ? "#15803d" : "#b91c1c" },
-            ]}
-          >
-            {inside ? "INSIDE GEOFENCE" : "OUTSIDE GEOFENCE"}
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={refreshLocation}
-          disabled={isRefreshingLocation}
-          style={[
-            styles.secondaryButton,
-            isRefreshingLocation && styles.disabledButton,
-          ]}
-        >
-          <Text style={styles.secondaryButtonText}>
-            {isRefreshingLocation ? "Refreshing..." : "Refresh Location"}
-          </Text>
-        </Pressable>
-
         {!showCamera ? (
-          <Pressable
-            onPress={openCameraFlow}
-            disabled={!inside || isCheckingIn}
-            style={[
-              styles.primaryButton,
-              (!inside || isCheckingIn) && styles.disabledButton,
-            ]}
-          >
-            <Text style={styles.primaryButtonText}>
-              Continue to Face Scan
+          <>
+            <View style={styles.classHeader}>
+              <Text style={styles.classCode}>CSCE 4901</Text>
+              <Text style={styles.classRoom}>Classroom 266</Text>
+            </View>
+
+            <View
+              style={[
+                styles.geofenceCircle,
+                inside ? styles.insideCircle : styles.outsideCircle,
+              ]}
+            >
+              <Text style={styles.circleIcon}>
+                {inside ? "✓" : "✕"}
+              </Text>
+
+              <Text style={styles.circleText}>
+                {inside ? "INSIDE\nCLASSROOM" : "OUTSIDE\nCLASSROOM"}
+              </Text>
+            </View>
+
+            <Text style={styles.sessionText}>
+              {inside
+                ? "Session Ends: 02:00 PM"
+                : "Move closer to classroom 266\nto check in"}
             </Text>
-          </Pressable>
+
+            <Pressable
+              onPress={openCameraFlow}
+              disabled={!inside || isCheckingIn}
+              style={[
+                styles.checkInButton,
+                (!inside || isCheckingIn) && styles.checkInButtonDisabled,
+              ]}
+            >
+              <Text style={styles.checkInButtonText}>
+                CHECK IN
+              </Text>
+            </Pressable>
+
+            <Text style={styles.lastAttendanceText}>
+              Last Attendance: 03/06
+            </Text>
+          </>
         ) : (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Face Verification</Text>
@@ -702,7 +705,7 @@ export default function CheckInScreen()
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f2f2f2",
+    backgroundColor: "white",
   },
   header: {
     height: 90,
@@ -744,6 +747,75 @@ const styles = StyleSheet.create({
   mainContent: {
     gap: 14,
     paddingBottom: 24,
+    alignItems: "center",
+  },
+  classHeader: {
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 40,
+  },
+  classCode: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#166534",
+  },
+  classRoom: {
+    fontSize: 17,
+    color: "#166534",
+  },
+  geofenceCircle: {
+    width: 190,
+    height: 190,
+    borderRadius: 95,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  insideCircle: {
+    backgroundColor: "#009640",
+  },
+  outsideCircle: {
+    backgroundColor: "#ff3131",
+  },
+  circleIcon: {
+    color: "white",
+    fontSize: 54,
+    fontWeight: "bold",
+    lineHeight: 58,
+  },
+  circleText: {
+    color: "white",
+    fontSize: 17,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  sessionText: {
+    marginTop: 4,
+    color: "#166534",
+    fontSize: 14,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  checkInButton: {
+    marginTop: 4,
+    backgroundColor: "#009640",
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    borderRadius: 24,
+    alignItems: "center",
+  },
+  checkInButtonDisabled: {
+    backgroundColor: "#bcbcbc",
+  },
+  checkInButtonText: {
+    color: "white",
+    fontSize: 20,
+    fontWeight: "500",
+  },
+  lastAttendanceText: {
+    marginTop: 2,
+    color: "#166534",
+    fontSize: 13,
+    fontWeight: "600",
   },
   card: {
     backgroundColor: "white",
