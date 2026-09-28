@@ -1,10 +1,64 @@
 
 import { View, Text, TextInput, Button, StyleSheet, Image, Pressable, ImageBackground } from "react-native";
 import { useRouter } from "expo-router";
+import { useState } from "react";
+import { API_BASE } from "@/constants/api";
 
 export default function LoginScreen()
 {
     const router = useRouter();
+
+    const [email, setEmail] = useState("");
+    const [password, setPassword] = useState("");
+    const [error, setError] = useState("");
+
+    const handleLogin = async () => {
+    setError("");
+
+    try {
+        const response = await fetch(`${API_BASE}/login`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                email,
+                password,
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!data.success) {
+            setError(data.message || "Login failed.");
+            return;
+        }
+
+        if (
+            data.user.role !== "instructor" &&
+            data.user.role !== "admin"
+        ) {
+            setError("Instructor account required.");
+            return;
+        }
+
+        localStorage.setItem(
+            "access_token",
+            data.access_token
+        );
+
+        localStorage.setItem(
+            "user",
+            JSON.stringify(data.user)
+        );
+
+        router.push("/dashboardInstructor");
+    }
+    catch (error) {
+        console.error("Instructor login error:", error);
+        setError("Unable to connect to server.");
+    }
+};
 
     return (
 
@@ -20,10 +74,16 @@ export default function LoginScreen()
                 </View>
 
                 <View style={styles.formContainer}>
-                    <TextInput style={styles.input} placeholder="Username" />
-                    <TextInput style={styles.input} placeholder="Password" secureTextEntry={true} />
+                    <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" />
+                    <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry={true} />
 
-                    <Pressable style={styles.loginButton} onPress={() => router.push("/dashboardInstructor")}>
+                    {error ? (
+                        <Text style={{ color: "red" }}>
+                            {error}
+                        </Text>
+                    ) : null}
+
+                    <Pressable style={styles.loginButton} onPress={handleLogin}>
                         <Text style={styles.loginButtonText}>Sign In</Text>
                     </Pressable>
                 </View>

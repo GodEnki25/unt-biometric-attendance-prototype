@@ -172,8 +172,14 @@ const formatTime = (dateTime: string) => {
         try {
             setLoading(true);
 
-            const response = await fetch(
-                `${API_BASE}/checkins`
+            const token = localStorage.getItem("access_token");
+
+            const response = await fetch (
+                `${API_BASE}/checkins`, {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                }
             );
 
             if (!response.ok) {
@@ -342,7 +348,8 @@ const formatTime = (dateTime: string) => {
                 {
                     method: "POST",
                     headers: {
-                        "Content-Type": "application/json"
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${localStorage.getItem("access_token")}`
                     },
                     body: JSON.stringify({
                         center_lat: selectedGeofence.lat,
@@ -389,7 +396,10 @@ const formatTime = (dateTime: string) => {
             const response = await fetch(
                 `${API_BASE}/geofence/session/end`,
                 {
-                    method: "POST"
+                    method: "POST",
+                    headers: {
+                        Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+                    }
                 }
             );
 
