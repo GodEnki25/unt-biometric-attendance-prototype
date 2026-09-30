@@ -1,96 +1,159 @@
-from database.db import get_db_connection
-import hashlib
-
-
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
+from backend.database.db import get_db_connection
+from backend.services.auth_service import hash_password
 
 
 def seed_data():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # ======================
-    # USERS
-    # ======================
+    try:
+        # ======================
+        # USERS
+        # ======================
 
-    # Instructor
-    cursor.execute("""
-    INSERT INTO users (full_name, email, password_hash, role)
-    VALUES (?, ?, ?, ?)
-    """, (
-        "Diana Rabah",
-        "diana@unt.edu",
-        hash_password("password123"),
-        "instructor"
-    ))
-    instructor_id = cursor.lastrowid
+        # Instructor
+        cursor.execute(
+            """
+            INSERT INTO users (
+                full_name,
+                email,
+                password_hash,
+                role
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "Diana Rabah",
+                "diana@unt.edu",
+                hash_password("password123"),
+                "instructor",
+            ),
+        )
 
-    
-    cursor.execute("""
-    INSERT INTO users (full_name, email, password_hash, role)
-    VALUES (?, ?, ?, ?)
-    """, (
-        "Jordan Black",
-        "jordan@unt.edu",
-        hash_password("password123"),
-        "instructor"
-    ))
-    ta_id = cursor.lastrowid
+        instructor_id = cursor.lastrowid
 
-    # Students
-    students = [
-        ("Sorel Agbogla", "sorel@unt.edu", "100001"),
-        ("Andres Moreira", "andres@unt.edu", "100002"),
-        ("Andrew Kim", "andrew@unt.edu", "100003"),
-        ("Shayan Karki", "shayan@unt.edu", "100004")
-    ]
+        # Teaching Assistant / Instructor
+        cursor.execute(
+            """
+            INSERT INTO users (
+                full_name,
+                email,
+                password_hash,
+                role
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                "Jordan Black",
+                "jordan@unt.edu",
+                hash_password("password123"),
+                "instructor",
+            ),
+        )
 
-    student_ids = []
+        # ======================
+        # STUDENTS
+        # ======================
 
-    for name, email, sid in students:
-        cursor.execute("""
-        INSERT INTO users (full_name, email, password_hash, role, student_id)
-        VALUES (?, ?, ?, ?, ?)
-        """, (
-            name,
-            email,
-            hash_password("password123"),
-            "student",
-            sid
-        ))
-        student_ids.append(cursor.lastrowid)
+        students = [
+            (
+                "Sorel Agbogla",
+                "sorel@unt.edu",
+                "100001",
+            ),
+            (
+                "Andres Moreira",
+                "andres@unt.edu",
+                "100002",
+            ),
+            (
+                "Andrew Kim",
+                "andrew@unt.edu",
+                "100003",
+            ),
+            (
+                "Shayan Karki",
+                "shayan@unt.edu",
+                "100004",
+            ),
+        ]
 
-    # ======================
-    # COURSE
-    # ======================
+        student_ids = []
 
-    cursor.execute("""
-    INSERT INTO courses (course_code, course_name, instructor_id)
-    VALUES (?, ?, ?)
-    """, (
-        "CSCE 4901",
-        "Capstone",
-        instructor_id
-    ))
+        for name, email, student_id in students:
+            cursor.execute(
+                """
+                INSERT INTO users (
+                    full_name,
+                    email,
+                    password_hash,
+                    role,
+                    student_id
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    name,
+                    email,
+                    hash_password("password123"),
+                    "student",
+                    student_id,
+                ),
+            )
 
-    course_id = cursor.lastrowid
+            student_ids.append(cursor.lastrowid)
 
-    # ======================
-    # ENROLLMENTS
-    # ======================
+        # ======================
+        # COURSE
+        # ======================
 
-    for student_id in student_ids:
-        cursor.execute("""
-        INSERT INTO course_enrollments (course_id, student_id)
-        VALUES (?, ?)
-        """, (course_id, student_id))
+        cursor.execute(
+            """
+            INSERT INTO courses (
+                course_code,
+                course_name,
+                instructor_id
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                "CSCE 4901",
+                "Capstone",
+                instructor_id,
+            ),
+        )
 
-    conn.commit()
-    conn.close()
+        course_id = cursor.lastrowid
 
-    print("Seed data inserted successfully.")
+        # ======================
+        # ENROLLMENTS
+        # ======================
+
+        for student_id in student_ids:
+            cursor.execute(
+                """
+                INSERT INTO course_enrollments (
+                    course_id,
+                    student_id
+                )
+                VALUES (?, ?)
+                """,
+                (
+                    course_id,
+                    student_id,
+                ),
+            )
+
+        conn.commit()
+
+        print("Seed data inserted successfully.")
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
 
 
 if __name__ == "__main__":

@@ -2,10 +2,14 @@ from fastapi import APIRouter, UploadFile, File, Form, Depends
 from backend.database.db import get_db_connection
 from backend.services.face import process_frame
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+CENTRAL_TZ = ZoneInfo("America/Chicago")
 
 from backend.services.tile38_service import check_geofence
 from backend.routes.geofence import ACTIVE_SESSION
-from backend.services.token_service import(get_current_user, require_instructor)
+from backend.services.token_service import get_current_user, require_instructor
+
 
 router = APIRouter()
 
@@ -13,22 +17,33 @@ router = APIRouter()
 # =========================
 # CREATE SESSION
 # =========================
+
 @router.post("/session")
-def create_session(data: dict, current_user=Depends(require_instructor)):
+def create_session(
+    data: dict,
+    current_user=Depends(require_instructor),
+):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        cursor.execute("""
-            INSERT INTO attendance_sessions
-            (course_id, session_date, start_time, end_time)
+        cursor.execute(
+            """
+            INSERT INTO attendance_sessions (
+                course_id,
+                session_date,
+                start_time,
+                end_time
+            )
             VALUES (?, ?, ?, ?)
-        """, (
-            data.get("course_id"),
-            data.get("session_date"),
-            data.get("start_time"),
-            data.get("end_time")
-        ))
+            """,
+            (
+                data.get("course_id"),
+                data.get("session_date"),
+                data.get("start_time"),
+                data.get("end_time"),
+            ),
+        )
 
         conn.commit()
         session_id = cursor.lastrowid
@@ -36,7 +51,7 @@ def create_session(data: dict, current_user=Depends(require_instructor)):
     except Exception as e:
         return {
             "success": False,
-            "error": str(e)
+            "error": str(e),
         }
 
     finally:
@@ -44,13 +59,14 @@ def create_session(data: dict, current_user=Depends(require_instructor)):
 
     return {
         "success": True,
-        "session_id": session_id
+        "session_id": session_id,
     }
 
 
 # =========================
 # CHECK-IN (CORE FEATURE)
 # =========================
+
 @router.post("/checkin")
 async def checkin(
     latitude: float = Form(...),
@@ -59,7 +75,6 @@ async def checkin(
     file: UploadFile = File(...),
     current_user=Depends(get_current_user),
 ):
-
     user_id = current_user["user_id"]
 
     conn = get_db_connection()
@@ -67,68 +82,68 @@ async def checkin(
 
     try:
         # =========================
-        # AUTO SESSION DETECTION
+        # ACTIVE SESSION VALIDATION
         # =========================
-        cursor.execute("""
+
+        if not ACTIVE_SESSION["is_open"] or ACTIVE_SESSION["id"] is None:
+            return {
+                "success": False,
+                "message": "No active session",
+            }
+
+        session_id = int(ACTIVE_SESSION["id"])
+
+        cursor.execute(
+            """
             SELECT session_id, session_date, start_time, end_time
             FROM attendance_sessions
-            ORDER BY session_id DESC
-            LIMIT 1
-        """)
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
 
         session = cursor.fetchone()
 
         if not session:
             return {
                 "success": False,
-                "message": "No active session"
+                "message": "Active session not found in database",
             }
-
-        session_id = session["session_id"]
 
         # =========================
         # TIME VALIDATION
         # =========================
-        now = datetime.now()
+
+        now = datetime.now(CENTRAL_TZ).replace(tzinfo=None)
 
         session_date = session["session_date"]
         start_time = session["start_time"]
-        end_time = session["end_time"]
 
         def parse_datetime(dt_str):
             try:
                 return datetime.strptime(
                     dt_str,
-                    "%Y-%m-%d %H:%M:%S"
+                    "%Y-%m-%d %H:%M:%S",
                 )
             except ValueError:
                 return datetime.strptime(
                     dt_str,
-                    "%Y-%m-%d %H:%M"
+                    "%Y-%m-%d %H:%M",
                 )
 
         start_datetime = parse_datetime(
             f"{session_date} {start_time}"
         )
 
-        end_datetime = parse_datetime(
-            f"{session_date} {end_time}"
-        )
-
-        if not (start_datetime <= now <= end_datetime):
+        if now < start_datetime:
             return {
                 "success": False,
-                "message": "Check-in not allowed outside session time"
+                "message": "Check-in not allowed before session start",
             }
 
         # =========================
         # GEOFENCE VALIDATION
         # =========================
-        if not ACTIVE_SESSION["is_open"]:
-            return {
-                "success": False,
-                "message": "Geofence session is closed"
-            }
 
         accuracy_buffer_m = min(accuracy, 10.0)
 
@@ -146,155 +161,199 @@ async def checkin(
         if not location_verified:
             return {
                 "success": False,
-                "message": "Location outside allowed geofence",
+                "message": "Student is outside the allowed geofence",
+                "location_verified": False,
+                "radius_m": ACTIVE_SESSION["radius_m"],
+                "accuracy_buffer_m": accuracy_buffer_m,
                 "allowed_radius_m": allowed_radius_m,
-                "accuracy_m": accuracy,
-                "engine": "tile38"
             }
 
         # =========================
-        # FACE PROCESSING
+        # FACE VALIDATION
         # =========================
-        contents = await file.read()
 
+        contents = await file.read()
         face_result = process_frame(contents)
 
-        faces_detected = face_result.get(
-            "faces_detected",
-            0
-        )
+        faces_detected = face_result.get("faces_detected", 0)
+        confidence = face_result.get("confidence", 0)
 
-        confidence = face_result.get(
-            "confidence",
-            0
-        )
-
-        # Exactly one face must be visible.
         if faces_detected != 1:
             return {
                 "success": False,
-                "message": "Invalid number of faces detected"
+                "message": "Exactly one face must be detected",
+                "faces_detected": faces_detected,
             }
 
         face_verified = confidence >= 0.75
 
-        status = (
-            "present"
-            if face_verified and location_verified
-            else "flagged"
-        )
-
-        # =========================
-        # PREVENT DUPLICATE CHECK-IN
-        # =========================
-        cursor.execute("""
-            SELECT *
-            FROM attendance_records
-            WHERE session_id = ?
-            AND student_id = ?
-        """, (
-            session_id,
-            user_id
-        ))
-
-        existing = cursor.fetchone()
-
-        if existing:
+        if not face_verified:
             return {
                 "success": False,
-                "message": "Already checked in"
+                "message": "Face verification failed",
+                "face_verified": False,
+                "confidence": confidence,
+            }
+
+        # =========================
+        # DUPLICATE CHECK
+        # =========================
+
+        cursor.execute(
+            """
+            SELECT attendance_id
+            FROM attendance_records
+            WHERE session_id = ?
+              AND student_id = ?
+            """,
+            (
+                session_id,
+                user_id,
+            ),
+        )
+
+        existing_record = cursor.fetchone()
+
+        if existing_record:
+            return {
+                "success": False,
+                "message": "Student already checked in for this session",
             }
 
         # =========================
         # SAVE ATTENDANCE
         # =========================
-        cursor.execute("""
-            INSERT INTO attendance_records
-            (
+
+        status = "present"
+
+        check_in_time = datetime.now(CENTRAL_TZ).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO attendance_records (
                 session_id,
                 student_id,
+                check_in_time,
                 face_verified,
                 location_verified,
                 status
             )
-            VALUES (?, ?, ?, ?, ?)
-        """, (
-            session_id,
-            user_id,
-            int(face_verified),
-            int(location_verified),
-            status
-        ))
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                user_id,
+                check_in_time,
+                1,
+                1,
+                status,
+            ),
+        )
 
         conn.commit()
 
+        return {
+            "success": True,
+            "message": "Attendance recorded successfully",
+            "session_id": session_id,
+            "student_id": user_id,
+            "status": status,
+            "face_verified": True,
+            "location_verified": True,
+            "confidence": confidence,
+            "faces_detected": faces_detected,
+            "radius_m": ACTIVE_SESSION["radius_m"],
+            "accuracy_buffer_m": accuracy_buffer_m,
+            "allowed_radius_m": allowed_radius_m,
+            "engine": "tile38",
+        }
+
     except Exception as e:
+        conn.rollback()
+
         return {
             "success": False,
-            "error": str(e)
+            "error": str(e),
         }
 
     finally:
         conn.close()
 
-    return {
-        "success": True,
-        "status": status,
-        "confidence": confidence,
-        "faces_detected": faces_detected,
-        "location_verified": location_verified,
-        "allowed_radius_m": allowed_radius_m,
-        "accuracy_m": accuracy,
-        "engine": "tile38"
-    }
-
 
 # =========================
-# VIEW CHECK-INS
+# GET CHECK-INS
 # =========================
+
 @router.get("/checkins")
-def get_checkins(current_user=Depends(require_instructor)):
+def get_checkins(
+    current_user=Depends(require_instructor),
+):
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        SELECT
-            u.user_id AS student_id,
-            u.full_name AS student_name,
+    try:
+        # If a class is currently running, show attendance
+        # for that exact session.
+        if ACTIVE_SESSION["is_open"] and ACTIVE_SESSION["id"] is not None:
+            session_id = int(ACTIVE_SESSION["id"])
 
-            ar.attendance_id,
-            ar.session_id,
-            ar.check_in_time,
-            ar.face_verified,
-            ar.location_verified,
-
-            CASE
-                WHEN ar.attendance_id IS NULL THEN 'absent'
-                ELSE ar.status
-            END AS status
-
-        FROM course_enrollments ce
-
-        JOIN users u
-            ON u.user_id = ce.student_id
-
-        LEFT JOIN attendance_records ar
-            ON ar.attendance_id = (
-                SELECT ar2.attendance_id
-                FROM attendance_records ar2
-                WHERE ar2.student_id = u.user_id
-                ORDER BY ar2.attendance_id DESC
+        else:
+            # If the class has ended, show attendance from
+            # the most recently created session.
+            cursor.execute(
+                """
+                SELECT session_id
+                FROM attendance_sessions
+                WHERE course_id = 1
+                ORDER BY session_id DESC
                 LIMIT 1
+                """
             )
 
-        WHERE ce.course_id = 1
-        AND u.role = 'student'
+            session = cursor.fetchone()
 
-        ORDER BY u.full_name
-    """)
+            if not session:
+                return []
 
-    records = cursor.fetchall()
+            session_id = session["session_id"]
 
-    conn.close()
+        # Get every enrolled student and their attendance
+        # record for this specific session only.
+        #
+        # Keep the same response format expected by the
+        # instructor dashboard and override screen.
+        cursor.execute(
+            """
+            SELECT
+                u.user_id AS student_id,
+                u.full_name AS student_name,
+                ar.attendance_id,
+                ar.session_id,
+                ar.check_in_time,
+                ar.face_verified,
+                ar.location_verified,
+                CASE
+                    WHEN ar.attendance_id IS NULL THEN 'absent'
+                    ELSE ar.status
+                END AS status
+            FROM course_enrollments ce
+            JOIN users u
+                ON u.user_id = ce.student_id
+            LEFT JOIN attendance_records ar
+                ON ar.student_id = u.user_id
+                AND ar.session_id = ?
+            WHERE ce.course_id = 1
+                AND u.role = 'student'
+            ORDER BY u.full_name
+            """,
+            (session_id,),
+        )
 
-    return [dict(row) for row in records]
+        records = cursor.fetchall()
+
+        return [dict(row) for row in records]
+
+    finally:
+        conn.close()
