@@ -2,523 +2,547 @@ import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, Platform, 
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useState, useMemo, useRef } from "react";
 import * as Location from "expo-location";
-import { CameraView, useCameraPermissions} from "expo-camera";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
+import { File } from "expo-file-system";
 
 //API address is now stored in constants/api.ts so the frontend
 //does not need a hardcoded backend IP in each screen.
 import { API_BASE } from "../constants/api";
 
-    type Session = {
-        id: string;
-        center_lat: number;
-        center_lon: number;
-        radius_m: number;
-        is_open: boolean;
-    };
+type Session = {
+  id: string;
+  center_lat: number;
+  center_lon: number;
+  radius_m: number;
+  is_open: boolean;
+};
 
-    type UserLoation = {
-        lat: number;
-        lon: number;
-        accuracy: number;
-    };
+type UserLoation = {
+  lat: number;
+  lon: number;
+  accuracy: number;
+};
 
-    type CheckInResult = {
-        ok: boolean;
-        reason: string;
-        distance_m?: number;
-        allowed_distance_m?: number;
-        server_time?: string;
-    };
+type CheckInResult = {
+  ok: boolean;
+  reason: string;
+  distance_m?: number;
+  allowed_distance_m?: number;
+  server_time?: string;
+};
 
-    // UPDATED FOR NEW BIOMETRIC API
-    type FaceCheckResult = {
-      status?: string;
-      user?: string;
-      confidence?: number;
-      matches?: number;
-      error?: string;
-      detail?: any;
-    };
+// UPDATED FOR NEW BIOMETRIC API
+type FaceCheckResult = {
+  status?: string;
+  user?: string;
+  confidence?: number;
+  matches?: number;
+  error?: string;
+  detail?: any;
+};
 
-    type GeofenceResult = {
-      inside: boolean;
-      allow_biometric: boolean;
-      reason: string;
-      radius_m?: number;
-      accuracy_buffer_m?: number;
-      allowed_radius_m?: number;
-      engine?: string;
-    };
+type GeofenceResult = {
+  inside: boolean;
+  allow_biometric: boolean;
+  reason: string;
+  radius_m?: number;
+  accuracy_buffer_m?: number;
+  allowed_radius_m?: number;
+  engine?: string;
+};
 
-export default function CheckInScreen()
-{
-    const router = useRouter();
+export default function CheckInScreen() {
+  const router = useRouter();
 
-    // Get the userId that was passed from dashboard.tsx
-    const { userId } = useLocalSearchParams();
+  // Get the userId that was passed from dashboard.tsx
+  const { userId } = useLocalSearchParams();
 
-    const cameraRef = useRef<any>(null);
+  const cameraRef = useRef<any>(null);
 
-    const [session, setSession] = useState<Session | null>(null);
-    const [loc, setLoc] = useState<UserLoation | null>(null);
-    const [result, setResult] = useState<CheckInResult | null>(null);
-    const [faceResult, setFaceResult] = useState<FaceCheckResult | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loc, setLoc] = useState<UserLoation | null>(null);
+  const [result, setResult] = useState<CheckInResult | null>(null);
+  const [faceResult, setFaceResult] = useState<FaceCheckResult | null>(null);
 
-    const [permisssionStatus, setPermissionStatus] = useState < "unknown" | "granted" | "denied" > ("unknown");
-    const [status, setStatus] = useState("Starting...");
-    const [isBootLoading, setIsBootLoading] = useState(true);
-    const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
-    const [isCheckingIn, setIsCheckingIn] = useState(false);
+  const [permisssionStatus, setPermissionStatus] = useState<"unknown" | "granted" | "denied">("unknown");
+  const [status, setStatus] = useState("Starting...");
+  const [isBootLoading, setIsBootLoading] = useState(true);
+  const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
 
-    const [showCamera, setShowCamera] = useState(false);
-    const [isUploadingFace, setIsuploadingFace] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [isUploadingFace, setIsuploadingFace] = useState(false);
 
-    const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
-    const [inside, setInside] = useState(false);
-    const [geofenceResult, setGeofenceResult] = useState<GeofenceResult | null>(null);
+  const [inside, setInside] = useState(false);
+  const [geofenceResult, setGeofenceResult] = useState<GeofenceResult | null>(null);
 
-    useEffect(() => {
-        initializeApp();
-        }, []);
+  useEffect(() => {
+    initializeApp();
+  }, []);
 
-        async function initializeApp() {
-            try {
-                setIsBootLoading(true);
-                setResult(null);
-                setFaceResult(null);
-                setShowCamera(false);
+  async function initializeApp() {
+    try {
+      setIsBootLoading(true);
+      setResult(null);
+      setFaceResult(null);
+      setShowCamera(false);
 
-                const granted = await requestLocationPermission();
-                if (!granted) return;
+      const granted = await requestLocationPermission();
+      if (!granted) return;
 
-                await fetchSession();
-                await getUserLocation();
-
-               
-            }
-            catch (err: any){
-                setStatus("Error: " + err.message);
-            }
-            finally {
-                setIsBootLoading(false);
-            }
-        }
-
-        async function requestLocationPermission() {
-
-            try {
-                setStatus("Requesting location permission...");
-                const { status } = await Location.requestForegroundPermissionsAsync();
-
-                if (status !== "granted") {
-                    setPermissionStatus("denied");
-                    setStatus("Location permission denied.");
-                    return false;
-                }
-
-                setPermissionStatus("granted");
-                return true;
-            }
-            
-            catch (err: any) {
-                setPermissionStatus("denied");
-                setStatus(`Permission error: ${err.message}`);
-                return false;
-            }
-        }
-
-        async function fetchSession() {
-
-            setStatus("Fetching session...");
-            const token = await SecureStore.getItemAsync("access_token");
-
-            if (!token) {
-                throw new Error("Not logged in.");
-            }
-
-            const res = await fetch(`${API_BASE}/geofence/session`, {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            });
-            
-            if(!res.ok) {
-              throw new Error(`Failed to fetch session (${res.status})`);
-            }
-
-            const data = await res.json();
-            setSession(data);
-        }
-
-        async function verifyGeofence(currentLoc: UserLoation) {
-          try{
-            setStatus("Checking geofence...");
-
-            const token = await SecureStore.getItemAsync("access_token");
-
-            const res = await fetch(`${API_BASE}/geofence/check`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`,
-              },
-              body: JSON.stringify({
-                lat: currentLoc.lat,
-                lon: currentLoc.lon,
-                accuracy_m: currentLoc.accuracy,
-              }),
-            });
-
-            const data: GeofenceResult = await res.json();
-
-            if(!res.ok) {
-              throw new Error("Geofence check failed");
-            }
-
-            setGeofenceResult(data);
-            setInside(data.inside === true && data.allow_biometric === true);
-
-            setStatus(data.inside ? "Inside geofence" : "Outside geofence");
-
-            return data.inside === true;
-          }
-
-          catch (err: any) {
-            setInside(false);
-            setGeofenceResult(null);
-            setStatus(`Geofence error: ${err.message}`);
-            return false;
-          }
-          
-        }
-
-        async function getUserLocation(refresh = false) {
-
-            try{
-                if (refresh) {
-                    setIsRefreshingLocation(true);
-                    setStatus("Refreshing location...");
-                }
-
-                else {
-                    setStatus("Getting location...");
-                }
-
-                const current = await Location.getCurrentPositionAsync({
-                    accuracy: Location.Accuracy.High,
-                });
-                
-                const currentLoc = {
-                  lat: current.coords.latitude,
-                  lon: current.coords.longitude,
-                  accuracy: current.coords.accuracy ?? 999,
-                };
-
-                setLoc(currentLoc);
-
-                await verifyGeofence(currentLoc);
-            }
-            
-            catch (err: any) {
-                setStatus(`Location error: ${err.message}`);
-            }
-
-            finally {
-                setIsRefreshingLocation(false);
-            }
-
-        }
-
-        async function refreshLocation() {
-            await getUserLocation(true);
-        }
-
-        async function retryPermissionFlow() {
-            setResult(null);
-            setFaceResult(null);
-            await initializeApp();
-        }
+      await fetchSession();
+      await getUserLocation();
 
 
-        // ------------------------------------------------
-        // BIOMETRIC VERIFICATION API
-        // ------------------------------------------------
+    }
+    catch (err: any) {
+      setStatus("Error: " + err.message);
+    }
+    finally {
+      setIsBootLoading(false);
+    }
+  }
 
-        async function sendToFaceAPI(photoUri: string) {
+  async function requestLocationPermission() {
 
-            const formData = new FormData();
+    try {
+      setStatus("Requesting location permission...");
+      const { status } = await Location.requestForegroundPermissionsAsync();
 
-            // Make sure a logged-in user ID was received
-            if (!userId) {
-              throw new Error("User ID not found.");
-            }
+      if (status !== "granted") {
+        setPermissionStatus("denied");
+        setStatus("Location permission denied.");
+        return false;
+      }
 
-            // Send the actual authenticated user's database ID
-            formData.append("user_id", userId.toString());
+      setPermissionStatus("granted");
+      return true;
+    }
 
-            formData.append("file", {
-              uri: photoUri,
-              name: "photo.jpg",
-              type: "image/jpeg",
-            } as any);
+    catch (err: any) {
+      setPermissionStatus("denied");
+      setStatus(`Permission error: ${err.message}`);
+      return false;
+    }
+  }
 
-            const res = await fetch(`${API_BASE}/verify`, {
-              method: "POST",
-              body: formData,
-            });
+  async function fetchSession() {
 
-            const data = await res.json();
+    setStatus("Fetching session...");
+    const token = await SecureStore.getItemAsync("access_token");
 
-            if (!res.ok) {
-              throw new Error(
-                data?.detail ||
-                data?.error ||
-                "Face verification failed"
-              );
-            }
+    if (!token) {
+      throw new Error("Not logged in.");
+    }
 
-            return data;
-        }
+    const res = await fetch(`${API_BASE}/geofence/session`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch session (${res.status})`);
+    }
+
+    const data = await res.json();
+    setSession(data);
+  }
+
+  async function verifyGeofence(currentLoc: UserLoation) {
+    try {
+      setStatus("Checking geofence...");
+
+      const token = await SecureStore.getItemAsync("access_token");
+
+      const res = await fetch(`${API_BASE}/geofence/check`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          lat: currentLoc.lat,
+          lon: currentLoc.lon,
+          accuracy_m: currentLoc.accuracy,
+        }),
+      });
+
+      const data: GeofenceResult = await res.json();
+
+      if (!res.ok) {
+        throw new Error("Geofence check failed");
+      }
+
+      setGeofenceResult(data);
+      setInside(data.inside === true && data.allow_biometric === true);
+
+      setStatus(data.inside ? "Inside geofence" : "Outside geofence");
+
+      return data.inside === true;
+    }
+
+    catch (err: any) {
+      setInside(false);
+      setGeofenceResult(null);
+      setStatus(`Geofence error: ${err.message}`);
+      return false;
+    }
+
+  }
+
+  async function getUserLocation(refresh = false) {
+
+    try {
+      if (refresh) {
+        setIsRefreshingLocation(true);
+        setStatus("Refreshing location...");
+      }
+
+      else {
+        setStatus("Getting location...");
+      }
+
+      const current = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+      });
+
+      const currentLoc = {
+        lat: current.coords.latitude,
+        lon: current.coords.longitude,
+        accuracy: current.coords.accuracy ?? 999,
+      };
+
+      setLoc(currentLoc);
+
+      await verifyGeofence(currentLoc);
+    }
+
+    catch (err: any) {
+      setStatus(`Location error: ${err.message}`);
+    }
+
+    finally {
+      setIsRefreshingLocation(false);
+    }
+
+  }
+
+  async function refreshLocation() {
+    await getUserLocation(true);
+  }
+
+  async function retryPermissionFlow() {
+    setResult(null);
+    setFaceResult(null);
+    await initializeApp();
+  }
 
 
-        async function submitAttendanceCheckIn() {
-          if(!loc || !inside) return;
+  // ------------------------------------------------
+  // BIOMETRIC VERIFICATION API
+  // ------------------------------------------------
 
-          const payload = {
-            student_id: "student-123",
-            lat: Number(loc.lat),
-            lon: Number(loc.lon),
-            accuracy_m: Number(loc.accuracy),
-          };
+  async function sendToFaceAPI(photoUri: string) {
 
-          const res = await fetch(`${API_BASE}/checkin`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
+    const token = await SecureStore.getItemAsync("access_token");
+
+    if (!token) {
+      throw new Error("Authentication token not found. Please log in again.");
+    }
+
+    const formData = new FormData();
+
+    // const formData = new FormData();
+
+    const photoFile = new File(photoUri);
+
+    formData.append("file", photoFile);
+
+    // formData.append("file", {
+    //  uri: photoUri,
+    //  name: "photo.jpg",
+    // type: "image/jpeg",
+    // } as any);
+
+    const res = await fetch(`${API_BASE}/verify`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(
+        data?.detail ||
+        data?.error ||
+        "Face verification failed"
+      );
+    }
+
+    return data;
+  }
+
+  async function submitAttendanceCheckIn(photoUri: string) {
+    if (!loc || !inside) return;
+
+    const token = await SecureStore.getItemAsync("access_token");
+
+    if (!token) {
+      throw new Error("No authentication token found");
+    }
+
+    const formData = new FormData();
+
+    formData.append("latitude", String(loc.lat));
+    formData.append("longitude", String(loc.lon));
+    formData.append("accuracy", String(loc.accuracy));
+
+    const photoFile = new File(photoUri);
+    formData.append("file", photoFile);
+
+    const res = await fetch(`${API_BASE}/checkin`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setResult({
+        ok: false,
+        reason: data?.detail
+          ? JSON.stringify(data.detail)
+          : data?.message || "Server error",
+      });
+
+      setStatus("Check-in failed");
+      return;
+    }
+
+    setResult({
+      ok: data.success,
+      reason: data.message,
+    });
+
+    setStatus(
+      data.success
+        ? "Check-in complete"
+        : "Check-in rejected"
+    );
+  }
+
+  async function openCameraFlow() {
+    if (!inside) return;
+
+    setResult(null);
+    setFaceResult(null);
+
+    if (!cameraPermission) {
+      setStatus("Checking camera permission...");
+      return;
+    }
+
+    if (!cameraPermission.granted) {
+      setStatus("Requesting camera permission...")
+      const response = await requestCameraPermission();
+
+      if (!response.granted) {
+        setStatus("Camera permission denied.");
+        return;
+      }
+    }
+
+    setShowCamera(true);
+    setStatus("Cemera ready");
+  }
+
+
+  // ------------------------------------------------
+  // BIOMETRIC CAPTURE + VERIFICATION
+  // ------------------------------------------------
+
+  async function captureFaceAndCheckIn() {
+
+    if (!cameraRef.current || !loc || !inside) return;
+
+    try {
+
+      setIsCheckingIn(true);
+      setIsuploadingFace(true);
+      setResult(null);
+      setFaceResult(null);
+
+      while (true) {
+
+        setStatus("Capturing face...");
+
+        const photo = await cameraRef.current.takePictureAsync({
+          quality: 0.7,
+          skipProcessing: false,
+        });
+
+
+        setStatus("Verifying face...");
+
+        const faceData = await sendToFaceAPI(photo.uri);
+
+        setFaceResult(faceData);
+
+
+        if (faceData.status === "no_face_detected") {
+
+          setStatus("No face detected");
+
+          setResult({
+            ok: false,
+            reason: "No face detected. Please try again.",
           });
 
-          const data = await res.json();
-
-          if(!res.ok) {
-            setResult({
-              ok: false,
-              reason: data?.detail ? JSON.stringify(data.detail) : "Server error",
-            });
-            setStatus("Check-in failed");
-            return;
-          }
-
-          setResult(data);
-          setStatus(data.ok ? "Check-in complete" : "Check-in rejected");
-
-        }
-
-        async function openCameraFlow() {
-          if(!inside) return;
-
-          setResult(null);
-          setFaceResult(null);
-
-          if(!cameraPermission) {
-            setStatus("Checking camera permission...");
-            return;
-          }
-
-          if(!cameraPermission.granted) {
-            setStatus("Requesting camera permission...")
-            const response = await requestCameraPermission();
-
-            if(!response.granted) {
-              setStatus("Camera permission denied.");
-              return;
-            }
-          }
-
-          setShowCamera(true);
-          setStatus("Cemera ready");
+          return;
         }
 
 
-        // ------------------------------------------------
-        // BIOMETRIC CAPTURE + VERIFICATION
-        // ------------------------------------------------
+        if (faceData.status === "liveness_check_failed") {
 
-        async function captureFaceAndCheckIn() {
+          setStatus("Liveness check failed");
 
-          if(!cameraRef.current || !loc || !inside) return;
+          setResult({
+            ok: false,
+            reason: "Liveness check failed. Please try again.",
+          });
 
-          try {
-
-            setIsCheckingIn(true);
-            setIsuploadingFace(true);
-            setResult(null);
-            setFaceResult(null);
-
-            while (true) {
-
-              setStatus("Capturing face...");
-
-              const photo = await cameraRef.current.takePictureAsync({
-                quality: 0.7,
-                skipProcessing: false,
-              });
-
-
-              setStatus("Verifying face...");
-
-              const faceData = await sendToFaceAPI(photo.uri);
-
-              setFaceResult(faceData);
-
-
-              if (faceData.status === "no_face_detected") {
-
-                setStatus("No face detected");
-
-                setResult({
-                  ok: false,
-                  reason: "No face detected. Please try again.",
-                });
-
-                return;
-              }
-
-
-              if (faceData.status === "liveness_check_failed") {
-
-                setStatus("Liveness check failed");
-
-                setResult({
-                  ok: false,
-                  reason: "Liveness check failed. Please try again.",
-                });
-
-                return;
-              }
-
-
-              if (faceData.status === "user_not_recognized") {
-
-                setStatus("User not recognized");
-
-                setResult({
-                  ok: false,
-                  reason: "User not recognized. Please try again.",
-                });
-
-                return;
-              }
-
-
-              if (faceData.status === "face_not_enrolled") {
-
-                setStatus("Face enrollment required");
-
-                setResult({
-                  ok: false,
-                  reason: "No enrolled face profile was found.",
-                });
-
-                return;
-              }
-
-
-              if (faceData.status === "scanning") {
-
-                setStatus(
-                  `Verifying face... ${faceData.matches ?? 0} / 3`
-                );
-
-                await new Promise(resolve =>
-                  setTimeout(resolve, 300)
-                );
-
-                continue;
-              }
-
-
-              if (faceData.status === "verified") {
-
-                setStatus("Face verified. Submitting check-in...");
-
-                await submitAttendanceCheckIn();
-
-                setShowCamera(false);
-
-                return;
-              }
-
-
-              setStatus("Unexpected verification response");
-
-              setResult({
-                ok: false,
-                reason: "Unexpected biometric verification response.",
-              });
-
-              return;
-            }
-          }
-
-          catch (err: any) {
-
-            setResult({
-              ok: false,
-              reason: err.message || "Face verification failed",
-            });
-
-            setStatus("Check-in failed");
-          }
-
-          finally {
-
-            setIsuploadingFace(false);
-            setIsCheckingIn(false);
-          }
+          return;
         }
 
-        const renderContent = () => {
 
-            if (isBootLoading) {
-                return (
-                    <View style={styles.centerContent}>
-                        <ActivityIndicator size="large" />
-                        <Text style={styles.statusText}>{status}</Text>
-                    </View>
-                );
-            }
+        if (faceData.status === "user_not_recognized") {
 
-            if (permisssionStatus === "denied") {
+          setStatus("User not recognized");
 
-                return (
-                    <View style={styles.card}>
-                        <Text style={styles.cardTitle}>Location Access Required</Text>
-                        <Text style={styles.cardText}>You must allow location access before checking in.</Text>
-                        <Text style={styles.statusText}>{status}</Text>
+          setResult({
+            ok: false,
+            reason: "User not recognized. Please try again.",
+          });
 
-                        <Pressable style={styles.primaryButton} onPress={retryPermissionFlow}>
-                            <Text style={styles.primaryButtonText}>Try Again</Text>
-                        </Pressable>
-                    </View>
-                );
-            }
+          return;
+        }
 
-            if (!session || !loc) {
-                return (
-                    <View style={styles.centerContent}>
-                        <ActivityIndicator size={"large"} />
-                        <Text style={styles.statusText}>{status}</Text>
-                    </View>
-                );
-            }
-        
-    
 
-     return (
+        if (faceData.status === "face_not_enrolled") {
+
+          setStatus("Face enrollment required");
+
+          setResult({
+            ok: false,
+            reason: "No enrolled face profile was found.",
+          });
+
+          return;
+        }
+
+
+        if (faceData.status === "scanning") {
+
+          setStatus(
+            `Verifying face... ${faceData.matches ?? 0} / 3`
+          );
+
+          await new Promise(resolve =>
+            setTimeout(resolve, 300)
+          );
+
+          continue;
+        }
+
+
+        if (faceData.status === "verified") {
+
+          setStatus("Face verified. Submitting check-in...");
+
+          await submitAttendanceCheckIn(photo.uri);
+
+          setShowCamera(false);
+
+          return;
+        }
+
+
+        setStatus("Unexpected verification response");
+
+        setResult({
+          ok: false,
+          reason: "Unexpected biometric verification response.",
+        });
+
+        return;
+      }
+    }
+
+    catch (err: any) {
+
+      setResult({
+        ok: false,
+        reason: err.message || "Face verification failed",
+      });
+
+      setStatus("Check-in failed");
+    }
+
+    finally {
+
+      setIsuploadingFace(false);
+      setIsCheckingIn(false);
+    }
+  }
+
+  const renderContent = () => {
+
+    if (isBootLoading) {
+      return (
+        <View style={styles.centerContent}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.statusText}>{status}</Text>
+        </View>
+      );
+    }
+
+    if (permisssionStatus === "denied") {
+
+      return (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Location Access Required</Text>
+          <Text style={styles.cardText}>You must allow location access before checking in.</Text>
+          <Text style={styles.statusText}>{status}</Text>
+
+          <Pressable style={styles.primaryButton} onPress={retryPermissionFlow}>
+            <Text style={styles.primaryButtonText}>Try Again</Text>
+          </Pressable>
+        </View>
+      );
+    }
+
+    if (!session || !loc) {
+      return (
+        <View style={styles.centerContent}>
+          <ActivityIndicator size={"large"} />
+          <Text style={styles.statusText}>{status}</Text>
+        </View>
+      );
+    }
+
+
+
+    return (
       <View style={styles.mainContent}>
         {!showCamera ? (
           <>
@@ -587,6 +611,10 @@ export default function CheckInScreen()
                   ref={cameraRef}
                   style={styles.camera}
                   facing="front"
+                  onCameraReady={() => {
+                    console.log("CAMERA READY");
+                    setStatus("Camera ready");
+                  }}
                 />
 
                 <Pressable
@@ -845,12 +873,10 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   camera: {
-    width: "100%",
+    width: 320,
     height: 320,
     borderRadius: 12,
-    overflow: "hidden",
     marginBottom: 12,
-    backgroundColor: "#000",
   },
   primaryButton: {
     backgroundColor: "#111827",

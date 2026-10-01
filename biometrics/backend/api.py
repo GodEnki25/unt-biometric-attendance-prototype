@@ -152,16 +152,10 @@ async def verify_face(
                 "status": "face_not_enrolled"
             }
 
-        # Since we already know which logged-in user
-        # is being verified, create a database containing
-        # only that user.
-        user_database = {
-            str(user_id): stored_embedding
-        }
-
-        # Create Verifier and keep it alive between frames
+        # Create a new Verifier for this user
+        # stored biometric embedding.
         verification_sessions[user_id] = Verifier(
-            user_database
+            stored_embedding
         )
 
 

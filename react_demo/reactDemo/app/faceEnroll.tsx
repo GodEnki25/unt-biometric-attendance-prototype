@@ -12,7 +12,8 @@ import {
 } from "expo-camera";
 
 import { File } from "expo-file-system";
-import { fetch } from "expo/fetch";
+//import { fetch } from "expo/fetch";
+import * as SecureStore from "expo-secure-store";
 
 import {
     useLocalSearchParams,
@@ -130,10 +131,10 @@ export default function FaceEnrollScreen() {
                 new FormData();
 
 
-            formData.append(
-                "user_id",
-                userId
-            );
+            //formData.append(
+            //  "user_id",
+            // userId
+            // );
 
 
             const imageFile =
@@ -146,11 +147,24 @@ export default function FaceEnrollScreen() {
             );
 
 
+            const token = await SecureStore.getItemAsync("access_token");
+
+          
+
+            if (!token) {
+                setStatusMessage("Authentication required. Please log in again.");
+                stopScanning.current = true;
+                return;
+            }
+
             const response =
                 await fetch(
                     `${API_BASE}/enroll`,
                     {
                         method: "POST",
+                        headers: {
+                            Authorization: `Bearer ${token}`
+                        },
                         body: formData
                     }
                 );
