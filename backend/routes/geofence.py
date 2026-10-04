@@ -119,6 +119,7 @@ def restore_active_session():
 # =========================
 
 class StartGeofenceSessionRequest(BaseModel):
+    course_id: int
     center_lat: float
     center_lon: float
 
@@ -184,7 +185,7 @@ def start_geofence_session(
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                1,  # CSCE 4901 prototype course
+                payload.course_id,
                 now.strftime("%Y-%m-%d"),
                 now.strftime("%H:%M:%S"),
                 None,

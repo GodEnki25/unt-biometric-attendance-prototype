@@ -52,6 +52,12 @@ type GeofenceOption = {
     lon: number;
 };
 
+type Course = {
+    course_id: number;
+    course_code: string;
+    course_name: string;
+    instructor_id: number | null;
+};
 
 export default function InstructorDashboard() {
     const router = useRouter();
@@ -63,8 +69,11 @@ export default function InstructorDashboard() {
     const [openDropdown, setOpenDropdown] =
         useState<number | null>(null);
 
-    const [selectedItem1, setSelectedItem1] =
-        useState("Choose Course");
+    const [courses, setCourses] =
+        useState<Course[]>([]);
+
+    const [selectedCourse, setSelectedCourse] =
+        useState<Course | null>(null);
 
     const [selectedItem2, setSelectedItem2] =
         useState("Room Number");
@@ -89,13 +98,6 @@ export default function InstructorDashboard() {
 
     const [radiusM, setRadiusM] =
         useState(15);
-
-
-    const allowed_courses = [
-        "CSCE 4901.501",
-        "CSCE 4902.501",
-        "CSCE 4902.502"
-    ];
 
     const allowed_rooms = [
         "266",
@@ -165,6 +167,41 @@ const formatTime = (dateTime: string) => {
             status.charAt(0).toUpperCase() +
             status.slice(1)
         );
+    };
+
+    const loadCourses = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+
+            const response = await fetch (
+                `${API_BASE}/courses`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                console.error(
+                    `Failed to load courses: ${response.status}`
+                );
+
+                setCourses([]);
+                return;
+            }
+
+            const data: Course[] = await response.json();
+
+            setCourses(data);
+
+        }
+
+        catch(error) {
+            console.error("Failed to load courses:", error);
+
+            setCourses([]);
+        }
     };
 
 
@@ -267,6 +304,7 @@ const formatTime = (dateTime: string) => {
 
     useEffect(() => {
         loadCheckins();
+        loadCourses();
     }, []);
 
 
@@ -341,6 +379,11 @@ const formatTime = (dateTime: string) => {
             Alert.alert("Location Required", "Acquire the instructor location before starting the session.");
             return;
         }
+
+        if(!selectedCourse) {
+            Alert.alert("Course Required", "Select a course before starting the session.");
+            return;
+        }
         
         try {
             const response = await fetch(
@@ -352,6 +395,7 @@ const formatTime = (dateTime: string) => {
                         Authorization: `Bearer ${localStorage.getItem("access_token")}`
                     },
                     body: JSON.stringify({
+                        course_id: selectedCourse.course_id,
                         center_lat: selectedGeofence.lat,
                         center_lon: selectedGeofence.lon,
                         radius_m: radiusM
@@ -644,7 +688,7 @@ const formatTime = (dateTime: string) => {
                             }
                         >
                             <Text style={styles.buttonText}>
-                                {selectedItem1}
+                                {selectedCourse ? `${selectedCourse.course_code} - ${selectedCourse.course_name}`: "Choose Course"}
                             </Text>
 
                             <Text style={styles.arrow}>
@@ -655,41 +699,32 @@ const formatTime = (dateTime: string) => {
                         </TouchableOpacity>
 
                         {openDropdown === 1 && (
-                            <View
-                                style={
-                                    styles.dropdownMenu
-                                }
-                            >
-                                {allowed_courses.map(
-                                    (item) => (
+                            <View style={styles.dropdownMenu}>
+                                {courses.length === 0 ? (
+                                    <View style={styles.dropdownItem}>
+                                        <Text style={styles.itemText}>
+                                            No courses available
+                                        </Text>
+                                    </View>
+                                ) : (
+                                    courses.map((course) => (
                                         <TouchableOpacity
-                                            key={item}
-                                            style={
-                                                styles.dropdownItem
-                                            }
-                                            onPress={() => {
-                                                setSelectedItem1(
-                                                    item
-                                                );
-
-                                                setOpenDropdown(
-                                                    null
-                                                );
-                                            }}
-                                        >
-                                            <Text
-                                                style={
-                                                    styles.itemText
-                                                }
-                                            >
-                                                {item}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    )
-                                )}
-                            </View>
-                        )}
-
+                                            key={course.course_id}
+                                            style={styles.dropdownItem}
+                                        onPress={() => {
+                                            setSelectedCourse(course);
+                                            setOpenDropdown(null);
+                                        }}
+                                    >
+                                        <Text style={styles.itemText}>
+                                            {course.course_code} - {course.course_name}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))
+                            )}
+                        </View>
+                    )}
+                    
                     </View>
 
 
@@ -838,11 +873,11 @@ const formatTime = (dateTime: string) => {
                         <TouchableOpacity
                             style={[
                                 styles.startButton,
-                                (sessionActive || !selectedGeofence) &&
+                                (sessionActive || !selectedGeofence || !selectedCourse) &&
                                     styles.disabledButton
                             ]}
                             onPress={startSession}
-                            disabled={sessionActive || !selectedGeofence}
+                            disabled={sessionActive || !selectedGeofence || !selectedCourse}
                         >
                             <Text
                                 style={
@@ -1062,7 +1097,7 @@ const formatTime = (dateTime: string) => {
                             onPress={() => router.push({ 
                                 pathname: "/overrideInstructor",
                                 params: {
-                                    course: selectedItem1,
+                                    course: selectedCourse ? selectedCourse.course_code : "",
                                     room: selectedItem2,
                                     date: selectedItem3
                                     }

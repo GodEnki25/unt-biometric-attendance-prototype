@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.routes.auth_routes import router as auth_router
 from backend.routes.face import router as face_router
 from backend.routes.checkin import router as checkin_router
+from backend.routes.course import router as course_router
 from backend.routes.geofence import (
     router as geofence_router,
     restore_active_session,
@@ -53,6 +54,7 @@ app.include_router(face_router)
 app.include_router(checkin_router)
 app.include_router(geofence_router)
 app.include_router(biometric_router)
+app.include_router(course_router)
 
 
 # =========================
