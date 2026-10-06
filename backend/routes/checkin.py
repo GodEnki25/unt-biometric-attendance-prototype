@@ -252,6 +252,29 @@ async def checkin(
             ),
         )
 
+        attendance_id = cursor.lastrowid
+
+        #==============================
+        # INITIAL GEOFENCE EVENT
+        #==============================
+        # A sucessfull attendance check-in can only occur while
+        # the student is inside the active classroom geofence.
+        cursor.execute(
+            """
+            INSERT INTO geofence_status_changes (
+                attendance_id,
+                event_type,
+                event_time
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                attendance_id,
+                "ENTER",
+                check_in_time,
+            ),
+        )
+
         conn.commit()
 
         return {

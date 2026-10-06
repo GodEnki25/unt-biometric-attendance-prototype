@@ -46,6 +46,12 @@ type GeofenceResult = {
   inside: boolean;
   allow_biometric: boolean;
   reason: string;
+  confirmed_state?: "INSIDE" | "OUTSIDE";
+  candidate_state?: "INSIDE" | "OUTSIDE" | null;
+  candidate_count?: number;
+  state_changed?: boolean;
+  event_type?: "EXIT" | "REENTER" | null;
+  presence_tracking?: boolean;
   radius_m?: number;
   accuracy_buffer_m?: number;
   allowed_radius_m?: number;
@@ -82,6 +88,23 @@ export default function CheckInScreen() {
   useEffect(() => {
     initializeApp();
   }, []);
+
+  useEffect(() => {
+    console.log(
+      "LOCATION WATCH EFFECT:",
+      permisssionStatus
+    );
+    
+    if (permisssionStatus !== "granted") {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      getUserLocation(true);
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [permisssionStatus]);
 
   async function initializeApp() {
     try {
@@ -172,6 +195,17 @@ export default function CheckInScreen() {
       });
 
       const data: GeofenceResult = await res.json();
+
+      console.log("GEOFENCE UPDATE:", {
+        phone_lat: currentLoc.lat,
+        phone_lon: currentLoc.lon,
+        inside: data.inside,
+        confirmed_state: data.confirmed_state,
+        candidate_state: data.candidate_state,
+        candidate_count: data.candidate_count,
+        state_changed: data.state_changed,
+        event_type: data.event_type,
+      });
 
       if (!res.ok) {
         throw new Error("Geofence check failed");

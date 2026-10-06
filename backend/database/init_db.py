@@ -66,6 +66,18 @@ def init_db():
         FOREIGN KEY (student_id) REFERENCES users(user_id)
     );
     """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS geofence_status_changes (
+        status_change_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        attendance_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL
+            CHECK(event_type IN ('ENTER', 'EXIT', 'REENTER')),
+        event_time TEXT NOT NULL,
+        FOREIGN KEY (attendance_id)
+            REFERENCES attendance_records(attendance_id)
+            ON DELETE CASCADE
+        );
+        """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS face_profiles (

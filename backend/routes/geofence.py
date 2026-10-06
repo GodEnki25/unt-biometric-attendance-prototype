@@ -31,6 +31,44 @@ ACTIVE_SESSION = {
     "is_open": False,
 }
 
+#Student presnece confirmation state.
+#
+# Raw GPS samples are never stored here or in SQLite.
+# This only tracks enough temporary state to confirm
+# meaningful INSIDE / OUTSIDE transitions.
+PRESENCE_TRACKER = {}
+
+CONFIRMATION_CHECKS = 3
+
+def get_confirmed_presence_state(attendance_id: int):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT event_type
+            FROM geofence_status_changes
+            WHERE attendance_id = ?
+            ORDER BY status_change_id DESC
+            LIMIT 1
+            """,
+            (attendance_id,),
+        )
+
+        event = cursor.fetchone()
+
+        if not event:
+            return "INSIDE"
+
+        if event["event_type"] == "EXIT":
+            return "OUTSIDE"
+
+        return "INSIDE"
+
+    finally:
+        conn.close()
+
 
 # =========================
 # RESTORE ACTIVE SESSION
@@ -338,6 +376,8 @@ def check_student_location(
     # Tile38 is the authoritative geofence engine.
     # The frontend only receives the resulting
     # inside/outside decision.
+
+    # 1. Tile38 calculates raw inside/outside
     inside = check_geofence(
         session_id=ACTIVE_SESSION["id"],
         user_lat=payload.lat,
@@ -345,16 +385,162 @@ def check_student_location(
         radius_m=allowed_radius_m,
     )
 
+    # Find this student's attendance record
+    user_id = current_user["user_id"]
+    session_id = int(ACTIVE_SESSION["id"])
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        # Presence events are only tracked after a student
+        # has successfully completed attendance check-in.
+        cursor.execute(
+            """
+            SELECT attendance_id
+            FROM attendance_records
+            WHERE session_id = ?
+                AND student_id = ?
+            """,
+            (
+                session_id,
+                user_id,
+            ),
+        )
+
+        attendance = cursor.fetchone()
+
+    finally:
+        conn.close()
+
+    # 3. Student has not checked in yet.
+    # Return noraml geofence result so biometrics can still be enabled.
+    if not attendance:
+        return {
+            "inside": inside,
+            "allow_biometric": inside,
+            "reason": (
+                "Inside geofence"
+                if inside
+                else "Outside geofence"
+            ),
+            "radius_m": ACTIVE_SESSION["radius_m"],
+            "accuracy_buffer_m": accuracy_buffer_m,
+            "allowed_radius_m": allowed_radius_m,
+            "presence_tracking": False,
+            "engine": "tile38",
+        }
+
+    #4. Student HAS checked in.
+    # Begin presence tracking
+    attendance_id = attendance["attendance_id"]
+
+    tracker_key = (
+        session_id,
+        user_id,
+    )
+
+    if tracker_key not in PRESENCE_TRACKER:
+        PRESENCE_TRACKER[tracker_key] = {
+            "confirmed_state":
+                get_confirmed_presence_state(attendance_id),
+            "candidate_state": None,
+            "candidate_count": 0
+        }
+
+    tracker = PRESENCE_TRACKER[tracker_key]
+
+    raw_state = (
+        "INSIDE"
+        if inside
+        else "OUTSIDE"
+    )
+
+
+    event_type = None
+    state_changed = False
+
+    # GPS agrees with the already confirmed state
+    # Clear any temp candidate transition.
+    if raw_state == tracker["confirmed_state"]:
+
+        tracker["candidate_state"] = None
+        tracker["candidate_count"] = 0
+
+    else:
+
+        # Continue counting the same candidate state.
+        if(tracker["candidate_state"] == raw_state):
+            tracker["candidate_count"] += 1
+
+        else:
+            # A different possible state change began
+            tracker["candidate_state"] = raw_state
+            tracker["candidate_count"] = 1
+
+
+        # Only commit the change after three
+        # consecutive matching Tile38 results.
+        if(tracker["candidate_count"] >= CONFIRMATION_CHECKS):
+            previous_state = (tracker["confirmed_state"])
+            
+            tracker["confirmed_state"] = (raw_state)
+
+            tracker["candidate_state"] = None
+            tracker["candidate_count"] = 0
+
+            if(previous_state == "INSIDE" and raw_state == "OUTSIDE"):
+                event_type = "EXIT"
+
+            elif(previous_state == "OUTSIDE" and raw_state == "INSIDE"):
+                event_type = "REENTER"
+
+            state_changed = (event_type is not None)
+
+        if state_changed:
+            event_time = datetime.now(
+                CENTRAL_TZ
+            ).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+            conn = get_db_connection()
+            cursor = conn.cursor()
+
+            try:
+                cursor.execute(
+                """
+                INSERT INTO geofence_status_changes (
+                    attendance_id,
+                    event_type,
+                    event_time
+                )
+                VALUES (?, ?, ?)
+                """,
+                (
+                    attendance_id,
+                    event_type,
+                    event_time,
+                ),
+            )
+
+                conn.commit()
+
+            finally:
+                conn.close()
+
     return {
+
         "inside": inside,
         "allow_biometric": inside,
-        "reason": (
-            "Inside geofence"
-            if inside
-            else "Outside geofence"
-        ),
+        "confirmed_state": tracker["confirmed_state"],
+        "candidate_state": tracker["candidate_state"],
+        "candidate_count": tracker["candidate_count"],
+        "state_changed": state_changed,
+        "event_type": event_type,
         "radius_m": ACTIVE_SESSION["radius_m"],
         "accuracy_buffer_m": accuracy_buffer_m,
         "allowed_radius_m": allowed_radius_m,
+        "presence_tracking": True,
         "engine": "tile38",
     }
