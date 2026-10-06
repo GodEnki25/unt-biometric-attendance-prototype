@@ -78,8 +78,23 @@ export default function InstructorDashboard() {
     const [selectedItem2, setSelectedItem2] =
         useState("Room Number");
 
+    const getCurrentDate = () => {
+        const now = new Date();
+
+        return now.toLocaleDateString("en-US", {
+            month: "2-digit",
+            day: "2-digit",
+            year: "2-digit",
+        });
+    };
+
     const [selectedItem3, setSelectedItem3] =
-        useState("Date");
+        useState(getCurrentDate());
+
+
+
+    //const [selectedItem3, setSelectedItem3] =
+    //useState("Date");
 
     const [sessionActive, setSessionActive] =
         useState(false);
@@ -88,10 +103,10 @@ export default function InstructorDashboard() {
         useState("No active session");
 
     const [selectedGeofence, setSelectedGeofence] =
-        useState<GeofenceOption | null> (null);
-    
+        useState<GeofenceOption | null>(null);
+
     const [locationAccuracy, setLocationAccuracy] =
-        useState<number | null> (null);
+        useState<number | null>(null);
 
     const [locationStatus, setLocationStatus] =
         useState("Location not acquired");
@@ -107,12 +122,12 @@ export default function InstructorDashboard() {
     ];
 
     const allowed_dates = [
-        "09/01/26",
-        "08/31/26",
-        "08/28/26"
+        getCurrentDate()
+
+
     ];
 
-    const allowed_radii = Array.from({length: 16}, (_, index) => index + 10);
+    const allowed_radii = Array.from({ length: 16 }, (_, index) => index + 10);
 
     const getStatusStyle = (status: string) => {
         if (status === "Present") {
@@ -131,31 +146,31 @@ export default function InstructorDashboard() {
     };
 
 
-const formatTime = (dateTime: string) => {
-    if (!dateTime) {
-        return "-";
-    }
+    const formatTime = (dateTime: string) => {
+        if (!dateTime) {
+            return "-";
+        }
 
-    const parts = dateTime.split(" ");
+        const parts = dateTime.split(" ");
 
-    if (parts.length < 2) {
-        return "-";
-    }
+        if (parts.length < 2) {
+            return "-";
+        }
 
-    const timeParts = parts[1].split(":");
+        const timeParts = parts[1].split(":");
 
-    if (timeParts.length < 2) {
-        return "-";
-    }
+        if (timeParts.length < 2) {
+            return "-";
+        }
 
-    const hour = parseInt(timeParts[0], 10);
-    const minute = timeParts[1];
+        const hour = parseInt(timeParts[0], 10);
+        const minute = timeParts[1];
 
-    const period = hour >= 12 ? "PM" : "AM";
-    const displayHour = hour % 12 || 12;
+        const period = hour >= 12 ? "PM" : "AM";
+        const displayHour = hour % 12 || 12;
 
-    return `${displayHour}:${minute} ${period}`;
-};
+        return `${displayHour}:${minute} ${period}`;
+    };
 
 
     const formatStatus = (status: string) => {
@@ -173,7 +188,7 @@ const formatTime = (dateTime: string) => {
         try {
             const token = localStorage.getItem("access_token");
 
-            const response = await fetch (
+            const response = await fetch(
                 `${API_BASE}/courses`,
                 {
                     headers: {
@@ -197,7 +212,7 @@ const formatTime = (dateTime: string) => {
 
         }
 
-        catch(error) {
+        catch (error) {
             console.error("Failed to load courses:", error);
 
             setCourses([]);
@@ -211,12 +226,12 @@ const formatTime = (dateTime: string) => {
 
             const token = localStorage.getItem("access_token");
 
-            const response = await fetch (
+            const response = await fetch(
                 `${API_BASE}/checkins`, {
-                    headers: {
-                        Authorization: `Bearer ${token}`
-                    }
+                headers: {
+                    Authorization: `Bearer ${token}`
                 }
+            }
             );
 
             if (!response.ok) {
@@ -249,7 +264,7 @@ const formatTime = (dateTime: string) => {
                 if (
                     !existing ||
                     record.attendance_id >
-                        existing.attendance_id
+                    existing.attendance_id
                 ) {
                     latestByStudent.set(
                         record.student_id,
@@ -270,7 +285,7 @@ const formatTime = (dateTime: string) => {
                     firstentrytime: formatTime(
                         record.first_check_in_time
                     ),
-                    
+
                     entrytime: formatTime(
                         record.check_in_time
                     ),
@@ -301,12 +316,52 @@ const formatTime = (dateTime: string) => {
         }
     };
 
+    const loadActiveSession = async () => {
+        try {
+            const token = localStorage.getItem("access_token");
+
+            const response = await fetch(
+                `${API_BASE}/geofence/session`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    `Server returned ${response.status}`
+                );
+            }
+
+            const data = await response.json();
+
+            setSessionActive(data.is_open === true);
+
+            if (data.is_open) {
+                setSessionStatus(
+                    `Session ${data.id} active`
+                );
+            } else {
+                setSessionStatus(
+                    "No active session"
+                );
+            }
+
+        } catch (error) {
+            console.error(
+                "Failed to load active session:",
+                error
+            );
+        }
+    };
 
     useEffect(() => {
         loadCheckins();
         loadCourses();
+        loadActiveSession();
     }, []);
-
 
     const toggleDropdown = (
         dropdownNumber: number
@@ -322,15 +377,15 @@ const formatTime = (dateTime: string) => {
     Acquire the instructor device location for the geofence
     Browswer-reported accuracy is displayed so the instructor can 
     account for poor GPS/location conditions before starting a session.
-    */ 
+    */
     const getInstructorLocation = () => {
-        if(Platform.OS !== "web") {
+        if (Platform.OS !== "web") {
             Alert.alert("Location", "Instructor location setup is currently supported on web.");
             return;
         }
 
-        if(!navigator.geolocation) {
-            Alert.alert("Location Unavailable", "This browser does not support geoloaction." );
+        if (!navigator.geolocation) {
+            Alert.alert("Location Unavailable", "This browser does not support geoloaction.");
             return;
         }
 
@@ -353,7 +408,7 @@ const formatTime = (dateTime: string) => {
 
             setLocationStatus(`Location acquired ±${Math.round(accuracy)} m`);
         },
-        
+
             (error) => {
                 console.error("Failed to acquire instructor location:", error);
 
@@ -375,16 +430,16 @@ const formatTime = (dateTime: string) => {
 
     const startSession = async () => {
 
-        if(!selectedGeofence){
+        if (!selectedGeofence) {
             Alert.alert("Location Required", "Acquire the instructor location before starting the session.");
             return;
         }
 
-        if(!selectedCourse) {
+        if (!selectedCourse) {
             Alert.alert("Course Required", "Select a course before starting the session.");
             return;
         }
-        
+
         try {
             const response = await fetch(
                 `${API_BASE}/geofence/session/start`,
@@ -487,10 +542,10 @@ const formatTime = (dateTime: string) => {
             );
             return;
         }
-// Andrew added First Entry Time as the first time they 
-// entered class so that the attendance status can be done
-// Andrew thinks you might need to make some adjustments to the table later
-// Sorry for the inconvenience 
+        // Andrew added First Entry Time as the first time they 
+        // entered class so that the attendance status can be done
+        // Andrew thinks you might need to make some adjustments to the table later
+        // Sorry for the inconvenience 
         const header =
             "Student,First Entry Time, Latest Entry Time,Latest Exit Time,Status\n";
 
@@ -565,18 +620,18 @@ const formatTime = (dateTime: string) => {
                             source={require("../assets/empty.png")}
                             style={styles.profileIcon}
                         />
-                    <TouchableOpacity
-                        style={styles.logoutButton}
-                        onPress={() => {
-                            localStorage.removeItem("access_token");
-                            //localStorage.removeItem("user");
-                            router.replace("/loginInstructor");
-                        }}
-                    >
-                        <Text style={styles.logoutButtonText}>
-                            Logout
-                        </Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.logoutButton}
+                            onPress={() => {
+                                localStorage.removeItem("access_token");
+                                //localStorage.removeItem("user");
+                                router.replace("/loginInstructor");
+                            }}
+                        >
+                            <Text style={styles.logoutButtonText}>
+                                Logout
+                            </Text>
+                        </TouchableOpacity>
 
                     </View>
 
@@ -702,7 +757,7 @@ const formatTime = (dateTime: string) => {
                             }
                         >
                             <Text style={styles.buttonText}>
-                                {selectedCourse ? `${selectedCourse.course_code} - ${selectedCourse.course_name}`: "Choose Course"}
+                                {selectedCourse ? `${selectedCourse.course_code} - ${selectedCourse.course_name}` : "Choose Course"}
                             </Text>
 
                             <Text style={styles.arrow}>
@@ -725,20 +780,20 @@ const formatTime = (dateTime: string) => {
                                         <TouchableOpacity
                                             key={course.course_id}
                                             style={styles.dropdownItem}
-                                        onPress={() => {
-                                            setSelectedCourse(course);
-                                            setOpenDropdown(null);
-                                        }}
-                                    >
-                                        <Text style={styles.itemText}>
-                                            {course.course_code} - {course.course_name}
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))
-                            )}
-                        </View>
-                    )}
-                    
+                                            onPress={() => {
+                                                setSelectedCourse(course);
+                                                setOpenDropdown(null);
+                                            }}
+                                        >
+                                            <Text style={styles.itemText}>
+                                                {course.course_code} - {course.course_name}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    ))
+                                )}
+                            </View>
+                        )}
+
                     </View>
 
 
@@ -888,7 +943,7 @@ const formatTime = (dateTime: string) => {
                             style={[
                                 styles.startButton,
                                 (sessionActive || !selectedGeofence || !selectedCourse) &&
-                                    styles.disabledButton
+                                styles.disabledButton
                             ]}
                             onPress={startSession}
                             disabled={sessionActive || !selectedGeofence || !selectedCourse}
@@ -907,7 +962,7 @@ const formatTime = (dateTime: string) => {
                             style={[
                                 styles.endButton,
                                 !sessionActive &&
-                                    styles.disabledButton
+                                styles.disabledButton
                             ]}
                             onPress={endSession}
                             disabled={!sessionActive}
@@ -1035,7 +1090,7 @@ const formatTime = (dateTime: string) => {
                                                 student.name
                                             }
                                         </Text>
-                                            {/* 9/15/26 changes here for First Entry Time */}
+                                        {/* 9/15/26 changes here for First Entry Time */}
                                         <Text
                                             style={[
                                                 styles.tableCellText,
@@ -1067,7 +1122,7 @@ const formatTime = (dateTime: string) => {
                                                 student.exittime
                                             }
                                         </Text>
-                                          {/* 9/15/26 changes here for total time */}
+                                        {/* 9/15/26 changes here for total time */}
                                         <Text
                                             style={[
                                                 styles.tableCellText,
@@ -1108,14 +1163,14 @@ const formatTime = (dateTime: string) => {
 
                         <TouchableOpacity
                             style={styles.smallButton}
-                            onPress={() => router.push({ 
+                            onPress={() => router.push({
                                 pathname: "/overrideInstructor",
                                 params: {
                                     course: selectedCourse ? selectedCourse.course_code : "",
                                     room: selectedItem2,
                                     date: selectedItem3
-                                    }
-                                })
+                                }
+                            })
                             }>
                             <Text
                                 style={
@@ -1456,29 +1511,29 @@ const styles = StyleSheet.create({
     },
 
     locationStatusText: {
-    color: "white",
-    fontSize: 12,
-    marginTop: 6
-},
+        color: "white",
+        fontSize: 12,
+        marginTop: 6
+    },
 
-coordinateBox: {
-    marginTop: 6,
-    backgroundColor: "white",
-    borderRadius: 8,
-    padding: 8
-},
+    coordinateBox: {
+        marginTop: 6,
+        backgroundColor: "white",
+        borderRadius: 8,
+        padding: 8
+    },
 
-coordinateText: {
-    color: "#0b7d3b",
-    fontSize: 12
-},
+    coordinateText: {
+        color: "#0b7d3b",
+        fontSize: 12
+    },
 
-geofenceDisclaimer: {
-    textAlign: "center",
-    color: "#ffffff",
-    fontSize: 13,
-    marginHorizontal: 30,
-    marginBottom: 18
-},
+    geofenceDisclaimer: {
+        textAlign: "center",
+        color: "#ffffff",
+        fontSize: 13,
+        marginHorizontal: 30,
+        marginBottom: 18
+    },
 
 });
