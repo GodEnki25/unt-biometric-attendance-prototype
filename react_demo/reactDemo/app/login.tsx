@@ -108,11 +108,15 @@ export default function LoginScreen()
         <View style={styles.container}>
 
             <View style={styles.header}>
-
                 <Text style={styles.headerTitle}>
                     UNT Student Login
                 </Text>
-
+                <Pressable
+                    style={styles.adminButton}
+                    onPress={() => router.push("/adminlogin")}
+                >
+                    <Text style={styles.adminButtonText}>Admin</Text>
+                </Pressable>
             </View>
 
 
@@ -206,10 +210,25 @@ const styles = StyleSheet.create({
         height: 90,
         backgroundColor: "#0f5c00",
         paddingHorizontal: 20,
-        paddingTop: 50,
+        flexDirection: "row",
         alignItems: "center",
+        justifyContent: "space-between",
         borderBottomWidth: 1,
         borderBottomColor: "#ddd"
+    },
+
+    adminButton: {
+        backgroundColor: "white",
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        borderRadius: 4,
+        zIndex: 1
+    },
+
+    adminButtonText: {
+        color: "#0f5c00",
+        fontSize: 12,
+        fontWeight: "bold"
     },
 
     headerTitle: {

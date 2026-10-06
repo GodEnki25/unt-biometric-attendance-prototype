@@ -11,9 +11,16 @@ export default function LoginScreen()
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [error, setError] = useState("");
+    const [isLoggingIn, setIsLoggingIn] = useState(false);
 
     const handleLogin = async () => {
+    if (!email.trim() || !password) {
+        setError("Please enter your email and password.");
+        return;
+    }
+
     setError("");
+    setIsLoggingIn(true);
 
     try {
         const response = await fetch(`${API_BASE}/login`, {
@@ -22,7 +29,7 @@ export default function LoginScreen()
                 "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                email,
+                email: email.trim().toLowerCase(),
                 password,
             }),
         });
@@ -58,6 +65,9 @@ export default function LoginScreen()
         console.error("Instructor login error:", error);
         setError("Unable to connect to server.");
     }
+    finally {
+        setIsLoggingIn(false);
+    }
 };
 
     return (
@@ -66,6 +76,9 @@ export default function LoginScreen()
 
             <View style={styles.header}>
                 <Text style={styles.headerTitle}>UNT Instructor Login</Text>
+                <Pressable style={styles.adminButton} onPress={() => router.push("/adminlogin")}>
+                    <Text style={styles.adminButtonText}>Admin</Text>
+                </Pressable>
             </View>
 
             <View style={styles.content}>
@@ -83,8 +96,14 @@ export default function LoginScreen()
                         </Text>
                     ) : null}
 
-                    <Pressable style={styles.loginButton} onPress={handleLogin}>
-                        <Text style={styles.loginButtonText}>Sign In</Text>
+                    <Pressable
+                        style={styles.loginButton}
+                        onPress={handleLogin}
+                        disabled={isLoggingIn}
+                    >
+                        <Text style={styles.loginButtonText}>
+                            {isLoggingIn ? "Signing In..." : "Sign In"}
+                        </Text>
                     </Pressable>
                 </View>
 
@@ -105,10 +124,23 @@ const styles = StyleSheet.create({
         height: 90,
         backgroundColor: "#0f5c00",
         paddingHorizontal: 20,
-        paddingTop: 50,
-        alignItems: "flex-start",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
         borderBottomWidth: 1,
         borderBottomColor: "#ddd"
+    },
+    adminButton: {
+        backgroundColor: "white",
+        paddingVertical: 4,
+        paddingHorizontal: 10,
+        borderRadius: 4,
+        zIndex: 1
+    },
+    adminButtonText: {
+        color: "#0f5c00",
+        fontSize: 12,
+        fontWeight: "bold"
     },
     headerTitle: {
         fontSize: 22,
