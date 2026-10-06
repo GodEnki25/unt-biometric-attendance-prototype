@@ -8,6 +8,8 @@ export default function Layout()
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="login" options={{ headerShown: false }} />
             <Stack.Screen name="loginInstructor" options={{ headerShown: false }} />
+            <Stack.Screen name="adminlogin" options={{ headerShown: false }} />
+            <Stack.Screen name="adminDashboard" options={{ headerShown: false }} />
             <Stack.Screen name="dashboard" options={{ headerShown: false }} />
             <Stack.Screen name="dashboardInstructor" options={{ headerShown: false }} />
             <Stack.Screen name="firstTimeEnroll" options={{ headerShown: false }} />
