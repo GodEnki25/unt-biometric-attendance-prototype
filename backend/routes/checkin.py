@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends
 from backend.database.db import get_db_connection
-from backend.services.face import process_frame
+from biometrics.backend.api import verified_users
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -172,28 +172,18 @@ async def checkin(
         # FACE VALIDATION
         # =========================
 
-        contents = await file.read()
-        face_result = process_frame(contents)
-
-        faces_detected = face_result.get("faces_detected", 0)
-        confidence = face_result.get("confidence", 0)
-
-        if faces_detected != 1:
+        # Face identity was already verified by /verify using the student's stored biometric embedding.
+        if user_id not in verified_users:
             return {
                 "success": False,
-                "message": "Exactly one face must be detected",
-                "faces_detected": faces_detected,
-            }
-
-        face_verified = confidence >= 0.75
-
-        if not face_verified:
-            return {
-                "success": False,
-                "message": "Face verification failed",
+                "message": "Face verification not completed",
                 "face_verified": False,
-                "confidence": confidence,
             }
+
+        # Consume the verification so it cannot be reused for another check-in attempt.
+        verified_users.discard(user_id)
+
+        face_verified = True
 
         # =========================
         # DUPLICATE CHECK
@@ -285,8 +275,8 @@ async def checkin(
             "status": status,
             "face_verified": True,
             "location_verified": True,
-            "confidence": confidence,
-            "faces_detected": faces_detected,
+            #"confidence": confidence,
+            #"faces_detected": faces_detected,
             "radius_m": ACTIVE_SESSION["radius_m"],
             "accuracy_buffer_m": accuracy_buffer_m,
             "allowed_radius_m": allowed_radius_m,

@@ -45,6 +45,10 @@ enrollment_manager = EnrollmentManager(
 # survive between frames.
 verification_sessions = {}
 
+# Stores users who successfully completed biometric verification.
+# The check-in endpoint consumes this verification
+
+verified_users = set()
 
 # ------------------------------------------------
 # HELPER FUNCTION
@@ -185,9 +189,12 @@ async def verify_face(
 
     if result["status"] == "verified":
 
-        # Verification is finished.
-        # Delete temporary session so the next
-        # verification starts fresh.
+        # Mark this authenticated user as successfully verified.
+        # The check-in endpoint will consume this verification.
+        verified_users.add(user_id)
+
+        # Verification is finished
+        # Delete temporary session so the next verification attempt starts fresh.
         del verification_sessions[user_id]
 
 
