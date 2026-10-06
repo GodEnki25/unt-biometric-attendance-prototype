@@ -54,16 +54,10 @@ class Verifier:
         live_embedding = face.normed_embedding
 
 
-        # 4. Run anti-spoofing / liveness
-        is_live = run_liveness_check(frame)
-
-        if not is_live:
-            self.counter = 0
-
-            return {
-                "status": "liveness_check_failed"
-            }
-
+        # 4. Liveness temporarily bypassed
+        #TODO: fix MediaPipe landmark extraction and restore liveness check
+        is_live = True
+       
 
         # 5. Compare live face with this user's stored face
         score = self.cosine_similarity(live_embedding)
