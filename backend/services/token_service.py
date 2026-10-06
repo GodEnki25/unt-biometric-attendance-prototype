@@ -30,22 +30,53 @@ def create_access_token(user_id: int, role: str):
     )
 
 def get_current_user(
-        credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     token = credentials.credentials
 
+    if not JWT_SECRET:
+        raise HTTPException(
+            status_code=500,
+            detail="JWT_SECRET is not configured",
+        )
+
     try:
-        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM],)
+        payload = jwt.decode(
+            token,
+            JWT_SECRET,
+            algorithms=[JWT_ALGORITHM],
+        )
+
+        user_id = payload.get("sub")
+        role = payload.get("role")
+
+        if not user_id or not role:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token payload",
+            )
 
         return {
-            "user_id": int(payload["sub"]),
-            "role": payload["role"],
+            "user_id": int(user_id),
+            "role": role,
         }
 
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=401,
             detail="Token expired",
+        )
+
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authentication token",
+        )
+
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token payload",
         )
 
 def require_instructor(current_user=Depends(get_current_user)):
