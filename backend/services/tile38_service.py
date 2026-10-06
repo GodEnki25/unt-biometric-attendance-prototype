@@ -46,3 +46,13 @@ def check_geofence(
     ids = result[1]
 
     return session_id in ids
+
+# Remove a classroom geofence when its session ends.
+def delete_geofence(session_id: str) -> bool:
+    result = tile38.execute_command(
+        "DEL",
+        "class_geofences",
+        session_id,
+    )
+
+    return result is True or result == "OK"

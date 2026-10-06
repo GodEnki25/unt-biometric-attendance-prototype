@@ -4,7 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from backend.database.db import get_db_connection
-from backend.services.tile38_service import save_geofence, check_geofence
+from backend.services.tile38_service import save_geofence, check_geofence, delete_geofence
 from backend.services.token_service import get_current_user, require_instructor
 
 
@@ -334,6 +334,18 @@ def end_geofence_session(
 
     finally:
         conn.close()
+
+    # Clear in-memory presence tracking for all students in this session.
+
+    tracker_keys_to_remove = [
+        key for key in PRESENCE_TRACKER.keys()
+        if key[0] == session_id
+    ]     
+    for key in tracker_keys_to_remove:
+        del PRESENCE_TRACKER[key]
+
+    # Remove the ended session's geofence from Tile38.
+    delete_geofence(session_id=ACTIVE_SESSION["id"])    
 
     ACTIVE_SESSION["is_open"] = False
 
