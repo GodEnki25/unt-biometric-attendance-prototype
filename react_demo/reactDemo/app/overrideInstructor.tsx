@@ -49,7 +49,7 @@ type StudentRow = {
 
 export default function InstructorOverride()
 {
-    const [popupVisible, setPopupVisible] = useState<boolean>(false)
+    const [openPopupStudentIndex, setOpenPopupStudentIndex] = useState<number | null>(null);
     const router = useRouter();
     const insets = useSafeAreaInsets();
     const [loading, setLoading] = useState(false);
@@ -82,8 +82,10 @@ export default function InstructorOverride()
         window.location.reload();
     };
 
-    const togglePopup = () => {
-        setPopupVisible((prev) => !prev);
+    const togglePopup = (studentIndex: number) => {
+        setOpenPopupStudentIndex((currentIndex) =>
+            currentIndex === studentIndex ? null : studentIndex
+        );
     };
 
     const formatTime = (dateTime: string) => {
@@ -400,7 +402,7 @@ export default function InstructorOverride()
                                     a small table inside there.*/}
                                         <Pressable
                                             style={styles.colStudent}
-                                            onPress={togglePopup}
+                                            onPress={() => togglePopup(index)}
                                         >
                                         <Text
                                             style={[
@@ -412,14 +414,15 @@ export default function InstructorOverride()
                                                 student.name
                                             }
                                         </Text>
-                                            </Pressable>
-                                                {popupVisible && ( <View style={styles.popupBox}>
-                                                    <Text style={styles.popupText}>Clicking Student opens this popup.</Text>
-                                                <TouchableOpacity onPress={togglePopup}>
-                                        <Text style={styles.popupClose}>Close</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            )}
+                                        </Pressable>
+                                        {openPopupStudentIndex === index && (
+                                            <View style={styles.popupBox}>
+                                            <Text style={styles.popupText}>{student.name}</Text>
+                                            <TouchableOpacity onPress={() => setOpenPopupStudentIndex(null)}>
+                                                <Text style={styles.popupClose}>Close</Text>
+                                            </TouchableOpacity>
+                                            </View>
+                                        )}
                                             {/* 9/15/26 changes here for First Entry Time */}
                                         <Text
                                             style={[
@@ -688,8 +691,8 @@ const styles = StyleSheet.create({
 
     popupBox: {
         position: "absolute",
-        top: 30,
-        left: 0,
+        top: 0,
+        left: 135,
         width: 190,
         backgroundColor: "#ffffff",
         borderColor: "#cfe4d1",

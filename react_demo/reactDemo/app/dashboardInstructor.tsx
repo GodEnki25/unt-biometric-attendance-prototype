@@ -565,8 +565,22 @@ const formatTime = (dateTime: string) => {
                             source={require("../assets/empty.png")}
                             style={styles.profileIcon}
                         />
+                    <TouchableOpacity
+                        style={styles.logoutButton}
+                        onPress={() => {
+                            localStorage.removeItem("access_token");
+                            //localStorage.removeItem("user");
+                            router.replace("/loginInstructor");
+                        }}
+                    >
+                        <Text style={styles.logoutButtonText}>
+                            Logout
+                        </Text>
+                    </TouchableOpacity>
 
                     </View>
+
+
 
                 </View>
 
@@ -1220,6 +1234,19 @@ const styles = StyleSheet.create({
         alignItems: "center"
     },
 
+    logoutButton: {
+        backgroundColor: "#075c2b",
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 8
+    },
+
+    logoutButtonText: {
+        color: "white",
+        fontSize: 14,
+        fontWeight: "bold"
+    },
+
     profileIconText: {
         fontSize: 22
     },
@@ -1448,7 +1475,7 @@ coordinateText: {
 
 geofenceDisclaimer: {
     textAlign: "center",
-    color: "#666",
+    color: "#ffffff",
     fontSize: 13,
     marginHorizontal: 30,
     marginBottom: 18
