@@ -365,7 +365,7 @@ export default function CheckInScreen() {
 
     setResult({
       ok: data.success,
-      reason: data.message,
+      reason: data.message || data.error || "Check-in failed",
     });
 
     setStatus(
