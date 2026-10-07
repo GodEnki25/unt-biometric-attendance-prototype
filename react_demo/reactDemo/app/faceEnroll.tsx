@@ -11,24 +11,17 @@ import {
     useCameraPermissions
 } from "expo-camera";
 
-import { File } from "expo-file-system";
-//import { fetch } from "expo/fetch";
-import * as SecureStore from "expo-secure-store";
-
-import {
-    useLocalSearchParams,
-    useRouter
-} from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import {
     useEffect,
     useRef,
     useState
 } from "react";
-
+import { File } from "expo-file-system";
+import * as SecureStore from "expo-secure-store";
 
 import { API_BASE } from "../constants/api";
-
 
 export default function FaceEnrollScreen() {
 
@@ -69,7 +62,7 @@ export default function FaceEnrollScreen() {
         useRef(false);
 
 
-    async function captureFrame() {
+    async function captureFaceScan() {
 
         if (stopScanning.current) {
             return;
@@ -110,61 +103,129 @@ export default function FaceEnrollScreen() {
 
         try {
 
-            const photo =
-                await camera.takePictureAsync({
-                    quality: 0.7,
-                    skipProcessing: true
-                });
+            setCaptureCount(0);
+
+            setStatusMessage(
+                "Scanning face..."
+            );
 
 
-            if (!photo?.uri) {
+            console.log(
+                "Starting enrollment video scan"
+            );
+
+
+            /*
+             * Start ONE continuous video.
+             *
+             * We are no longer taking:
+             *
+             * photo 1
+             * photo 2
+             * photo 3
+             * ...
+             *
+             * The backend will later extract
+             * multiple frames from this video.
+             */
+            const videoPromise =
+                camera.recordAsync();
+
+
+            /*
+             * Allow the camera to collect
+             * approximately two seconds of
+             * continuous face movement.
+             */
+            setTimeout(() => {
+
+                if (
+                    cameraRef.current &&
+                    !stopScanning.current
+                ) {
+
+                    cameraRef.current
+                        .stopRecording();
+                }
+
+            }, 2000);
+
+
+            /*
+             * recordAsync finishes when
+             * stopRecording() is called.
+             */
+            const video =
+                await videoPromise;
+
+
+            if (!video?.uri) {
 
                 setStatusMessage(
-                    "Unable to capture camera frame"
+                    "Unable to capture face scan"
                 );
 
                 return;
             }
 
 
+            console.log(
+                "Enrollment video:",
+                video.uri
+            );
+
+            setStatusMessage(
+                "Processing face scan..."
+            );
+
+
+            // Get authentication token
+            const token =
+                await SecureStore.getItemAsync(
+                    "access_token"
+                );
+
+
+            if (!token) {
+
+                setStatusMessage(
+                    "Authentication required. Please log in again."
+                );
+
+                stopScanning.current = true;
+
+                return;
+            }
+
+
+            // Convert recorded video into uploadable file
+            const videoFile =
+                new File(video.uri);
+
+
+            // Create multipart form
             const formData =
                 new FormData();
 
 
-            //formData.append(
-            //  "user_id",
-            // userId
-            // );
-
-
-            const imageFile =
-                new File(photo.uri);
-
-
             formData.append(
                 "file",
-                imageFile
+                videoFile
             );
 
 
-            const token = await SecureStore.getItemAsync("access_token");
-
-          
-
-            if (!token) {
-                setStatusMessage("Authentication required. Please log in again.");
-                stopScanning.current = true;
-                return;
-            }
-
+            // Send ONE video to Python backend
             const response =
                 await fetch(
                     `${API_BASE}/enroll`,
                     {
                         method: "POST",
+
                         headers: {
-                            Authorization: `Bearer ${token}`
+                            Authorization:
+                                `Bearer ${token}`
                         },
+
                         body: formData
                     }
                 );
@@ -180,100 +241,17 @@ export default function FaceEnrollScreen() {
             );
 
 
-            if (
-                result.status ===
-                "invalid_face_count"
-            ) {
-
-                setStatusMessage(
-                    "Keep only one face visible"
-                );
-
-                return;
-            }
-
-
-            if (
-                result.status ===
-                "face_outside_frame"
-            ) {
-
-                setStatusMessage(
-                    "Keep your face inside the guide"
-                );
-
-                return;
-            }
-
-
-            if (
-                result.status ===
-                "move_closer"
-            ) {
-
-                setStatusMessage(
-                    "Move closer to the camera"
-                );
-
-                return;
-            }
-
-
-            if (
-                result.status ===
-                "center_face"
-            ) {
-
-                setStatusMessage(
-                    "Center your face"
-                );
-
-                return;
-            }
-
-
-            if (
-                result.status ===
-                "embedding_failed"
-            ) {
-
-                setStatusMessage(
-                    "Face scan failed. Hold still."
-                );
-
-                return;
-            }
-
-
-            if (
-                result.status ===
-                "collecting"
-            ) {
-
-                setCaptureCount(
-                    result.captures
-                );
-
-
-                setStatusMessage(
-                    "Scanning..."
-                );
-
-                return;
-            }
-
-
+            // SUCCESS
             if (
                 result.status ===
                 "enrolled"
             ) {
 
-                stopScanning.current =
-                    true;
+                stopScanning.current = true;
 
-
-                setCaptureCount(10);
-
+                setCaptureCount(
+                    result.captures ?? 7
+                );
 
                 setStatusMessage(
                     "Enrollment complete"
@@ -287,31 +265,93 @@ export default function FaceEnrollScreen() {
                     );
 
                 }, 700);
+
+
+                return;
             }
+
+
+            // NOT ENOUGH GOOD FACE FRAMES
+            if (
+                result.status ===
+                "insufficient_embeddings"
+            ) {
+
+                setCaptureCount(
+                    result.captures ?? 0
+                );
+
+                setStatusMessage(
+                    "Not enough face data. Please scan again."
+                );
+
+                return;
+            }
+
+
+            // VIDEO COULD NOT BE READ
+            if (
+                result.status ===
+                "invalid_video"
+            ) {
+
+                setStatusMessage(
+                    "Unable to process face scan"
+                );
+
+                return;
+            }
+
+
+            // NO VALID FACE
+            if (
+                result.status ===
+                "invalid_face_count"
+            ) {
+
+                setStatusMessage(
+                    "Keep only one face visible"
+                );
+
+                return;
+            }
+
+
+            // OTHER BACKEND ERROR
+            setStatusMessage(
+                result.message ??
+                "Face enrollment failed"
+            );
 
         }
 
         catch (error) {
 
             console.log(
-                "Enrollment error:",
+                "Enrollment scan error:",
                 error
             );
 
 
             setStatusMessage(
-                "Unable to connect to biometric server"
+                "Unable to scan face"
             );
+
         }
 
         finally {
 
             isCapturing.current =
                 false;
+
         }
     }
 
 
+
+    /*
+     * Ask for camera permission.
+     */
     useEffect(() => {
 
         if (!permission) {
@@ -322,11 +362,20 @@ export default function FaceEnrollScreen() {
         if (!permission.granted) {
 
             requestPermission();
+
         }
 
     }, [permission]);
 
 
+
+    /*
+     * Automatically begin ONE enrollment
+     * scan when the camera becomes ready.
+     *
+     * No setInterval.
+     * No repeated JPEG captures.
+     */
     useEffect(() => {
 
         if (!cameraReady) {
@@ -339,16 +388,16 @@ export default function FaceEnrollScreen() {
         }
 
 
+        if (!userId) {
+            return;
+        }
+
+
         stopScanning.current =
             false;
 
 
-        const interval =
-            setInterval(() => {
-
-                captureFrame();
-
-            }, 1200);
+        captureFaceScan();
 
 
         return () => {
@@ -356,7 +405,26 @@ export default function FaceEnrollScreen() {
             stopScanning.current =
                 true;
 
-            clearInterval(interval);
+
+            if (cameraRef.current) {
+
+                try {
+
+                    cameraRef.current
+                        .stopRecording();
+
+                }
+
+                catch (error) {
+
+                    console.log(
+                        "Stop recording:",
+                        error
+                    );
+
+                }
+            }
+
         };
 
     }, [
@@ -366,13 +434,37 @@ export default function FaceEnrollScreen() {
     ]);
 
 
+
     function handleBack() {
 
         stopScanning.current =
             true;
 
+
+        if (cameraRef.current) {
+
+            try {
+
+                cameraRef.current
+                    .stopRecording();
+
+            }
+
+            catch (error) {
+
+                console.log(
+                    "Stop recording:",
+                    error
+                );
+
+            }
+        }
+
+
         router.back();
+
     }
+
 
 
     if (!permission) {
@@ -386,25 +478,39 @@ export default function FaceEnrollScreen() {
                 </Text>
 
             </View>
+
         );
     }
+
 
 
     if (!permission.granted) {
 
         return (
 
-            <View style={styles.permissionContainer}>
+            <View
+                style={
+                    styles.permissionContainer
+                }
+            >
 
-                <Text style={styles.permissionText}>
+                <Text
+                    style={
+                        styles.permissionText
+                    }
+                >
                     Camera permission is required
                     for face enrollment.
                 </Text>
 
 
                 <Pressable
-                    style={styles.permissionButton}
-                    onPress={requestPermission}
+                    style={
+                        styles.permissionButton
+                    }
+                    onPress={
+                        requestPermission
+                    }
                 >
 
                     <Text
@@ -418,8 +524,10 @@ export default function FaceEnrollScreen() {
                 </Pressable>
 
             </View>
+
         );
     }
+
 
 
     return (
@@ -461,6 +569,7 @@ export default function FaceEnrollScreen() {
             </View>
 
 
+
             <View style={styles.content}>
 
                 <View style={styles.cameraBox}>
@@ -471,6 +580,7 @@ export default function FaceEnrollScreen() {
                             styles.cameraPreview
                         }
                         facing="front"
+                        mode="video"
                         onCameraReady={() => {
 
                             console.log(
@@ -478,13 +588,16 @@ export default function FaceEnrollScreen() {
                             );
 
                             setCameraReady(true);
+
                         }}
                     />
 
 
                     <View
                         pointerEvents="none"
-                        style={styles.faceGuide}
+                        style={
+                            styles.faceGuide
+                        }
                     />
 
                 </View>
@@ -504,16 +617,17 @@ export default function FaceEnrollScreen() {
                         styles.capturedImageCount
                     }
                 >
-                    Scanning Face:
-                    {" "}
-                    {captureCount} / 10
+                    Scanning Face:{" "}
+                    {captureCount} / 7
                 </Text>
 
             </View>
 
         </View>
+
     );
 }
+
 
 
 const styles =
@@ -523,13 +637,17 @@ const styles =
             flex: 1
         },
 
+
         backgroundImage: {
+
             transform: [
                 {
                     scale: 1.3
                 }
             ]
+
         },
+
 
         container: {
             flex: 1
@@ -553,6 +671,7 @@ const styles =
             borderBottomColor: "#ddd",
 
             flexDirection: "row"
+
         },
 
 
@@ -568,6 +687,7 @@ const styles =
             fontWeight: "bold",
 
             color: "white"
+
         },
 
 
@@ -582,6 +702,7 @@ const styles =
             textAlign: "center",
 
             color: "white"
+
         },
 
 
@@ -592,6 +713,7 @@ const styles =
             height: 45,
 
             borderRadius: 8
+
         },
 
 
@@ -604,6 +726,7 @@ const styles =
             alignItems: "center",
 
             padding: 20
+
         },
 
 
@@ -624,6 +747,7 @@ const styles =
             backgroundColor: "#000",
 
             position: "relative"
+
         },
 
 
@@ -649,6 +773,7 @@ const styles =
             borderColor: "white",
 
             borderRadius: 120
+
         },
 
 
@@ -663,6 +788,7 @@ const styles =
             marginBottom: 20,
 
             textAlign: "center"
+
         },
 
 
@@ -675,6 +801,7 @@ const styles =
             fontWeight: "bold",
 
             textAlign: "center"
+
         },
 
 
@@ -687,6 +814,7 @@ const styles =
             justifyContent: "center",
 
             padding: 30
+
         },
 
 
@@ -697,6 +825,7 @@ const styles =
             textAlign: "center",
 
             marginBottom: 25
+
         },
 
 
@@ -709,6 +838,7 @@ const styles =
             paddingHorizontal: 30,
 
             borderRadius: 10
+
         },
 
 
@@ -719,5 +849,7 @@ const styles =
             fontSize: 16,
 
             fontWeight: "bold"
+
         }
+
     });

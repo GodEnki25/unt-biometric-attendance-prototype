@@ -226,7 +226,7 @@ export default function AuditInstructor()
                             value={reason}
                             onChangeText={setReason}
                             placeholder="Reason Given..."
-                            placeholderTextColor="#888"
+                            placeholderTextColor="rgba(0, 0, 0, 0.65)"
                             multiline
                             textAlignVertical="top"
                         />

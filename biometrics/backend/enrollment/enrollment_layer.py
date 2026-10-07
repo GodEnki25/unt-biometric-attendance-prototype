@@ -50,7 +50,7 @@ def process_embeddings(embeddings):
 
 class EnrollmentManager:
 
-    def __init__(self, required_captures=10):
+    def __init__(self, required_captures=7):
 
         self.required_captures = required_captures
 
@@ -100,7 +100,7 @@ class EnrollmentManager:
         )
 
 
-        # Continue collecting until 10
+        # Continue collecting until 7
         if capture_count < self.required_captures:
 
             return {

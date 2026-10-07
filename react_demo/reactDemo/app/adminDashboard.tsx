@@ -36,7 +36,7 @@ export default function AdminDashboardScreen() {
                 So basically these buttons should go to the different sections that would handle the admin settings
                 I don't exactly know how to handle the settings so here's the screen at least so that we can add things later. */}
             <View style={styles.content}>
-                {/* Temporary placeholder buttons for the admin dashboard. These will be replaced later with real admin features. */}
+                {/* Temporary  buttons for the admin dashboard. These will be replaced later with real admin features. */}
                 <View style={styles.buttonGrid}>
                     <Pressable style={styles.button} onPress={handlePasswords}>
                         <Text style={styles.buttonText}>Password Issues</Text>

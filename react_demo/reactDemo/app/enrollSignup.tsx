@@ -183,6 +183,7 @@ export default function EnrollSignup() {
                 <TextInput
                     style={styles.input}
                     placeholder="Full Name"
+                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
                     value={fullName}
                     onChangeText={setFullName}
                     autoCapitalize="words"
@@ -195,12 +196,14 @@ export default function EnrollSignup() {
                     value={studentId}
                     onChangeText={setStudentId}
                     autoCapitalize="none"
+                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
                 />
 
 
                 <TextInput
                     style={styles.input}
                     placeholder="UNT Email"
+                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
                     value={email}
                     onChangeText={setEmail}
                     autoCapitalize="none"
@@ -211,6 +214,7 @@ export default function EnrollSignup() {
                 <TextInput
                     style={styles.input}
                     placeholder="Password"
+                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry={true}

@@ -87,8 +87,9 @@ export default function LoginScreen()
                 </View>
 
                 <View style={styles.formContainer}>
-                    <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" />
-                    <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry={true} />
+                    <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none"   placeholderTextColor="rgba(0, 0, 0, 0.65)"
+/>
+                    <TextInput style={styles.input} placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry={true} placeholderTextColor="rgba(0, 0, 0, 0.65)" />
 
                     {error ? (
                         <Text style={{ color: "red" }}>

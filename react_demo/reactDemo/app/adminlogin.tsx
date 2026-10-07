@@ -73,6 +73,7 @@ export default function AdminLoginScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Email"
+                        placeholderTextColor="rgba(255, 255, 255, 0.75)"
                         value={email}
                         onChangeText={setEmail}
                         autoCapitalize="none"
@@ -80,6 +81,7 @@ export default function AdminLoginScreen() {
                     <TextInput
                         style={styles.input}
                         placeholder="Password"
+                        placeholderTextColor="rgba(255, 255, 255, 0.75)"
                         value={password}
                         onChangeText={setPassword}
                         secureTextEntry
