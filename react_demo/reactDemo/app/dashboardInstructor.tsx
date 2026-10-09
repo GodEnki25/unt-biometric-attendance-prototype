@@ -9,12 +9,14 @@ import {
     Alert
 } from "react-native";
 
-import { useRouter } from "expo-router";
+import { Color, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 
 
 import { API_BASE } from "../constants/api";
+import { Colors, Spacing, Radius } from "../constants/theme";
 
 // 9/15/26
 // Andrew added First Entry Time as the first time they 
@@ -62,6 +64,9 @@ type Course = {
 export default function InstructorDashboard() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
+
+    const storedUser = Platform.OS === "web" ? localStorage.getItem("user") : null;
+    const currentUser = storedUser ? JSON.parse(storedUser) : null;
 
     const [students, setStudents] = useState<StudentRow[]>([]);
     const [loading, setLoading] = useState(false);
@@ -584,139 +589,303 @@ export default function InstructorDashboard() {
 
         URL.revokeObjectURL(url);
     };
-
-
+    
+    
     return (
-        <View
-            style={[
-                styles.safe,
-                {
-                    paddingTop: insets.top,
-                    paddingBottom: insets.bottom
-                }
-            ]}
-        >
-            <View style={styles.container}>
+    <View
+        style={[
+            styles.safe,
+            {
+                paddingTop: insets.top,
+                paddingBottom: insets.bottom
+            }
+        ]}
+    >
+        <View style={styles.container}>
 
-                {/* Top Header */}
-                <View style={styles.topHeader}>
+            {/* =====================================================
+                TOP HEADER
+            ====================================================== */}
+            <View style={styles.topHeader}>
+
+                <View style={styles.brandBox}>
 
                     <Image
                         source={require("../assets/logo.png")}
                         style={styles.logoBox}
+                        resizeMode="contain"
                     />
+
+                    <View style={styles.brandDivider} />
+
+                    <Text style={styles.brandText}>
+                        Attendance
+                    </Text>
+
+                </View>
+
+
+                <View style={styles.profileBox}>
+
+                    <Text style={styles.profileText}>
+                        {currentUser?.name || "Instructor"}
+                    </Text>
+
+                    <View style={styles.profileDivider} />
+
+                    <Ionicons
+                        name="person-outline"
+                        size={23}
+                        color={Colors.textSecondary}
+                    />
+
+                    <TouchableOpacity
+                        onPress={() => {
+                            localStorage.removeItem("access_token");
+                            localStorage.removeItem("user");
+                            router.replace("/loginInstructor");
+                        }}
+                    >
+                        <Text style={styles.logoutText}>
+                            Logout
+                        </Text>
+                    </TouchableOpacity>
+
+                </View>
+
+            </View>
+
+
+            <ScrollView
+                contentContainerStyle={styles.pageContent}
+            >
+
+                {/* =================================================
+                    PAGE HEADING
+                ================================================== */}
+                <View style={styles.pageHeading}>
 
                     <Text style={styles.dashboardTitle}>
                         Instructor Dashboard
                     </Text>
 
-                    <View style={styles.profileBox}>
-
-                        <Text style={styles.profileText}>
-                            Professor Emptynow
-                        </Text>
-
-                        <Image
-                            source={require("../assets/empty.png")}
-                            style={styles.profileIcon}
-                        />
-                        <TouchableOpacity
-                            style={styles.logoutButton}
-                            onPress={() => {
-                                localStorage.removeItem("access_token");
-                                //localStorage.removeItem("user");
-                                router.replace("/loginInstructor");
-                            }}
-                        >
-                            <Text style={styles.logoutButtonText}>
-                                Logout
-                            </Text>
-                        </TouchableOpacity>
-
-                    </View>
-
-
+                    <Text style={styles.dashboardSubtitle}>
+                        Manage your class attendance.
+                    </Text>
 
                 </View>
 
 
-                {/* Course / Room / Date Bar */}
-                <View style={styles.infoBar}>
+                {/* =================================================
+                    SESSION SETUP
+                ================================================== */}
+                <View style={styles.sessionSetupCard}>
 
-                    {/* Geofence */}
-                    <View style={styles.infoSection}>
+                    <Text style={styles.sectionTitle}>
+                        Session setup
+                    </Text>
 
-                        <Text style={styles.infoLabel}>
-                            Geofence:
-                        </Text>
 
-                        <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={getInstructorLocation}
-                            disabled={sessionActive}
-                        >
-                            <Text style={styles.buttonText}>
-                                {selectedGeofence
-                                    ? "Use Current Location"
-                                    : "Acquire Location"}
+                    {/* Course / Room / Date / Radius */}
+                    <View style={styles.setupFieldsRow}>
+
+                        {/* Course */}
+                        <View style={styles.infoSection}>
+
+                            <Text style={styles.infoLabel}>
+                                Course
                             </Text>
-                        </TouchableOpacity>
 
-                        <Text style={styles.locationStatusText}>
-                            {locationStatus}
-                        </Text>
-
-                        {selectedGeofence && (
-                            <View style={styles.coordinateBox}>
-
-                                <Text style={styles.coordinateText}>
-                                    Lat: {selectedGeofence.lat.toFixed(6)}
+                            <TouchableOpacity
+                                style={styles.dropdownButton}
+                                onPress={() => toggleDropdown(1)}
+                            >
+                                <Text
+                                    style={styles.buttonText}
+                                    numberOfLines={1}
+                                >
+                                    {selectedCourse
+                                        ? `${selectedCourse.course_code} - ${selectedCourse.course_name}`
+                                        : "Choose Course"}
                                 </Text>
 
-                                <Text style={styles.coordinateText}>
-                                    Lon: {selectedGeofence.lon.toFixed(6)}
+                                <Ionicons
+                                    name="chevron-down"
+                                    size={17}
+                                    color={Colors.textSecondary}
+                                />
+                            </TouchableOpacity>
+
+                            {openDropdown === 1 && (
+                                <View style={styles.dropdownMenu}>
+
+                                    {courses.length === 0 ? (
+
+                                        <View style={styles.dropdownItem}>
+                                            <Text style={styles.itemText}>
+                                                No courses available
+                                            </Text>
+                                        </View>
+
+                                    ) : (
+
+                                        courses.map((course) => (
+
+                                            <TouchableOpacity
+                                                key={course.course_id}
+                                                style={styles.dropdownItem}
+                                                onPress={() => {
+                                                    setSelectedCourse(course);
+                                                    setOpenDropdown(null);
+                                                }}
+                                            >
+                                                <Text style={styles.itemText}>
+                                                    {course.course_code} - {course.course_name}
+                                                </Text>
+                                            </TouchableOpacity>
+
+                                        ))
+
+                                    )}
+
+                                </View>
+                            )}
+
+                        </View>
+
+
+                        {/* Room */}
+                        <View style={styles.infoSection}>
+
+                            <Text style={styles.infoLabel}>
+                                Room
+                            </Text>
+
+                            <TouchableOpacity
+                                style={styles.dropdownButton}
+                                onPress={() => toggleDropdown(2)}
+                            >
+                                <Text
+                                    style={styles.buttonText}
+                                    numberOfLines={1}
+                                >
+                                    {selectedItem2}
                                 </Text>
 
-                                {locationAccuracy !== null && (
-                                    <Text style={styles.coordinateText}>
-                                        Accuracy: ±{Math.round(locationAccuracy)} m
-                                    </Text>
-                                )}
+                                <Ionicons
+                                    name="chevron-down"
+                                    size={17}
+                                    color={Colors.textSecondary}
+                                />
+                            </TouchableOpacity>
 
-                            </View>
-                        )}
+                            {openDropdown === 2 && (
+                                <View style={styles.dropdownMenu}>
 
-                    </View>
+                                    {allowed_rooms.map((item) => (
+
+                                        <TouchableOpacity
+                                            key={item}
+                                            style={styles.dropdownItem}
+                                            onPress={() => {
+                                                setSelectedItem2(item);
+                                                setOpenDropdown(null);
+                                            }}
+                                        >
+                                            <Text style={styles.itemText}>
+                                                {item}
+                                            </Text>
+                                        </TouchableOpacity>
+
+                                    ))}
+
+                                </View>
+                            )}
+
+                        </View>
 
 
-                    {/* Radius */}
-                    <View style={styles.infoSection}>
+                        {/* Date */}
+                        <View style={styles.infoSection}>
 
-                        <Text style={styles.infoLabel}>
-                            Radius:
-                        </Text>
-
-                        <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() =>
-                                toggleDropdown(5)
-                            }
-                        >
-                            <Text style={styles.buttonText}>
-                                {radiusM} m / {Math.round(radiusM * 3.28084)} ft
+                            <Text style={styles.infoLabel}>
+                                Date
                             </Text>
 
-                            <Text style={styles.arrow}>
-                                {openDropdown === 5
-                                    ? "▲"
-                                    : "▼"}
-                            </Text>
-                        </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.dropdownButton}
+                                onPress={() => toggleDropdown(3)}
+                            >
+                                <Text
+                                    style={styles.buttonText}
+                                    numberOfLines={1}
+                                >
+                                    {selectedItem3}
+                                </Text>
 
-                        {openDropdown === 5 && (
-                            <View style={styles.dropdownMenu}>
-                                {allowed_radii.map(
-                                    (radius) => (
+                                <Ionicons
+                                    name="calendar-outline"
+                                    size={19}
+                                    color={Colors.textSecondary}
+                                />
+                            </TouchableOpacity>
+
+                            {openDropdown === 3 && (
+                                <View style={styles.dropdownMenu}>
+
+                                    {allowed_dates.map((item) => (
+
+                                        <TouchableOpacity
+                                            key={item}
+                                            style={styles.dropdownItem}
+                                            onPress={() => {
+                                                setSelectedItem3(item);
+                                                setOpenDropdown(null);
+                                            }}
+                                        >
+                                            <Text style={styles.itemText}>
+                                                {item}
+                                            </Text>
+                                        </TouchableOpacity>
+
+                                    ))}
+
+                                </View>
+                            )}
+
+                        </View>
+
+
+                        {/* Radius */}
+                        <View style={styles.infoSection}>
+
+                            <Text style={styles.infoLabel}>
+                                Radius
+                            </Text>
+
+                            <TouchableOpacity
+                                style={styles.dropdownButton}
+                                onPress={() => toggleDropdown(5)}
+                            >
+                                <Text
+                                    style={styles.buttonText}
+                                    numberOfLines={1}
+                                >
+                                    {radiusM} m / {Math.round(radiusM * 3.28084)} ft
+                                </Text>
+
+                                <Ionicons
+                                    name="chevron-down"
+                                    size={17}
+                                    color={Colors.textSecondary}
+                                />
+                            </TouchableOpacity>
+
+                            {openDropdown === 5 && (
+                                <View style={styles.dropdownMenu}>
+
+                                    {allowed_radii.map((radius) => (
+
                                         <TouchableOpacity
                                             key={radius}
                                             style={styles.dropdownItem}
@@ -729,231 +898,98 @@ export default function InstructorDashboard() {
                                                 {radius} m / {Math.round(radius * 3.28084)} ft
                                             </Text>
                                         </TouchableOpacity>
-                                    )
+
+                                    ))}
+
+                                </View>
+                            )}
+
+                        </View>
+
+                    </View>
+
+
+                    {/* =================================================
+                        LOCATION
+                    ================================================== */}
+                    <View style={styles.locationRow}>
+
+                        <View style={styles.locationInfoGroup}>
+
+                            <Ionicons
+                                name="location-outline"
+                                size={30}
+                                color={Colors.primary}
+                            />
+
+                            <View style={styles.locationDetails}>
+
+                                <Text style={styles.locationTitle}>
+                                    {selectedGeofence
+                                        ? "Location acquired"
+                                        : locationStatus}
+                                </Text>
+
+                                {selectedGeofence && (
+                                    <Text style={styles.locationMeta}>
+                                        Lat: {selectedGeofence.lat.toFixed(6)},{" "}
+                                        {selectedGeofence.lon.toFixed(6)}
+                                        {locationAccuracy !== null
+                                            ? `  |  Accuracy ±${Math.round(locationAccuracy)} m`
+                                            : ""}
+                                    </Text>
                                 )}
+
                             </View>
-                        )}
+
+                        </View>
+
+
+                        <TouchableOpacity
+                            style={styles.locationButton}
+                            onPress={getInstructorLocation}
+                            disabled={sessionActive}
+                        >
+                            <Text style={styles.locationButtonText}>
+                                Use current location
+                            </Text>
+                        </TouchableOpacity>
+
+
+                        <View style={styles.locationDivider} />
+
 
                         <Text style={styles.geofenceDisclaimer}>
-                            Geofence accuracy may vary based on GPS conditions and classroom size.
-                            If false inside/outside events occure, adjust the radius before starting
-                            the sessison.
+                            Adjust the radius to fit your classroom.
                         </Text>
 
                     </View>
 
 
-                    {/* Course */}
-                    <View style={styles.infoSection}>
-
-                        <Text style={styles.infoLabel}>
-                            Course:
-                        </Text>
-
-                        <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() =>
-                                toggleDropdown(1)
-                            }
-                        >
-                            <Text style={styles.buttonText}>
-                                {selectedCourse ? `${selectedCourse.course_code} - ${selectedCourse.course_name}` : "Choose Course"}
-                            </Text>
-
-                            <Text style={styles.arrow}>
-                                {openDropdown === 1
-                                    ? "▲"
-                                    : "▼"}
-                            </Text>
-                        </TouchableOpacity>
-
-                        {openDropdown === 1 && (
-                            <View style={styles.dropdownMenu}>
-                                {courses.length === 0 ? (
-                                    <View style={styles.dropdownItem}>
-                                        <Text style={styles.itemText}>
-                                            No courses available
-                                        </Text>
-                                    </View>
-                                ) : (
-                                    courses.map((course) => (
-                                        <TouchableOpacity
-                                            key={course.course_id}
-                                            style={styles.dropdownItem}
-                                            onPress={() => {
-                                                setSelectedCourse(course);
-                                                setOpenDropdown(null);
-                                            }}
-                                        >
-                                            <Text style={styles.itemText}>
-                                                {course.course_code} - {course.course_name}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    ))
-                                )}
-                            </View>
-                        )}
-
-                    </View>
-
-
-                    {/* Room */}
-                    <View style={styles.infoSection}>
-
-                        <Text style={styles.infoLabel}>
-                            Room:
-                        </Text>
-
-                        <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() =>
-                                toggleDropdown(2)
-                            }
-                        >
-                            <Text style={styles.buttonText}>
-                                {selectedItem2}
-                            </Text>
-
-                            <Text style={styles.arrow}>
-                                {openDropdown === 2
-                                    ? "▲"
-                                    : "▼"}
-                            </Text>
-                        </TouchableOpacity>
-
-                        {openDropdown === 2 && (
-                            <View
-                                style={
-                                    styles.dropdownMenu
-                                }
-                            >
-                                {allowed_rooms.map(
-                                    (item) => (
-                                        <TouchableOpacity
-                                            key={item}
-                                            style={
-                                                styles.dropdownItem
-                                            }
-                                            onPress={() => {
-                                                setSelectedItem2(
-                                                    item
-                                                );
-
-                                                setOpenDropdown(
-                                                    null
-                                                );
-                                            }}
-                                        >
-                                            <Text
-                                                style={
-                                                    styles.itemText
-                                                }
-                                            >
-                                                {item}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    )
-                                )}
-                            </View>
-                        )}
-
-                    </View>
-
-
-                    {/* Date */}
-                    <View style={styles.infoSection}>
-
-                        <Text style={styles.infoLabel}>
-                            Date:
-                        </Text>
-
-                        <TouchableOpacity
-                            style={styles.dropdownButton}
-                            onPress={() =>
-                                toggleDropdown(3)
-                            }
-                        >
-                            <Text style={styles.buttonText}>
-                                {selectedItem3}
-                            </Text>
-
-                            <Text style={styles.arrow}>
-                                {openDropdown === 3
-                                    ? "▲"
-                                    : "▼"}
-                            </Text>
-                        </TouchableOpacity>
-
-                        {openDropdown === 3 && (
-                            <View
-                                style={
-                                    styles.dropdownMenu
-                                }
-                            >
-                                {allowed_dates.map(
-                                    (item) => (
-                                        <TouchableOpacity
-                                            key={item}
-                                            style={
-                                                styles.dropdownItem
-                                            }
-                                            onPress={() => {
-                                                setSelectedItem3(
-                                                    item
-                                                );
-
-                                                setOpenDropdown(
-                                                    null
-                                                );
-                                            }}
-                                        >
-                                            <Text
-                                                style={
-                                                    styles.itemText
-                                                }
-                                            >
-                                                {item}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    )
-                                )}
-                            </View>
-                        )}
-
-                    </View>
-
-                </View>
-
-
-                {/* Main Content */}
-                <ScrollView
-                    contentContainerStyle={
-                        styles.mainContent
-                    }
-                >
-
-                    {/* Start / End Buttons */}
-                    <View
-                        style={
-                            styles.sessionButtonsRow
-                        }
-                    >
+                    {/* =================================================
+                        SESSION CONTROLS
+                    ================================================== */}
+                    <View style={styles.sessionControlsRow}>
 
                         <TouchableOpacity
                             style={[
                                 styles.startButton,
-                                (sessionActive || !selectedGeofence || !selectedCourse) &&
+                                (
+                                    sessionActive ||
+                                    !selectedGeofence ||
+                                    !selectedCourse
+                                ) &&
                                 styles.disabledButton
                             ]}
                             onPress={startSession}
-                            disabled={sessionActive || !selectedGeofence || !selectedCourse}
+                            disabled={
+                                sessionActive ||
+                                !selectedGeofence ||
+                                !selectedCourse
+                            }
                         >
-                            <Text
-                                style={
-                                    styles.sessionButtonText
-                                }
-                            >
-                                Start Session
+                            <Text style={styles.sessionButtonText}>
+                                Start session
                             </Text>
                         </TouchableOpacity>
 
@@ -967,573 +1003,964 @@ export default function InstructorDashboard() {
                             onPress={endSession}
                             disabled={!sessionActive}
                         >
-                            <Text
-                                style={
-                                    styles.sessionButtonText
-                                }
-                            >
-                                End Session
+                            <Text style={styles.endSessionButtonText}>
+                                End session
                             </Text>
                         </TouchableOpacity>
 
-                    </View>
 
-                    <Text style={styles.sessionStatusText}>
-                        {sessionStatus}
-                    </Text>
+                        <View style={styles.sessionStatusBox}>
 
-
-                    {/* Student Table */}
-                    <View
-                        style={styles.tableContainer}
-                    >
-
-                        <View
-                            style={
-                                styles.tableHeaderRow
-                            }
-                        >
-                            <Text
+                            <View
                                 style={[
-                                    styles.tableHeaderText,
-                                    styles.colStudent
+                                    styles.sessionStatusDot,
+                                    sessionActive &&
+                                    styles.sessionStatusDotActive
                                 ]}
-                            >
-                                Student
-                            </Text>
-                            {/* 9/15/26 changes here for First Entry Time */}
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colTime
-                                ]}
-                            >
-                                First Entry Time
+                            />
+
+                            <Text style={styles.sessionStatusText}>
+                                {sessionStatus}
                             </Text>
 
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colTime
-                                ]}
-                            >
-                                Latest Entry Time
-                            </Text>
-
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colTime
-                                ]}
-                            >
-                                Latest Exit Time
-                            </Text>
-                            {/* 9/15/26 changes here for total time */}
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colTime
-                                ]}
-                            >
-                                Total Time in Class
-                            </Text>
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colStatus
-                                ]}
-                            >
-                                Status
-                            </Text>
                         </View>
 
-
-                        {loading ? (
-                            <Text
-                                style={
-                                    styles.loadingText
-                                }
-                            >
-                                Loading attendance...
-                            </Text>
-
-                        ) : students.length === 0 ? (
-
-                            <Text
-                                style={
-                                    styles.loadingText
-                                }
-                            >
-                                No attendance records found.
-                            </Text>
-
-                        ) : (
-
-                            students.map(
-                                (
-                                    student,
-                                    index
-                                ) => (
-                                    <View
-                                        key={index}
-                                        style={
-                                            styles.tableRow
-                                        }
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colStudent
-                                            ]}
-                                        >
-                                            {
-                                                student.name
-                                            }
-                                        </Text>
-                                        {/* 9/15/26 changes here for First Entry Time */}
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colTime
-                                            ]}
-                                        >
-                                            {
-                                                student.firstentrytime
-                                            }
-                                        </Text>
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colTime
-                                            ]}
-                                        >
-                                            {
-                                                student.entrytime
-                                            }
-                                        </Text>
-
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colTime
-                                            ]}
-                                        >
-                                            {
-                                                student.exittime
-                                            }
-                                        </Text>
-                                        {/* 9/15/26 changes here for total time */}
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colTime
-                                            ]}
-                                        >
-                                            {
-                                                student.totaltime
-                                            }
-                                        </Text>
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colStatus,
-                                                getStatusStyle(
-                                                    student.status
-                                                )
-                                            ]}
-                                        >
-                                            {
-                                                student.status
-                                            }
-                                        </Text>
-                                    </View>
-                                )
-                            )
-
-                        )}
-
                     </View>
 
-                    {/* Bottom Buttons */}
-                    <View
-                        style={
-                            styles.bottomButtonsRow
-                        }
-                    >
-
-                        <TouchableOpacity
-                            style={styles.smallButton}
-                            onPress={() => router.push({
-                                pathname: "/overrideInstructor",
-                                params: {
-                                    course: selectedCourse ? selectedCourse.course_code : "",
-                                    room: selectedItem2,
-                                    date: selectedItem3
-                                }
-                            })
-                            }>
-                            <Text
-                                style={
-                                    styles.smallButtonText
-                                }
-                            >
-                                Override
-                            </Text>
-                        </TouchableOpacity>
+                </View>
 
 
-                        <TouchableOpacity
-                            style={styles.smallButton}
-                            onPress={
-                                downloadCSVFile
-                            }
-                        >
-                            <Text
-                                style={
-                                    styles.smallButtonText
-                                }
-                            >
-                                Export CSV
-                            </Text>
-                        </TouchableOpacity>
+                {/* =================================================
+                    ATTENDANCE
+                ================================================== */}
+                <View style={styles.attendanceHeader}>
 
+                    <View>
+                        <Text style={styles.attendanceTitle}>
+                            Attendance
+                        </Text>
+
+                        <Text style={styles.attendanceCount}>
+                            {students.length}{" "}
+                            {students.length === 1
+                                ? "student"
+                                : "students"}
+                        </Text>
+                    </View>
+
+
+                    <View style={styles.attendanceActions}>
 
                         <TouchableOpacity
                             style={styles.smallButton}
                             onPress={loadCheckins}
                         >
-                            <Text
-                                style={
-                                    styles.smallButtonText
-                                }
-                            >
+                            <Ionicons
+                                name="refresh-outline"
+                                size={18}
+                                color={Colors.primary}
+                            />
+
+                            <Text style={styles.smallButtonText}>
                                 Refresh
+                            </Text>
+                        </TouchableOpacity>
+
+
+                        <TouchableOpacity
+                            style={styles.smallButton}
+                            onPress={downloadCSVFile}
+                        >
+                            <Ionicons
+                                name="download-outline"
+                                size={18}
+                                color={Colors.primary}
+                            />
+
+                            <Text style={styles.smallButtonText}>
+                                Export CSV
                             </Text>
                         </TouchableOpacity>
 
                     </View>
 
-                </ScrollView>
+                </View>
 
-            </View>
+
+                {/* =================================================
+                    TABLE
+                ================================================== */}
+                <View style={styles.tableContainer}>
+
+                    <View style={styles.tableHeaderRow}>
+
+                        <Text
+                            style={[
+                                styles.tableHeaderText,
+                                styles.colStudent
+                            ]}
+                        >
+                            STUDENT
+                        </Text>
+
+                        <Text
+                            style={[
+                                styles.tableHeaderText,
+                                styles.colTime
+                            ]}
+                        >
+                            FIRST ENTRY TIME
+                        </Text>
+
+                        <Text
+                            style={[
+                                styles.tableHeaderText,
+                                styles.colTime
+                            ]}
+                        >
+                            LATEST ENTRY TIME
+                        </Text>
+
+                        <Text
+                            style={[
+                                styles.tableHeaderText,
+                                styles.colTime
+                            ]}
+                        >
+                            LATEST EXIT TIME
+                        </Text>
+
+                        <Text
+                            style={[
+                                styles.tableHeaderText,
+                                styles.colTime
+                            ]}
+                        >
+                            TOTAL TIME IN CLASS
+                        </Text>
+
+                        <Text
+                            style={[
+                                styles.tableHeaderText,
+                                styles.colStatus
+                            ]}
+                        >
+                            STATUS
+                        </Text>
+
+                        <Text
+                            style={[
+                                styles.tableHeaderText,
+                                styles.colAction
+                            ]}
+                        >
+                            ACTION
+                        </Text>
+
+                    </View>
+
+
+                    {loading ? (
+
+                        <Text style={styles.loadingText}>
+                            Loading attendance...
+                        </Text>
+
+                    ) : students.length === 0 ? (
+
+                        <Text style={styles.loadingText}>
+                            No attendance records found.
+                        </Text>
+
+                    ) : (
+
+                        students.map((student, index) => (
+
+                            <View
+                                key={index}
+                                style={styles.tableRow}
+                            >
+
+                                <Text
+                                    style={[
+                                        styles.tableCellText,
+                                        styles.colStudent,
+                                        styles.studentNameText
+                                    ]}
+                                >
+                                    {student.name}
+                                </Text>
+
+                                <Text
+                                    style={[
+                                        styles.tableCellText,
+                                        styles.colTime,
+                                        !student.firstentrytime && styles.placeholderText
+                                    ]}
+                                >
+                                    {student.firstentrytime || "—"}
+                                </Text>
+
+                                <Text
+                                    style={[
+                                        styles.tableCellText,
+                                        styles.colTime,
+                                        !student.entrytime && styles.placeholderText
+                                    ]}
+                                >
+                                    {student.entrytime || "—"}
+                                </Text>
+
+                                <Text
+                                    style={[
+                                        styles.tableCellText,
+                                        styles.colTime,
+                                        !student.exittime && styles.placeholderText
+                                    ]}
+                                >
+                                    {student.exittime || "—"}
+                                </Text>
+
+                                <Text
+                                    style={[
+                                        styles.tableCellText,
+                                        styles.colTime,
+                                        !student.totaltime && styles.placeholderText
+                                    ]}
+                                >
+                                    {student.totaltime || "—"}
+                                </Text>
+
+                                <View style={styles.colStatus}>
+
+                                    <View
+                                        style={[
+                                            styles.statusBadge,
+                                            student.status === "Present" &&
+                                            styles.presentBadge,
+
+                                            student.status === "Absent" &&
+                                            styles.absentBadge,
+
+                                            student.status === "Late" &&
+                                            styles.lateBadge
+                                        ]}
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.statusBadgeText,
+                                                getStatusStyle(student.status)
+                                            ]}
+                                        >
+                                            {student.status}
+                                        </Text>
+                                    </View>
+
+                                </View>
+
+
+                                <View style={styles.colAction}>
+
+                                    <TouchableOpacity
+                                        onPress={() =>
+                                            router.push({
+                                                pathname: "/overrideInstructor",
+                                                params: {
+                                                    course: selectedCourse
+                                                        ? selectedCourse.course_code
+                                                        : "",
+                                                    room: selectedItem2,
+                                                    date: selectedItem3,
+                                                    student: student.name
+                                                }
+                                            })
+                                        }
+                                    >
+                                        <Text style={styles.overrideLink}>
+                                            Override
+                                        </Text>
+                                    </TouchableOpacity>
+
+                                </View>
+
+                            </View>
+
+                        ))
+
+                    )}
+
+                </View>
+
+
+                {/* =================================================
+                    FOOTER
+                ================================================== */}
+                <View style={styles.footer}>
+
+                    <Text style={styles.footerText}>
+                        University of North Texas
+                    </Text>
+
+                    <Text style={styles.footerDot}>
+                        •
+                    </Text>
+
+                    <Text style={styles.footerText}>
+                        Biometric Attendance
+                    </Text>
+
+                </View>
+
+            </ScrollView>
+
         </View>
-    );
+    </View>
+);
 }
 
 
 const styles = StyleSheet.create({
 
+    // ============================================================
+    // PAGE
+    // ============================================================
+
     safe: {
         flex: 1,
-        backgroundColor: "#f2f2f2"
+        backgroundColor: Colors.background
     },
 
     container: {
-        flex: 1
+        flex: 1,
+        backgroundColor: Colors.background
     },
 
+    pageContent: {
+        paddingHorizontal: 48,
+        paddingTop: 32,
+        paddingBottom: 20
+    },
+
+
+    // ============================================================
+    // HEADER
+    // ============================================================
+
     topHeader: {
-        height: 90,
-        backgroundColor: "#0b7d3b",
+        minHeight: 86,
+        backgroundColor: Colors.surface,
+
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 15,
-        justifyContent: "space-between"
+        justifyContent: "space-between",
+
+        paddingHorizontal: 48,
+
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.borderLight
+    },
+
+    brandBox: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: Spacing.md
     },
 
     logoBox: {
-        width: 90,
-        height: 90,
-        borderRadius: 40,
-        justifyContent: "center",
-        alignItems: "center"
+        width: 72,
+        height: 72
     },
 
-    logoText: {
-        color: "white",
+    brandDivider: {
+        width: 1,
+        height: 32,
+        backgroundColor: Colors.border
+    },
+
+    brandText: {
+        color: Colors.textPrimary,
         fontSize: 20,
-        fontWeight: "bold"
-    },
-
-    logoSubText: {
-        color: "white",
-        fontSize: 8,
-        marginTop: 2,
-        textAlign: "center"
-    },
-
-    dashboardTitle: {
-        color: "white",
-        fontSize: 22,
-        fontWeight: "bold"
+        fontWeight: "700"
     },
 
     profileBox: {
         flexDirection: "row",
         alignItems: "center",
-        gap: 10
+        gap: 14
     },
 
     profileText: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "bold"
-    },
-
-    profileIcon: {
-        width: 45,
-        height: 45,
-        backgroundColor: "white",
-        borderRadius: 10,
-        justifyContent: "center",
-        alignItems: "center"
-    },
-
-    logoutButton: {
-        backgroundColor: "#075c2b",
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 8
-    },
-
-    logoutButtonText: {
-        color: "white",
+        color: Colors.textPrimary,
         fontSize: 14,
-        fontWeight: "bold"
+        fontWeight: "700"
     },
 
-    profileIconText: {
-        fontSize: 22
+    profileDivider: {
+        width: 1,
+        height: 28,
+        backgroundColor: Colors.border
     },
 
-    infoBar: {
-        backgroundColor: "#0b7d3b",
-        marginHorizontal: 10,
+    logoutText: {
+        color: Colors.primary,
+        fontSize: 14,
+        fontWeight: "700"
+    },
+
+
+    // ============================================================
+    // PAGE TITLE
+    // ============================================================
+
+    pageHeading: {
+        marginBottom: 26
+    },
+
+    dashboardTitle: {
+        color: Colors.textPrimary,
+        fontSize: 36,
+        lineHeight: 42,
+        fontWeight: "800"
+    },
+
+    titleAccentLine: {
+        height: 4,
+        width: "100%",
+        backgroundColor: Colors.primary,
         marginTop: 10,
-        borderRadius: 15,
-        paddingVertical: 12,
-        paddingHorizontal: 20,
+        marginBottom: 10
+    },
+
+    dashboardSubtitle: {
+        color: Colors.textSecondary,
+        fontSize: 18,
+        fontWeight: "500"
+    },
+
+
+    // ============================================================
+    // SESSION SETUP CARD
+    // ============================================================
+
+    sessionSetupCard: {
+        backgroundColor: Colors.surface,
+
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
+        borderRadius: Radius.md,
+
+        paddingHorizontal: 30,
+        paddingTop: 24,
+        paddingBottom: 22,
+
+        marginBottom: 24,
+
+        zIndex: 20
+    },
+
+    sectionTitle: {
+        color: Colors.textPrimary,
+        fontSize: 22,
+        fontWeight: "800",
+        marginBottom: 18
+    },
+
+    setupFieldsRow: {
         flexDirection: "row",
-        justifyContent: "space-between",
-        gap: 10,
-        zIndex: 10
+        alignItems: "flex-start",
+        gap: 22,
+
+        paddingBottom: 20,
+
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.borderLight,
+
+        zIndex: 30
     },
 
     infoSection: {
         flex: 1,
+        minWidth: 0,
         position: "relative"
     },
 
     infoLabel: {
-        color: "white",
-        fontSize: 15,
-        fontWeight: "bold",
-        marginBottom: 5
+        color: Colors.textPrimary,
+        fontSize: 14,
+        fontWeight: "700",
+        marginBottom: 7
     },
 
-    bold: {
-        fontWeight: "bold"
-    },
 
-    mainContent: {
-        paddingVertical: 20,
-        paddingHorizontal: 10
-    },
-
-    sessionButtonsRow: {
-        flexDirection: "row",
-        justifyContent: "center",
-        gap: 20,
-        marginBottom: 25
-    },
-
-    startButton: {
-        backgroundColor: "#0b7d3b",
-        paddingVertical: 15,
-        paddingHorizontal: 35,
-        borderRadius: 40
-    },
-
-    endButton: {
-        backgroundColor: "#ff2c2c",
-        paddingVertical: 15,
-        paddingHorizontal: 35,
-        borderRadius: 40
-    },
-
-    sessionButtonText: {
-        color: "white",
-        fontSize: 18,
-        fontWeight: "bold"
-    },
-
-    disabledButton: {
-        opacity: 0.4
-    },
-
-    sessionStatusText: {
-        textAlign: "center",
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#0b7d3b",
-        marginBottom: 20
-    },
-
-    tableContainer: {
-        backgroundColor: "#f9fff9",
-        borderRadius: 20,
-        borderWidth: 2,
-        borderColor: "#b6d7b6",
-        padding: 15,
-        marginHorizontal: 30
-    },
-
-    tableHeaderRow: {
-        flexDirection: "row",
-        marginBottom: 10
-    },
-
-    tableHeaderText: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#0b7d3b"
-    },
-
-    tableRow: {
-        flexDirection: "row",
-        paddingVertical: 10
-    },
-
-    tableCellText: {
-        fontSize: 15,
-        color: "#222"
-    },
-
-    colStudent: {
-        flex: 1.2
-    },
-
-    colTime: {
-        flex: 1
-    },
-
-    colStatus: {
-        flex: 1
-    },
-
-    presentText: {
-        color: "#0b7d3b",
-        fontWeight: "bold"
-    },
-
-    absentText: {
-        color: "#ff2c2c",
-        fontWeight: "bold"
-    },
-
-    lateText: {
-        color: "#d7a300",
-        fontWeight: "bold"
-    },
-
-    defaultStatusText: {
-        color: "#222"
-    },
-
-    bottomButtonsRow: {
-        flexDirection: "row",
-        justifyContent: "space-evenly",
-        marginTop: 25
-    },
-
-    smallButton: {
-        backgroundColor: "#0b7d3b",
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        borderRadius: 25
-    },
-
-    smallButtonText: {
-        color: "white",
-        fontWeight: "bold",
-        fontSize: 14
-    },
+    // ============================================================
+    // DROPDOWNS
+    // ============================================================
 
     dropdownButton: {
-        height: 50,
+        height: 48,
+
+        backgroundColor: Colors.surface,
+
         borderWidth: 1,
-        borderColor: "#999",
-        borderRadius: 8,
-        paddingHorizontal: 15,
+        borderColor: Colors.border,
+        borderRadius: Radius.sm,
+
+        paddingHorizontal: 14,
+
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "space-between",
-        backgroundColor: "white"
+        justifyContent: "space-between"
     },
 
     buttonText: {
-        color: "#0b7d3b",
-        fontSize: 16
-    },
-
-    arrow: {
-        color: "#0b7d3b",
-        fontSize: 14
+        flex: 1,
+        color: Colors.textPrimary,
+        fontSize: 15,
+        marginRight: Spacing.sm
     },
 
     dropdownMenu: {
         position: "absolute",
-        top: 75, // label height + margin + button height
+
+        top: 74,
         left: 0,
         right: 0,
-        zIndex: 100,
+
+        backgroundColor: Colors.surface,
+
         borderWidth: 1,
-        borderColor: "#999",
-        borderRadius: 8,
-        backgroundColor: "white",
+        borderColor: Colors.border,
+        borderRadius: Radius.sm,
+
         overflow: "hidden",
+
+        zIndex: 100
     },
 
     dropdownItem: {
-        padding: 15,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+
         borderBottomWidth: 1,
-        borderBottomColor: "#eee"
+        borderBottomColor: Colors.borderLight
     },
 
     itemText: {
-        fontSize: 16
+        color: Colors.textPrimary,
+        fontSize: 14
     },
 
-    loadingText: {
-        paddingVertical: 20,
-        textAlign: "center",
-        color: "#666"
+
+    // ============================================================
+    // LOCATION
+    // ============================================================
+
+    locationRow: {
+        minHeight: 84,
+
+        flexDirection: "row",
+        alignItems: "center",
+
+        gap: 20,
+
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.borderLight
     },
 
-    locationStatusText: {
-        color: "white",
-        fontSize: 12,
-        marginTop: 6
+    locationInfoGroup: {
+        flex: 1.15,
+
+        flexDirection: "row",
+        alignItems: "center",
+
+        gap: 14
     },
 
-    coordinateBox: {
-        marginTop: 6,
-        backgroundColor: "white",
-        borderRadius: 8,
-        padding: 8
+    locationDetails: {
+        flex: 1
     },
 
-    coordinateText: {
-        color: "#0b7d3b",
-        fontSize: 12
+    locationTitle: {
+        color: Colors.textPrimary,
+        fontSize: 15,
+        fontWeight: "700"
+    },
+
+    locationMeta: {
+        color: Colors.textSecondary,
+        fontSize: 13,
+        marginTop: 4
+    },
+
+    locationButton: {
+        backgroundColor: Colors.surface,
+
+        borderWidth: 1.5,
+        borderColor: Colors.primary,
+        borderRadius: Radius.sm,
+
+        minHeight: 44,
+
+        justifyContent: "center",
+        alignItems: "center",
+
+        paddingHorizontal: 24
+    },
+
+    locationButtonText: {
+        color: Colors.primary,
+        fontSize: 14,
+        fontWeight: "700"
+    },
+
+    locationDivider: {
+        width: 1,
+        height: 40,
+        backgroundColor: Colors.borderLight
     },
 
     geofenceDisclaimer: {
-        textAlign: "center",
-        color: "#ffffff",
+        flex: 1.5,
+
+        color: Colors.textSecondary,
         fontSize: 13,
-        marginHorizontal: 30,
-        marginBottom: 18
+        fontWeight: "500"
     },
+
+
+    // ============================================================
+    // SESSION CONTROLS
+    // ============================================================
+
+    sessionControlsRow: {
+        minHeight: 74,
+
+        flexDirection: "row",
+        alignItems: "center",
+
+        gap: 14
+    },
+
+    startButton: {
+        minWidth: 210,
+        minHeight: 48,
+
+        backgroundColor: Colors.primary,
+
+        borderRadius: Radius.sm,
+
+        justifyContent: "center",
+        alignItems: "center"
+    },
+
+    endButton: {
+        minWidth: 190,
+        minHeight: 48,
+
+        backgroundColor: Colors.disabledSurface,
+
+        borderRadius: Radius.sm,
+
+        justifyContent: "center",
+        alignItems: "center"
+    },
+
+    sessionButtonText: {
+        color: Colors.surface,
+        fontSize: 15,
+        fontWeight: "800"
+    },
+
+    endSessionButtonText: {
+        color: Colors.textSecondary,
+        fontSize: 15,
+        fontWeight: "700"
+    },
+
+    disabledButton: {
+        opacity: 0.55
+    },
+
+    sessionStatusBox: {
+        flexDirection: "row",
+        alignItems: "center",
+
+        gap: 10,
+
+        marginLeft: 14
+    },
+
+    sessionStatusDot: {
+        width: 12,
+        height: 12,
+
+        borderRadius: Radius.pill,
+
+        backgroundColor: Colors.disabled
+    },
+
+    sessionStatusDotActive: {
+        backgroundColor: Colors.primary
+    },
+
+    sessionStatusText: {
+        color: Colors.textSecondary,
+        fontSize: 14,
+        fontWeight: "500"
+    },
+
+
+    // ============================================================
+    // ATTENDANCE HEADER
+    // ============================================================
+
+    attendanceHeader: {
+        flexDirection: "row",
+        alignItems: "flex-end",
+        justifyContent: "space-between",
+
+        marginBottom: 12
+    },
+
+    attendanceTitle: {
+        color: Colors.textPrimary,
+        fontSize: 28,
+        fontWeight: "800"
+    },
+
+    attendanceCount: {
+        color: Colors.textSecondary,
+        fontSize: 14,
+        marginTop: 4
+    },
+
+    attendanceActions: {
+        flexDirection: "row",
+        alignItems: "center",
+
+        gap: 12
+    },
+
+    smallButton: {
+        minHeight: 44,
+
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+
+        gap: 8,
+
+        backgroundColor: Colors.surface,
+
+        borderWidth: 1.5,
+        borderColor: Colors.primary,
+        borderRadius: Radius.sm,
+
+        paddingHorizontal: 22
+    },
+
+    smallButtonText: {
+        color: Colors.primary,
+        fontSize: 14,
+        fontWeight: "700"
+    },
+
+
+    // ============================================================
+    // ATTENDANCE TABLE
+    // ============================================================
+
+    tableContainer: {
+        backgroundColor: Colors.surface,
+
+        borderWidth: 1,
+        borderColor: Colors.tableBorder,
+        borderRadius: Radius.sm,
+
+        overflow: "hidden"
+    },
+
+    tableHeaderRow: {
+        minHeight: 52,
+
+        flexDirection: "row",
+        alignItems: "stretch",
+
+        backgroundColor: Colors.tableHeader,
+
+        borderBottomWidth: 1,
+        borderBottomColor: Colors.tableBorder
+    },
+
+    tableHeaderText: {
+        color: Colors.textSecondary,
+        fontSize: 12,
+        fontWeight: "800",
+        
+        paddingHorizontal: 20,
+
+        display: "flex",
+        alignItems: "center"
+    },
+
+    tableRow: {
+        minHeight: 62,
+
+        flexDirection: "row",
+        alignItems: "stretch",
+
+        backgroundColor: Colors.surface
+    },
+
+    tableCellText:{
+        color: Colors.textPrimary,
+        fontSize: 14,
+
+        paddingHorizontal: 20,
+
+        display: "flex",
+        alignItems: "center"
+    },
+
+    studentNameText: {
+        fontWeight: "600"
+    },
+
+    placeholderText: {
+        fontWeight: "700",
+        fontSize: 18,
+        color: Colors.textPrimary,
+        lineHeight: 18
+    },
+
+    colStudent: {
+        flex: 1.25,
+
+        borderRightWidth: 1,
+        borderRightColor: Colors.tableBorder
+    },
+
+    colTime:{
+        flex: 1.1,
+
+        borderRightWidth: 1,
+        borderRightColor: Colors.tableBorder
+    },
+
+    colStatus:{
+        flex: 0.85,
+
+        justifyContent: "center",
+        alignItems: "center",
+
+        borderRightWidth: 1,
+        borderRightColor: Colors.tableBorder,
+
+        paddingHorizontal: 20
+    },
+
+    colAction: {
+        flex: 0.75,
+
+        justifyContent: "center",
+        alignItems: "center",
+
+        paddingHorizontal: 20
+    },
+
+    // ============================================================
+    // STATUS BADGES
+    // ============================================================
+
+    statusBadge: {
+        minWidth: 82,
+
+        paddingVertical: 5,
+        paddingHorizontal: 12,
+
+        borderRadius: Radius.pill,
+
+        alignItems: "center",
+        alignSelf: "center"
+    },
+
+    presentBadge: {
+        backgroundColor: Colors.successSoft
+    },
+
+    absentBadge: {
+        backgroundColor: Colors.dangerSoft
+    },
+
+    lateBadge: {
+        backgroundColor: Colors.warningSoft
+    },
+
+    statusBadgeText: {
+        fontSize: 13,
+        fontWeight: "700"
+    },
+
+    presentText: {
+        color: Colors.success,
+        fontWeight: "700"
+    },
+
+    absentText: {
+        color: Colors.danger,
+        fontWeight: "700"
+    },
+
+    lateText: {
+        color: Colors.warning,
+        fontWeight: "700"
+    },
+
+    defaultStatusText: {
+        color: Colors.textPrimary
+    },
+
+    overrideLink: {
+        color: Colors.primary,
+        fontSize: 14,
+        fontWeight: "700"
+    },
+
+    loadingText: {
+        paddingVertical: Spacing.xl,
+
+        textAlign: "center",
+
+        color: Colors.textSecondary,
+        fontSize: 14
+    },
+
+
+    // ============================================================
+    // FOOTER
+    // ============================================================
+
+    footer: {
+        flexDirection: "row",
+        alignItems: "center",
+
+        gap: 8,
+
+        marginTop: 26,
+        paddingTop: 18,
+
+        borderTopWidth: 1,
+        borderTopColor: Colors.tableBorder
+    },
+
+    footerText: {
+        color: Colors.textSecondary,
+        fontSize: 12
+    },
+
+    footerDot: {
+        color: Colors.textSecondary,
+        fontSize: 12
+    }
 
 });
