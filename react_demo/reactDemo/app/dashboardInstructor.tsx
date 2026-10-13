@@ -12,7 +12,7 @@ import {
 import { Color, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useState } from "react";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 
 
 import { API_BASE } from "../constants/api";
@@ -70,6 +70,8 @@ export default function InstructorDashboard() {
 
     const [students, setStudents] = useState<StudentRow[]>([]);
     const [loading, setLoading] = useState(false);
+
+    const EMPTY_CELL = "—"
 
     const [openDropdown, setOpenDropdown] =
         useState<number | null>(null);
@@ -153,19 +155,19 @@ export default function InstructorDashboard() {
 
     const formatTime = (dateTime: string) => {
         if (!dateTime) {
-            return "-";
+            return EMPTY_CELL;
         }
 
         const parts = dateTime.split(" ");
 
         if (parts.length < 2) {
-            return "-";
+            return EMPTY_CELL;
         }
 
         const timeParts = parts[1].split(":");
 
         if (timeParts.length < 2) {
-            return "-";
+            return EMPTY_CELL;
         }
 
         const hour = parseInt(timeParts[0], 10);
@@ -295,8 +297,8 @@ export default function InstructorDashboard() {
                         record.check_in_time
                     ),
 
-                    exittime: "-",
-                    totaltime: "-", // 9/15/26 changes here
+                    exittime: EMPTY_CELL,
+                    totaltime: EMPTY_CELL, // 9/15/26 changes here
                     status: formatStatus(
                         record.status
                     )
@@ -1055,9 +1057,9 @@ export default function InstructorDashboard() {
                             style={styles.smallButton}
                             onPress={loadCheckins}
                         >
-                            <Ionicons
-                                name="refresh-outline"
-                                size={18}
+                            <Feather
+                                name="refresh-ccw"
+                                size={19}
                                 color={Colors.primary}
                             />
 
@@ -1073,7 +1075,7 @@ export default function InstructorDashboard() {
                         >
                             <Ionicons
                                 name="download-outline"
-                                size={18}
+                                size={19}
                                 color={Colors.primary}
                             />
 
@@ -1185,6 +1187,7 @@ export default function InstructorDashboard() {
                                     style={[
                                         styles.tableCellText,
                                         styles.colStudent,
+                                        student.name === EMPTY_CELL &&
                                         styles.studentNameText
                                     ]}
                                 >
@@ -1195,40 +1198,44 @@ export default function InstructorDashboard() {
                                     style={[
                                         styles.tableCellText,
                                         styles.colTime,
-                                        !student.firstentrytime && styles.placeholderText
+                                        student.firstentrytime === EMPTY_CELL && 
+                                        styles.placeholderText
                                     ]}
                                 >
-                                    {student.firstentrytime || "—"}
+                                    {student.firstentrytime}
                                 </Text>
 
                                 <Text
                                     style={[
                                         styles.tableCellText,
                                         styles.colTime,
-                                        !student.entrytime && styles.placeholderText
+                                        student.entrytime === EMPTY_CELL && 
+                                        styles.placeholderText
                                     ]}
                                 >
-                                    {student.entrytime || "—"}
+                                    {student.entrytime}
                                 </Text>
 
                                 <Text
                                     style={[
                                         styles.tableCellText,
                                         styles.colTime,
-                                        !student.exittime && styles.placeholderText
+                                        student.exittime === EMPTY_CELL && 
+                                        styles.placeholderText
                                     ]}
                                 >
-                                    {student.exittime || "—"}
+                                    {student.exittime}
                                 </Text>
 
                                 <Text
                                     style={[
                                         styles.tableCellText,
                                         styles.colTime,
-                                        !student.totaltime && styles.placeholderText
+                                        student.totaltime === EMPTY_CELL &&
+                                        styles.placeholderText
                                     ]}
                                 >
-                                    {student.totaltime || "—"}
+                                    {student.totaltime}
                                 </Text>
 
                                 <View style={styles.colStatus}>
@@ -1356,8 +1363,11 @@ const styles = StyleSheet.create({
 
         paddingHorizontal: 48,
 
-        borderBottomWidth: 1,
-        borderBottomColor: Colors.borderLight
+        borderTopWidth: 10,
+        borderTopColor: Colors.primary,
+
+        borderBottomWidth: 4,
+        borderBottomColor: Colors.tableBorder
     },
 
     brandBox: {
@@ -1372,14 +1382,14 @@ const styles = StyleSheet.create({
     },
 
     brandDivider: {
-        width: 1,
+        width: 2,
         height: 32,
         backgroundColor: Colors.border
     },
 
     brandText: {
         color: Colors.textPrimary,
-        fontSize: 20,
+        fontSize: 22,
         fontWeight: "700"
     },
 
@@ -1391,19 +1401,19 @@ const styles = StyleSheet.create({
 
     profileText: {
         color: Colors.textPrimary,
-        fontSize: 14,
+        fontSize: 18,
         fontWeight: "700"
     },
 
     profileDivider: {
-        width: 1,
+        width: 2,
         height: 28,
         backgroundColor: Colors.border
     },
 
     logoutText: {
         color: Colors.primary,
-        fontSize: 14,
+        fontSize: 18,
         fontWeight: "700"
     },
 
@@ -1433,7 +1443,7 @@ const styles = StyleSheet.create({
 
     dashboardSubtitle: {
         color: Colors.textSecondary,
-        fontSize: 18,
+        fontSize: 23,
         fontWeight: "500"
     },
 
@@ -1446,7 +1456,7 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.surface,
 
         borderWidth: 1,
-        borderColor: Colors.borderLight,
+        borderColor: Colors.tableBorder,
         borderRadius: Radius.md,
 
         paddingHorizontal: 30,
@@ -1473,7 +1483,7 @@ const styles = StyleSheet.create({
         paddingBottom: 20,
 
         borderBottomWidth: 1,
-        borderBottomColor: Colors.borderLight,
+        borderBottomColor: Colors.tableBorder,
 
         zIndex: 30
     },
@@ -1564,16 +1574,17 @@ const styles = StyleSheet.create({
         gap: 20,
 
         borderBottomWidth: 1,
-        borderBottomColor: Colors.borderLight
+        borderBottomColor: Colors.tableBorder
     },
 
     locationInfoGroup: {
-        flex: 1.15,
+        flex: .7,
 
         flexDirection: "row",
         alignItems: "center",
 
         gap: 14
+        
     },
 
     locationDetails: {
@@ -1582,13 +1593,13 @@ const styles = StyleSheet.create({
 
     locationTitle: {
         color: Colors.textPrimary,
-        fontSize: 15,
+        fontSize: 16,
         fontWeight: "700"
     },
 
     locationMeta: {
         color: Colors.textSecondary,
-        fontSize: 13,
+        fontSize: 15,
         marginTop: 4
     },
 
@@ -1614,16 +1625,16 @@ const styles = StyleSheet.create({
     },
 
     locationDivider: {
-        width: 1,
+        width: 2,
         height: 40,
-        backgroundColor: Colors.borderLight
+        backgroundColor: Colors.tableBorder
     },
 
     geofenceDisclaimer: {
         flex: 1.5,
 
         color: Colors.textSecondary,
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: "500"
     },
 
@@ -1752,7 +1763,7 @@ const styles = StyleSheet.create({
 
         backgroundColor: Colors.surface,
 
-        borderWidth: 1.5,
+        borderWidth: 2.19,
         borderColor: Colors.primary,
         borderRadius: Radius.sm,
 
@@ -1762,7 +1773,7 @@ const styles = StyleSheet.create({
     smallButtonText: {
         color: Colors.primary,
         fontSize: 14,
-        fontWeight: "700"
+        fontWeight: "800"
     },
 
 
