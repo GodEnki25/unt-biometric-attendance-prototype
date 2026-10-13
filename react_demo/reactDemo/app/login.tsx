@@ -1,19 +1,12 @@
-import {
-    View,
-    Text,
-    TextInput,
-    StyleSheet,
-    Image,
-    Pressable,
-    Platform
-} from "react-native";
-
+import { View, Text, TextInput, StyleSheet, Image, Pressable, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 
+import { Ionicons, MaterialCommunityIcons  } from "@expo/vector-icons";
 
 import { API_BASE } from "../constants/api";
+import { Colors, Radius, Spacing } from "../constants/theme";
 
 
 export default function LoginScreen()
@@ -26,6 +19,8 @@ export default function LoginScreen()
     const [error, setError] = useState("");
 
     const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+    const [showPassword, setShowPassword] = useState(false);
 
 
     async function handleLogin()
@@ -68,11 +63,17 @@ export default function LoginScreen()
                 return;
             }
 
-            //Save the JWT returned by FastAPI
-            await SecureStore.setItem("access_token", data.access_token);
+            // Save the JWT returned by FastAPI
+            await SecureStore.setItem(
+                "access_token",
+                data.access_token
+            );
 
-            //Save user information
-            await SecureStore.setItem("user", JSON.stringify(data.user));   
+            // Save user information
+            await SecureStore.setItem(
+                "user",
+                JSON.stringify(data.user)
+            );
 
             const userId = data.user.id;
 
@@ -105,202 +106,472 @@ export default function LoginScreen()
 
 
     return (
-        <View style={styles.container}>
 
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>
-                    UNT Student Login
-                </Text>
-                <Pressable
-                    style={styles.adminButton}
-                    onPress={() => router.push("/adminlogin")}
-                >
-                    <Text style={styles.adminButtonText}>Admin</Text>
-                </Pressable>
-            </View>
+        <KeyboardAvoidingView
+            style={styles.container}
+            behavior={
+                Platform.OS === "ios"
+                    ? "padding"
+                    : undefined
+            }
+        >
 
-
-            <View style={styles.content}>
-
-                <Image
-                    source={require("../assets/logo.png")}
-                    style={styles.logo}
-                />
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+            >
 
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Email"
-                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
-                    value={email}
-                    onChangeText={setEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                />
+                {/* =====================================================
+                    BRANDING
+                ====================================================== */}
+
+                <View style={styles.brandSection}>
+
+                    <Image 
+                        source={require("../assets/wave-bg.png")}
+                        style={styles.waveBackground}
+                        resizeMode="contain"
+                    />
+
+                    <Image
+                        source={require("../assets/logo.png")}
+                        style={styles.logo}
+                        resizeMode="contain"
+                    />
 
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Password"
-                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={true}
-                />
-
-
-                {error ? (
-
-                    <Text style={styles.errorText}>
-                        {error}
+                    <Text style={styles.title}>
+                        Student Sign In
                     </Text>
 
-                ) : null}
+
+                    <Text style={styles.subtitle}>
+                        Use your UNT credentials to access
+                        biometric attendance.
+                    </Text>
+
+                </View>
 
 
-                <Pressable
-                    style={[
-                        styles.loginButton,
-                        isLoggingIn &&
-                        styles.disabledButton
-                    ]}
-                    onPress={handleLogin}
-                    disabled={isLoggingIn}
-                >
+                {/* =====================================================
+                    LOGIN FORM
+                ====================================================== */}
 
-                    <Text style={styles.loginButtonText}>
+                <View style={styles.form}>
 
-                        {
-                            isLoggingIn
-                                ? "Logging in..."
-                                : "Login"
+
+                    {/* Email */}
+
+                    <View style={styles.inputWrapper}>
+
+                        <Ionicons
+                            name="mail-outline"
+                            size={28}
+                            color={Colors.textSecondary}
+                        />
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Email"
+                            placeholderTextColor={Colors.textSecondary}
+                            value={email}
+                            onChangeText={setEmail}
+                            autoCapitalize="none"
+                            keyboardType="email-address"
+                            autoCorrect={false}
+                        />
+
+                    </View>
+
+
+                    {/* Password */}
+
+                    <View style={styles.inputWrapper}>
+
+                        <Ionicons
+                            name="lock-closed-outline"
+                            size={28}
+                            color={Colors.textSecondary}
+                        />
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Password"
+                            placeholderTextColor={Colors.textSecondary}
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry={!showPassword}
+                        />
+
+                        <Pressable
+                            onPress={() =>
+                                setShowPassword(!showPassword)
+                            }
+                            hitSlop={10}
+                        >
+
+                            <Ionicons
+                                name={
+                                    showPassword
+                                        ? "eye-outline"
+                                        : "eye-off-outline"
+                                }
+                                size={28}
+                                color={Colors.textSecondary}
+                            />
+
+                        </Pressable>
+
+                    </View>
+
+
+                    {/* Error */}
+
+                    {error ? (
+
+                        <Text style={styles.errorText}>
+                            {error}
+                        </Text>
+
+                    ) : null}
+
+
+                    {/* Login Button */}
+
+                    <Pressable
+                        style={[
+                            styles.loginButton,
+                            isLoggingIn &&
+                            styles.disabledButton
+                        ]}
+                        onPress={handleLogin}
+                        disabled={isLoggingIn}
+                    >
+
+                        <Text style={styles.loginButtonText}>
+                            {
+                                isLoggingIn
+                                    ? "Logging in..."
+                                    : "Login"
+                            }
+                        </Text>
+
+                    </Pressable>
+
+
+                    {/* Enroll Face */}
+
+                    <Pressable
+                        style={styles.enrollButton}
+                        onPress={() =>
+                            router.push("/enrollSignup")
                         }
+                    >
 
+                        <Text style={styles.enrollLink}>
+                            Enroll Face
+                        </Text>
+
+                    </Pressable>
+
+                </View>
+
+
+                {/* =====================================================
+                    SECURITY FOOTER
+                ====================================================== */}
+
+                <View style={styles.securitySection}>
+
+                    <View style={styles.securityDivider}>
+
+                        <View style={styles.dividerLine} />
+
+                        <View style={styles.securityIconCircle}>
+
+                            <MaterialCommunityIcons 
+                                name="shield-lock-outline"
+                                size={30}
+                                color={Colors.textSecondary}
+                            />
+
+                        </View>
+
+                        <View style={styles.dividerLine} />
+
+                    </View>
+
+
+                    <Text style={styles.securityText}>
+                        Use your UNT credentials to access
+                        biometric attendance.
                     </Text>
 
-                </Pressable>
+                </View>
 
 
-                <Pressable
-                    onPress={() =>
-                        router.push("/enrollSignup")
-                    }
-                >
+            </ScrollView>
 
-                    <Text style={styles.enrollLink}>
-                        Enroll Face
-                    </Text>
-
-                </Pressable>
-
-            </View>
-
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 
 
 const styles = StyleSheet.create({
 
+
+    // ============================================================
+    // PAGE
+    // ============================================================
+
     container: {
         flex: 1,
-        justifyContent: "center",
-        padding: 20
+        backgroundColor: Colors.background
     },
 
-    header: {
-        height: 90,
-        backgroundColor: "#0f5c00",
-        paddingHorizontal: 20,
-        flexDirection: "row",
+
+    scrollContent: {
+        flexGrow: 1,
+
+        paddingHorizontal: 32,
+        paddingTop: 42,
+        paddingBottom: 30,
+
+        alignItems: "center"
+    },
+
+
+    // ============================================================
+    // BRANDING
+    // ============================================================
+
+    brandSection: {
+        width: "100%",
         alignItems: "center",
-        justifyContent: "space-between",
-        borderBottomWidth: 1,
-        borderBottomColor: "#ddd"
+        position: "relative"
     },
 
-    adminButton: {
-        backgroundColor: "white",
-        paddingVertical: 4,
-        paddingHorizontal: 10,
-        borderRadius: 4,
+    waveBackground: {
+        position: "absolute",
+
+        left: -125,
+
+        width: 620,
+        height: 320,
+
+        opacity: 1,
+
+        zIndex: 0
+    },
+
+
+    logo: {
+        width: 220,
+        height: 220,
+
+        marginTop: 50,
+        marginBottom: 60,
+
         zIndex: 1
     },
 
-    adminButtonText: {
-        color: "#0f5c00",
-        fontSize: 12,
-        fontWeight: "bold"
-    },
-
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: "bold",
-        textAlign: "center",
-        color: "white"
-    },
-
-    content: {
-        flex: 1,
-        justifyContent: "center",
-        padding: 20
-    },
-
-    logo: {
-        width: 150,
-        height: 150,
-        alignSelf: "center",
-        marginBottom: 20,
-        borderRadius: 10
-    },
 
     title: {
-        fontSize: 28,
-        fontWeight: "bold",
-        marginBottom: 20,
+        color: Colors.textPrimary,
+
+        fontSize: 32,
+        fontWeight: "800",
+
         textAlign: "center"
     },
 
-    input: {
-        borderWidth: 1,
-        borderColor: "green",
-        padding: 10,
-        marginBottom: 15,
-        borderRadius: 5,
-        backgroundColor: "white"
-    },
 
-    enrollLink: {
-        marginTop: 15,
+    subtitle: {
+        color: Colors.textSecondary,
+
+        fontSize: 18,
+        lineHeight: 24,
+
         textAlign: "center",
-        color: "green",
-        textDecorationLine: "underline",
-        fontSize: 16
+
+        maxWidth: 320,
+
+        marginTop: 10,
+        marginBottom: 28,
+
+        zIndex: 1
     },
 
-    loginButton: {
-        backgroundColor: "#00853E",
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        borderRadius: 5,
+
+    // ============================================================
+    // FORM
+    // ============================================================
+
+    form: {
+        width: "100%",
+        maxWidth: 370
+    },
+
+
+    inputWrapper: {
+        minHeight: 64,
+
+        flexDirection: "row",
         alignItems: "center",
-        marginBottom: 15
+
+        gap: Spacing.md,
+
+        backgroundColor: Colors.surface,
+
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
+        borderRadius: Radius.lg,
+
+        paddingHorizontal: 18,
+
+        marginBottom: 14,
+
+        shadowColor: Colors.textPrimary,
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        shadowOffset: {
+            width: 0,
+            height: 4
+        },
+
+        elevation: 2
     },
 
-    loginButtonText: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "bold"
-    },
+
+    input: {
+        flex: 1,
+
+        color: Colors.textPrimary,
+
+        fontSize: 18,
+
+        outlineStyle: "none"
+    } as any,
+
 
     errorText: {
-        color: "red",
+        color: Colors.danger,
+
         textAlign: "center",
-        marginBottom: 15
+
+        fontSize: 14,
+
+        marginBottom: 12
     },
 
+
+    // ============================================================
+    // LOGIN BUTTON
+    // ============================================================
+
+    loginButton: {
+        minHeight: 62,
+
+        backgroundColor: Colors.primary,
+
+        borderRadius: Radius.lg,
+
+        alignItems: "center",
+        justifyContent: "center",
+
+        marginTop: 4
+    },
+
+
+    loginButtonText: {
+        color: Colors.surface,
+
+        fontSize: 20,
+        fontWeight: "800"
+    },
+
+
     disabledButton: {
-        opacity: 0.5
+        opacity: 0.6
+    },
+
+
+    // ============================================================
+    // ENROLL FACE
+    // ============================================================
+
+    enrollButton: {
+        alignSelf: "center",
+
+        marginTop: 22
+    },
+
+
+    enrollLink: {
+        color: Colors.primary,
+
+        fontSize: 19,
+        fontWeight: "700",
+
+        textDecorationLine: "underline"
+    },
+
+
+    // ============================================================
+    // SECURITY FOOTER
+    // ============================================================
+
+    securitySection: {
+        width: "100%",
+        maxWidth: 420,
+
+        marginTop: 34,
+
+        alignItems: "center"
+    },
+
+
+    securityDivider: {
+        width: "100%",
+
+        flexDirection: "row",
+        alignItems: "center",
+
+        gap: 14
+    },
+
+
+    dividerLine: {
+        flex: 1,
+
+        height: 1,
+
+        backgroundColor: Colors.border
+    },
+
+
+    securityIconCircle: {
+        width: 44,
+        height: 44,
+
+        alignItems: "center",
+        justifyContent: "center"
+    },
+
+
+    securityText: {
+        color: Colors.textSecondary,
+
+        fontSize: 16,
+        lineHeight: 22,
+
+        textAlign: "center",
+
+        maxWidth: 320,
+
+        marginTop: 10
     }
 
 });
