@@ -1,4 +1,4 @@
-import { View, Text, TextInput, StyleSheet, Image, Pressable } from "react-native";
+import { View, Text, TextInput, StyleSheet, Image, Pressable, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { API_BASE } from "@/constants/api";
@@ -10,6 +10,10 @@ import { Colors, Spacing, Radius } from "@/constants/theme";
 export default function AdminLoginScreen()
 {
     const router = useRouter();
+
+    const {height} = useWindowDimensions();
+
+    const shortViewport = height < 830;
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
@@ -253,7 +257,7 @@ export default function AdminLoginScreen()
                     LOGIN CARD
                 ================================================== */}
 
-                <View style={styles.loginCard}>
+                <View style={[styles.loginCard, shortViewport && styles.loginCardShort]}>
 
 
                     <Text style={styles.loginTitle}>
@@ -654,6 +658,11 @@ const styles = StyleSheet.create({
 
         marginLeft: 10,
         marginTop: -45
+    },
+
+    loginCardShort: {
+        alignSelf: "flex-start",
+        marginTop: 24
     },
 
 
