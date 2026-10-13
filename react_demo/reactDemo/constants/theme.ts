@@ -11,7 +11,7 @@ export const Colors = {
   textSecondary: "#6B7280", //Medium gray - labels, helper text, subtitles
 
   border: "#D1D5DB", //Light gray - standard borders
-  borderLight: "#EE5E7EB", // Very light gray - subtle dividers/cards borders
+  borderLight: "#E5E7EB", // Very light gray - subtle dividers/cards borders
   tableBorder: "#E2E5E9", //Very light gray - table outline and cell seperators
   tableHeader: "#EEF0F2", // Light gray - table header
 
@@ -26,6 +26,8 @@ export const Colors = {
 
   disabled: "#9CA3AF", //Gray - disabled buttons/text
   disabledSurface: "#E5E7EB", // Soft gray - Disabled button background
+
+  featureIconBackground: "#DFF4E7", // Soft mint background for feature icons
 };
 
 export const Spacing = {
