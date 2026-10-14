@@ -4,13 +4,19 @@ import {
     StyleSheet,
     Pressable,
     Image,
-    ImageBackground
+    ScrollView
 } from "react-native";
 
 import {
     useLocalSearchParams,
     useRouter
 } from "expo-router";
+
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { Ionicons } from "@expo/vector-icons";
+
+import { Colors, Radius, Spacing } from "../constants/theme";
 
 
 export default function FirstTimeEnrollScreen() {
@@ -20,6 +26,8 @@ export default function FirstTimeEnrollScreen() {
     const params = useLocalSearchParams();
 
     const userId = params.userId?.toString();
+
+    const insets = useSafeAreaInsets();
 
 
     function handleAccept() {
@@ -52,236 +60,411 @@ export default function FirstTimeEnrollScreen() {
 
     return (
 
-        <ImageBackground
-            source={require("../assets/background.png")}
-            style={styles.background}
-            imageStyle={styles.backgroundImage}
-        >
-
-            <View style={styles.container}>
+        <View style={styles.container}>
 
 
-                {/* Header */}
+            {/* =====================================================
+                HEADER
+            ====================================================== */}
 
-                <View style={styles.header}>
+            <View style={[styles.header, {paddingTop: insets.top}]}>
 
-                    <Pressable
-                        onPress={() => router.back()}
-                        style={styles.backButton}
-                    >
+                <Pressable
+                    onPress={() => router.back()}
+                    style={styles.headerIconButton}
+                    hitSlop={10}
+                >
 
-                        <Text style={styles.backButtonText}>
-                            {"<"}
-                        </Text>
+                    <Ionicons
+                        name="chevron-back"
+                        size={30}
+                        color={Colors.textSecondary}
+                    />
 
-                    </Pressable>
+                </Pressable>
 
+
+                <View style={styles.headerBrand}>
+
+                    <Image
+                        source={require("../assets/logo.png")}
+                        style={styles.headerLogo}
+                        resizeMode="contain"
+                    />
+
+                    <View style={styles.headerDivider} />
 
                     <Text style={styles.headerTitle}>
                         Consent Form
                     </Text>
 
-
-                    <Image
-                        source={require("../assets/logo.png")}
-                        style={styles.headerLogo}
-                    />
-
                 </View>
 
 
-                {/* Permission Box */}
+                <View style={styles.headerIconButton}>
 
-                <View style={styles.content}>
-
-                    <View style={styles.permissionBox}>
-
-
-                        <Text style={styles.title}>
-                            Camera Permission
-                        </Text>
-
-
-                        <Text style={styles.message}>
-
-                            This app needs permission to use your camera
-                            for biometric face enrollment.
-
-                            {"\n\n"}
-
-                            Your face will be scanned automatically and
-                            processed to create your biometric profile.
-
-                        </Text>
-
-
-                        <View style={styles.buttonRow}>
-
-
-                            <Pressable
-                                style={styles.acceptButton}
-                                onPress={handleAccept}
-                            >
-
-                                <Text style={styles.buttonText}>
-                                    Accept
-                                </Text>
-
-                            </Pressable>
-
-
-                            <Pressable
-                                style={styles.declineButton}
-                                onPress={handleDecline}
-                            >
-
-                                <Text style={styles.buttonText}>
-                                    Decline
-                                </Text>
-
-                            </Pressable>
-
-
-                        </View>
-
-                    </View>
+                    <Ionicons
+                        name="person-outline"
+                        size={30}
+                        color={Colors.textSecondary}
+                    />
 
                 </View>
 
             </View>
 
-        </ImageBackground>
+
+            {/* =====================================================
+                CONTENT
+            ====================================================== */}
+
+            <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
+
+                <View style={styles.permissionCard}>
+
+
+                    {/* Camera Icon */}
+
+                    <View style={styles.cameraIconCircle}>
+
+                        <Ionicons
+                            name="camera-outline"
+                            size={52}
+                            color={Colors.primary}
+                        />
+
+                    </View>
+
+
+                    {/* Title */}
+
+                    <Text style={styles.title}>
+                        Camera Permission
+                    </Text>
+
+
+                    {/* Permission Message */}
+
+                    <Text style={styles.message}>
+                        This app needs permission to use your camera
+                        for biometric face enrollment.
+                    </Text>
+
+
+                    <Text style={styles.message}>
+                        Your face will be scanned automatically and
+                        processed to create your biometric profile.
+                    </Text>
+
+
+                    {/* Biometric Data Notice */}
+
+                    <View style={styles.infoBox}>
+
+                        <Ionicons
+                            name="information-circle-outline"
+                            size={28}
+                            color={Colors.textSecondary}
+                        />
+
+                        <Text style={styles.infoText}>
+                            Your biometric data is only used for
+                            attendance verification and can be deleted
+                            according to school policy.
+                        </Text>
+
+                    </View>
+
+
+                    {/* =================================================
+                        CONSENT ACTIONS
+                    ================================================== */}
+
+                    <View style={styles.buttonRow}>
+
+                        <Pressable
+                            style={styles.acceptButton}
+                            onPress={handleAccept}
+                        >
+
+                            <Text style={styles.acceptButtonText}>
+                                Accept
+                            </Text>
+
+                        </Pressable>
+
+
+                        <Pressable
+                            style={styles.declineButton}
+                            onPress={handleDecline}
+                        >
+
+                            <Text style={styles.declineButtonText}>
+                                Decline
+                            </Text>
+
+                        </Pressable>
+
+                    </View>
+
+                </View>
+
+            </ScrollView>
+
+        </View>
     );
 }
 
 
 const styles = StyleSheet.create({
 
-    background: {
-        flex: 1
-    },
 
-
-    backgroundImage: {
-        transform: [
-            {
-                scale: 1.3
-            }
-        ]
-    },
-
+    // ============================================================
+    // PAGE
+    // ============================================================
 
     container: {
         flex: 1,
-        backgroundColor: "#f2f2f2"
+        backgroundColor: Colors.background
     },
 
+
+    scrollContent: {
+        flexGrow: 1,
+
+        justifyContent: "center",
+        alignItems: "center",
+
+        paddingHorizontal: 24,
+        paddingVertical: 34
+    },
+
+
+    // ============================================================
+    // HEADER
+    // ============================================================
 
     header: {
-        height: 90,
-        backgroundColor: "#0f5c00",
-        paddingHorizontal: 20,
-        paddingTop: 40,
+        minHeight: 90,
+
         flexDirection: "row",
         alignItems: "center",
+        justifyContent: "space-between",
+
+        backgroundColor: Colors.surface,
+
+        paddingHorizontal: 20,
+        paddingTop: 14,
+
         borderBottomWidth: 1,
-        borderBottomColor: "#ddd"
+        borderBottomColor: Colors.borderLight
     },
 
 
-    backButton: {
-        width: 40
+    headerIconButton: {
+        width: 44,
+        height: 44,
+
+        alignItems: "center",
+        justifyContent: "center"
     },
 
 
-    backButtonText: {
-        fontSize: 26,
-        fontWeight: "bold",
-        color: "white"
-    },
+    headerBrand: {
+        flexDirection: "row",
+        alignItems: "center",
 
-
-    headerTitle: {
-        flex: 1,
-        fontSize: 22,
-        fontWeight: "bold",
-        textAlign: "center",
-        color: "white"
+        gap: Spacing.md
     },
 
 
     headerLogo: {
-        width: 45,
-        height: 45,
-        borderRadius: 8
+        width: 58,
+        height: 58
     },
 
 
-    content: {
-        flex: 1,
-        justifyContent: "center",
-        alignItems: "center",
-        padding: 20
+    headerDivider: {
+        width: 2,
+        height: 38,
+
+        backgroundColor: Colors.border
     },
 
 
-    permissionBox: {
+    headerTitle: {
+        color: Colors.textPrimary,
+
+        fontSize: 24,
+        fontWeight: "800"
+    },
+
+
+    // ============================================================
+    // PERMISSION CARD
+    // ============================================================
+
+    permissionCard: {
         width: "100%",
-        maxWidth: 350,
-        padding: 25,
-        borderRadius: 12,
-        backgroundColor: "white",
-        shadowColor: "#000",
-        shadowOpacity: 0.2,
-        shadowRadius: 6,
-        elevation: 5
+        maxWidth: 390,
+
+        alignItems: "center",
+
+        backgroundColor: Colors.surface,
+
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
+        borderRadius: Radius.lg,
+
+        paddingHorizontal: 24,
+        paddingTop: 34,
+        paddingBottom: 24,
+
+        shadowColor: Colors.textPrimary,
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        shadowOffset: {
+            width: 0,
+            height: 5
+        },
+
+        elevation: 3
+    },
+
+
+    cameraIconCircle: {
+        width: 108,
+        height: 108,
+
+        borderRadius: Radius.pill,
+
+        alignItems: "center",
+        justifyContent: "center",
+
+        backgroundColor: Colors.featureIconBackground,
+
+        marginBottom: 22
     },
 
 
     title: {
-        fontSize: 22,
-        fontWeight: "bold",
-        marginBottom: 10,
-        textAlign: "center"
+        color: Colors.textPrimary,
+
+        fontSize: 30,
+        fontWeight: "800",
+
+        textAlign: "center",
+
+        marginBottom: 22
     },
 
 
     message: {
-        fontSize: 16,
+        color: Colors.textPrimary,
+
+        fontSize: 18,
+        lineHeight: 26,
+
         textAlign: "center",
-        marginBottom: 20
+
+        marginBottom: 22
     },
 
 
-    buttonRow: {
+    // ============================================================
+    // BIOMETRIC DATA NOTICE
+    // ============================================================
+
+    infoBox: {
+        width: "100%",
+
         flexDirection: "row",
-        justifyContent: "space-between"
+        alignItems: "flex-start",
+
+        gap: 14,
+
+        backgroundColor: Colors.background,
+
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
+        borderRadius: Radius.md,
+
+        paddingHorizontal: 18,
+        paddingVertical: 16,
+
+        marginTop: 2,
+        marginBottom: 24
+    },
+
+
+    infoText: {
+        flex: 1,
+
+        color: Colors.textSecondary,
+
+        fontSize: 15,
+        lineHeight: 21
+    },
+
+
+    // ============================================================
+    // CONSENT BUTTONS
+    // ============================================================
+
+    buttonRow: {
+        width: "100%",
+
+        flexDirection: "row",
+
+        gap: 14
     },
 
 
     acceptButton: {
         flex: 1,
-        marginRight: 10,
-        backgroundColor: "green",
-        padding: 12,
-        borderRadius: 8,
-        alignItems: "center"
+        minHeight: 58,
+
+        backgroundColor: Colors.primary,
+
+        borderRadius: Radius.md,
+
+        alignItems: "center",
+        justifyContent: "center"
+    },
+
+
+    acceptButtonText: {
+        color: Colors.surface,
+
+        fontSize: 19,
+        fontWeight: "800"
     },
 
 
     declineButton: {
         flex: 1,
-        marginLeft: 10,
-        backgroundColor: "red",
-        padding: 12,
-        borderRadius: 8,
-        alignItems: "center"
+        minHeight: 58,
+
+        backgroundColor: Colors.surface,
+
+        borderWidth: 1.5,
+        borderColor: Colors.danger,
+        borderRadius: Radius.md,
+
+        alignItems: "center",
+        justifyContent: "center"
     },
 
 
-    buttonText: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "bold"
+    declineButtonText: {
+        color: Colors.danger,
+
+        fontSize: 19,
+        fontWeight: "800"
     }
+
 });
+

@@ -21,11 +21,16 @@ import {
 import { File } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
 
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+
 import { API_BASE } from "../constants/api";
+import { Colors, Radius, Spacing } from "../constants/theme";
 
 export default function FaceEnrollScreen() {
 
     const router = useRouter();
+    const insets = useSafeAreaInsets();
 
     const params = useLocalSearchParams();
 
@@ -484,40 +489,91 @@ export default function FaceEnrollScreen() {
 
 
 
+    // ============================================================
+    // CAMERA PERMISSION STATES
+    // ============================================================
+
+    if (!permission) {
+
+        return (
+
+            <View
+                style={[
+                    styles.permissionContainer,
+                    {
+                        paddingTop: insets.top,
+                        paddingBottom: insets.bottom
+                    }
+                ]}
+            >
+
+                <View style={styles.permissionIconCircle}>
+
+                    <Ionicons
+                        name="camera-outline"
+                        size={44}
+                        color={Colors.primary}
+                    />
+
+                </View>
+
+
+                <Text style={styles.permissionTitle}>
+                    Preparing Camera
+                </Text>
+
+
+                <Text style={styles.permissionText}>
+                    Loading camera permission...
+                </Text>
+
+            </View>
+
+        );
+    }
+
     if (!permission.granted) {
 
         return (
 
             <View
-                style={
-                    styles.permissionContainer
-                }
+                style={[
+                    styles.permissionContainer,
+                    {
+                        paddingTop: insets.top,
+                        paddingBottom: insets.bottom
+                    }
+                ]}
             >
 
-                <Text
-                    style={
-                        styles.permissionText
-                    }
-                >
+                <View style={styles.permissionIconCircle}>
+
+                    <Ionicons
+                        name="camera-outline"
+                        size={44}
+                        color={Colors.primary}
+                    />
+
+                </View>
+
+
+                <Text style={styles.permissionTitle}>
+                    Camera Required
+                </Text>
+
+
+                <Text style={styles.permissionText}>
                     Camera permission is required
                     for face enrollment.
                 </Text>
 
 
                 <Pressable
-                    style={
-                        styles.permissionButton
-                    }
-                    onPress={
-                        requestPermission
-                    }
+                    style={styles.permissionButton}
+                    onPress={requestPermission}
                 >
 
-                    <Text
-                        style={
-                            styles.permissionButtonText
-                        }
-                    >
+                    <Text style={styles.permissionButtonText}>
                         Allow Camera
                     </Text>
 
@@ -534,92 +590,170 @@ export default function FaceEnrollScreen() {
 
         <View style={styles.container}>
 
-            <View style={styles.header}>
+
+            {/* =====================================================
+                HEADER
+            ====================================================== */}
+
+            <View
+                style={[
+                    styles.header,
+                    {
+                        paddingTop: insets.top
+                    }
+                ]}
+            >
 
                 <Pressable
                     onPress={handleBack}
-                    style={styles.backButton}
+                    style={styles.headerIconButton}
+                    hitSlop={10}
                 >
 
-                    <Text
-                        style={
-                            styles.backButtonText
-                        }
-                    >
-                        {"⬅"}
-                    </Text>
+                    <Ionicons
+                        name="chevron-back"
+                        size={30}
+                        color={Colors.textSecondary}
+                    />
 
                 </Pressable>
 
 
-                <Text
-                    style={styles.headerTitle}
-                >
+                <Text style={styles.headerTitle}>
                     Face Enrollment
                 </Text>
 
 
-                <Image
-                    source={require(
-                        "../assets/logo.png"
-                    )}
-                    style={styles.headerLogo}
-                />
+                <View style={styles.headerIconButton}>
 
-            </View>
-
-
-
-            <View style={styles.content}>
-
-                <View style={styles.cameraBox}>
-
-                    <CameraView
-                        ref={cameraRef}
-                        style={
-                            styles.cameraPreview
-                        }
-                        facing="front"
-                        mode="video"
-                        onCameraReady={() => {
-
-                            console.log(
-                                "Camera ready"
-                            );
-
-                            setCameraReady(true);
-
-                        }}
-                    />
-
-
-                    <View
-                        pointerEvents="none"
-                        style={
-                            styles.faceGuide
-                        }
+                    <Image
+                        source={require("../assets/logo.png")}
+                        style={styles.headerLogo}
+                        resizeMode="contain"
                     />
 
                 </View>
 
-
-                <Text
-                    style={
-                        styles.instructionText
-                    }
-                >
-                    {statusMessage}
-                </Text>
+            </View>
 
 
-                <Text
-                    style={
-                        styles.capturedImageCount
-                    }
-                >
-                    Scanning Face:{" "}
-                    {captureCount} / 7
-                </Text>
+            {/* =====================================================
+                CAMERA CONTENT
+            ====================================================== */}
+
+            <View style={styles.content}>
+
+
+                {/* Enrollment Instructions */}
+
+                <View style={styles.introSection}>
+
+                    <Text style={styles.title}>
+                        Verify Your Face
+                    </Text>
+
+
+                    <Text style={styles.subtitle}>
+                        Keep your face centered and look directly
+                        at the camera while your biometric profile
+                        is created.
+                    </Text>
+
+                </View>
+
+
+                {/* Live Camera */}
+
+                <View style={styles.cameraCard}>
+
+                    <View style={styles.cameraBox}>
+
+                        <CameraView
+                            ref={cameraRef}
+                            style={styles.cameraPreview}
+                            facing="front"
+                            mode="video"
+                            onCameraReady={() => {
+
+                                console.log(
+                                    "Camera ready"
+                                );
+
+                                setCameraReady(true);
+
+                            }}
+                        />
+
+
+                        {/* Face Alignment Guide */}
+
+                        <View
+                            pointerEvents="none"
+                            style={styles.faceGuide}
+                        />
+
+                    </View>
+
+                </View>
+
+
+                {/* =================================================
+                    SCAN STATUS
+                ================================================== */}
+
+                <View style={styles.statusSection}>
+
+                    <View style={styles.statusRow}>
+
+                        <View style={styles.statusIconCircle}>
+
+                            <Ionicons
+                                name={
+                                    statusMessage === "Enrollment complete"
+                                        ? "checkmark"
+                                        : "scan-outline"
+                                }
+                                size={22}
+                                color={Colors.primary}
+                            />
+
+                        </View>
+
+
+                        <View style={styles.statusTextGroup}>
+
+                            <Text style={styles.instructionText}>
+                                {statusMessage}
+                            </Text>
+
+
+                            <Text style={styles.progressText}>
+                                Face data captured: {captureCount} / 7
+                            </Text>
+
+                        </View>
+
+                    </View>
+
+                </View>
+
+
+                {/* Privacy Note */}
+
+                <View style={styles.privacyRow}>
+
+                    <Ionicons
+                        name="shield-checkmark-outline"
+                        size={20}
+                        color={Colors.textSecondary}
+                    />
+
+
+                    <Text style={styles.privacyText}>
+                        Your camera is used only during biometric enrollment.
+                    </Text>
+
+                </View>
 
             </View>
 
@@ -633,121 +767,149 @@ export default function FaceEnrollScreen() {
 const styles =
     StyleSheet.create({
 
-        background: {
-            flex: 1
-        },
 
-
-        backgroundImage: {
-
-            transform: [
-                {
-                    scale: 1.3
-                }
-            ]
-
-        },
-
+        // ============================================================
+        // PAGE
+        // ============================================================
 
         container: {
-            flex: 1
+            flex: 1,
+            backgroundColor: Colors.background
         },
 
 
+        // ============================================================
+        // HEADER
+        // ============================================================
+
         header: {
+            minHeight: 82,
 
-            height: 90,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
 
-            backgroundColor: "#0f5c00",
+            backgroundColor: Colors.surface,
 
             paddingHorizontal: 20,
 
-            paddingTop: 40,
+            borderBottomWidth: 1,
+            borderBottomColor: Colors.borderLight
+        },
+
+
+        headerIconButton: {
+            width: 44,
+            height: 44,
 
             alignItems: "center",
-
-            borderBottomWidth: 1,
-
-            borderBottomColor: "#ddd",
-
-            flexDirection: "row"
-
+            justifyContent: "center"
         },
 
-
-        backButton: {
-            width: 40
-        },
-
-
-        backButtonText: {
-
-            fontSize: 26,
-
-            fontWeight: "bold",
-
-            color: "white"
-
+        headerLogo: {
+            width: 34,
+            height: 34
         },
 
 
         headerTitle: {
+            color: Colors.textPrimary,
 
-            flex: 1,
+            fontSize: 24,
+            fontWeight: "800",
 
-            fontSize: 22,
-
-            fontWeight: "bold",
-
-            textAlign: "center",
-
-            color: "white"
-
+            textAlign: "center"
         },
 
 
-        headerLogo: {
-
-            width: 45,
-
-            height: 45,
-
-            borderRadius: 8
-
-        },
-
+        // ============================================================
+        // CAMERA CONTENT
+        // ============================================================
 
         content: {
-
             flex: 1,
-
-            justifyContent: "center",
 
             alignItems: "center",
 
-            padding: 20
+            paddingHorizontal: 24,
+            paddingTop: 30,
+            paddingBottom: 26
+        },
 
+
+        introSection: {
+            width: "100%",
+            maxWidth: 390,
+
+            alignItems: "center",
+
+            marginBottom: 24
+        },
+
+
+        title: {
+            color: Colors.textPrimary,
+
+            fontSize: 30,
+            fontWeight: "800",
+
+            textAlign: "center"
+        },
+
+
+        subtitle: {
+            color: Colors.textSecondary,
+
+            fontSize: 16,
+            lineHeight: 22,
+
+            textAlign: "center",
+
+            maxWidth: 340,
+
+            marginTop: 8
+        },
+
+
+        // ============================================================
+        // LIVE CAMERA
+        // ============================================================
+
+        cameraCard: {
+            width: "100%",
+            maxWidth: 390,
+
+            backgroundColor: Colors.surface,
+
+            borderWidth: 1,
+            borderColor: Colors.borderLight,
+            borderRadius: Radius.lg,
+
+            padding: 10,
+
+            shadowColor: Colors.textPrimary,
+            shadowOpacity: 0.08,
+            shadowRadius: 12,
+            shadowOffset: {
+                width: 0,
+                height: 5
+            },
+
+            elevation: 3
         },
 
 
         cameraBox: {
-
             width: "100%",
-
-            maxWidth: 380,
-
             height: 400,
-
-            borderRadius: 20,
 
             overflow: "hidden",
 
-            marginBottom: 30,
+            backgroundColor: Colors.textPrimary,
 
-            backgroundColor: "#000",
+            borderRadius: Radius.md,
 
             position: "relative"
-
         },
 
 
@@ -757,99 +919,193 @@ const styles =
 
 
         faceGuide: {
-
             position: "absolute",
 
             width: 220,
-
             height: 280,
 
             top: 55,
 
             alignSelf: "center",
 
-            borderWidth: 4,
-
-            borderColor: "white",
-
+            borderWidth: 3,
+            borderColor: Colors.surface,
             borderRadius: 120
+        },
 
+
+        // ============================================================
+        // SCAN STATUS
+        // ============================================================
+
+        statusSection: {
+            width: "100%",
+            maxWidth: 390,
+
+            marginTop: 20
+        },
+
+
+        statusRow: {
+            width: "100%",
+
+            flexDirection: "row",
+            alignItems: "center",
+
+            gap: Spacing.md,
+
+            backgroundColor: Colors.surface,
+
+            borderWidth: 1,
+            borderColor: Colors.borderLight,
+            borderRadius: Radius.md,
+
+            paddingHorizontal: 16,
+            paddingVertical: 14
+        },
+
+
+        statusIconCircle: {
+            width: 42,
+            height: 42,
+
+            borderRadius: Radius.pill,
+
+            alignItems: "center",
+            justifyContent: "center",
+
+            backgroundColor: Colors.featureIconBackground
+        },
+
+
+        statusTextGroup: {
+            flex: 1
         },
 
 
         instructionText: {
+            color: Colors.textPrimary,
 
-            color: "#0a3a00",
+            fontSize: 16,
+            lineHeight: 21,
 
-            fontSize: 18,
-
-            fontWeight: "600",
-
-            marginBottom: 20,
-
-            textAlign: "center"
-
+            fontWeight: "700"
         },
 
 
-        capturedImageCount: {
+        progressText: {
+            color: Colors.textSecondary,
 
-            color: "#0a3a00",
+            fontSize: 14,
 
-            fontSize: 32,
-
-            fontWeight: "bold",
-
-            textAlign: "center"
-
+            marginTop: 3
         },
 
+
+        // ============================================================
+        // PRIVACY NOTE
+        // ============================================================
+
+        privacyRow: {
+            width: "100%",
+            maxWidth: 390,
+
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+
+            gap: 8,
+
+            marginTop: 18
+        },
+
+
+        privacyText: {
+            color: Colors.textSecondary,
+
+            fontSize: 13,
+            lineHeight: 18,
+
+            textAlign: "center"
+        },
+
+
+        // ============================================================
+        // CAMERA PERMISSION STATES
+        // ============================================================
 
         permissionContainer: {
-
             flex: 1,
 
             alignItems: "center",
-
             justifyContent: "center",
 
-            padding: 30
+            backgroundColor: Colors.background,
 
+            paddingHorizontal: 30
+        },
+
+
+        permissionIconCircle: {
+            width: 92,
+            height: 92,
+
+            borderRadius: Radius.pill,
+
+            alignItems: "center",
+            justifyContent: "center",
+
+            backgroundColor: Colors.featureIconBackground,
+
+            marginBottom: 20
+        },
+
+
+        permissionTitle: {
+            color: Colors.textPrimary,
+
+            fontSize: 28,
+            fontWeight: "800",
+
+            textAlign: "center",
+
+            marginBottom: 10
         },
 
 
         permissionText: {
+            color: Colors.textSecondary,
 
-            fontSize: 18,
+            fontSize: 17,
+            lineHeight: 23,
 
             textAlign: "center",
 
-            marginBottom: 25
+            maxWidth: 320,
 
+            marginBottom: 24
         },
 
 
         permissionButton: {
+            minHeight: 54,
 
-            backgroundColor: "#0f5c00",
+            backgroundColor: Colors.primary,
 
-            paddingVertical: 14,
+            borderRadius: Radius.md,
 
-            paddingHorizontal: 30,
+            alignItems: "center",
+            justifyContent: "center",
 
-            borderRadius: 10
-
+            paddingHorizontal: 28
         },
 
 
         permissionButtonText: {
+            color: Colors.surface,
 
-            color: "white",
-
-            fontSize: 16,
-
-            fontWeight: "bold"
-
+            fontSize: 17,
+            fontWeight: "800"
         }
 
     });
