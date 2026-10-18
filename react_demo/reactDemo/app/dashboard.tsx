@@ -12,6 +12,108 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors, Radius, Spacing } from "../constants/theme";
 import { useEffect, useState } from "react";
 import { API_BASE } from "@/constants/api";
+import Svg, { Circle } from "react-native-svg";
+
+// ============================================================
+// ATTENDANCE PERCENTAGE RING
+// ============================================================
+
+function AttendanceRing({
+  percentage,
+}: {
+  percentage: number;
+}) {
+  const size = 92;
+  const strokeWidth = 10;
+
+  const radius =
+    (size - strokeWidth) / 2;
+
+  const circumference =
+    2 * Math.PI * radius;
+
+  const safePercentage =
+    Math.min(
+      Math.max(percentage, 0),
+      100
+    );
+
+  const strokeDashoffset =
+    circumference -
+    (safePercentage / 100) *
+      circumference;
+
+  return (
+    <View
+      style={[
+        styles.percentageRingContainer,
+        {
+          width: size,
+          height: size,
+        },
+      ]}
+    >
+      <Svg
+        width={size}
+        height={size}
+        style={
+          styles.percentageRingSvg
+        }
+      >
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={
+            Colors.borderLight
+          }
+          strokeWidth={
+            strokeWidth
+          }
+          fill="none"
+        />
+
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={
+            Colors.primary
+          }
+          strokeWidth={
+            strokeWidth
+          }
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={[
+            circumference,
+            circumference
+          ]}
+          strokeDashoffset={
+            strokeDashoffset
+          }
+          rotation="-90"
+          originX={size / 2}
+          originY={size / 2}
+        />
+      </Svg>
+
+      <View
+        style={
+          styles.percentageRingText
+        }
+      >
+        <Text
+          style={
+            styles.percentageValue
+          }
+        >
+          {safePercentage}%
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -727,25 +829,11 @@ export default function DashboardScreen() {
                 styles.percentageSection
               }
             >
-              <View
-                style={
-                  styles.percentageOuter
+              <AttendanceRing
+                percentage={
+                  attendanceSummary.percentage
                 }
-              >
-                <View
-                  style={
-                    styles.percentageInner
-                  }
-                >
-                  <Text
-                    style={
-                      styles.percentageValue
-                    }
-                  >
-                    {attendanceSummary.percentage}%
-                  </Text>
-                </View>
-              </View>
+              />
 
               <Text
                 style={
@@ -1166,25 +1254,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
-  percentageOuter: {
-    width: 92,
-    height: 92,
-    borderRadius:
-      Radius.pill,
-    borderWidth: 10,
-    borderColor:
-      Colors.primary,
+  percentageRingContainer: {
+    position: "relative",
     alignItems: "center",
     justifyContent: "center",
   },
 
-  percentageInner: {
-    width: 66,
-    height: 66,
-    borderRadius:
-      Radius.pill,
-    backgroundColor:
-      Colors.surface,
+  percentageRingSvg: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+  },
+
+  percentageRingText: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     alignItems: "center",
     justifyContent: "center",
   },
