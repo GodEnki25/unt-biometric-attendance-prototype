@@ -147,9 +147,8 @@ def get_student_attendance_summary(
     cursor = conn.cursor()
 
     try:
-
         # --------------------------------------------------------
-        # VERIFY STUDENT IS ENROLLED IN THIS COURSE
+        # VERIFY STUDENT IS ENROLLED IN COURSE
         # --------------------------------------------------------
 
         cursor.execute(
@@ -176,74 +175,73 @@ def get_student_attendance_summary(
                 "percentage": 0,
             }
 
-
         # --------------------------------------------------------
-        # TOTAL COMPLETED SESSIONS
-        # --------------------------------------------------------
-
-        cursor.execute(
-            """
-            SELECT COUNT(*) AS total
-            FROM attendance_sessions
-            WHERE course_id = ?
-              AND end_time IS NOT NULL
-            """,
-            (course_id,),
-        )
-
-        total = (
-            cursor.fetchone()["total"]
-            or 0
-        )
-
-
-        # --------------------------------------------------------
-        # PRESENT / LATE RECORDS
+        # GET ALL SESSIONS FOR THIS COURSE
         # --------------------------------------------------------
 
         cursor.execute(
             """
             SELECT
-                SUM(
-                    CASE
-                        WHEN ar.status = 'present'
-                        THEN 1
-                        ELSE 0
-                    END
-                ) AS present,
-
-                SUM(
-                    CASE
-                        WHEN ar.status = 'late'
-                        THEN 1
-                        ELSE 0
-                    END
-                ) AS late
-
-            FROM attendance_records ar
-
-            JOIN attendance_sessions s
-                ON s.session_id = ar.session_id
-
-            WHERE s.course_id = ?
-              AND ar.student_id = ?
-              AND s.end_time IS NOT NULL
+                session_id,
+                end_time
+            FROM attendance_sessions
+            WHERE course_id = ?
+            ORDER BY session_id
             """,
-            (
-                course_id,
-                user_id,
-            ),
+            (course_id,),
         )
 
-        row = cursor.fetchone()
+        sessions = cursor.fetchall()
 
-        present = row["present"] or 0
-        late = row["late"] or 0
+        present = 0
+        late = 0
+        absent = 0
+        total = 0
 
-        absent = max(
-            total - present - late,
-            0,
-        )
+        for session in sessions:
+            session_id = session["session_id"]
+            session_ended = (
+                session["end_time"]
+                is not None
+            )
+
+            cursor.execute(
+                """
+                SELECT status
+                FROM attendance_records
+                WHERE session_id = ?
+                  AND student_id = ?
+                LIMIT 1
+                """,
+                (
+                    session_id,
+                    user_id,
+                ),
+            )
+
+            record = cursor.fetchone()
+
+            # Student attended this session
+            if record:
+                status = (
+                    record["status"]
+                    or ""
+                ).lower()
+
+                if status == "late":
+                    late += 1
+                else:
+                    present += 1
+
+                total += 1
+
+            # Session ended without attendance record
+            elif session_ended:
+                absent += 1
+                total += 1
+
+            # Active session with no check-in yet:
+            # do not count it as absent yet.
 
         attended = (
             present
@@ -252,16 +250,13 @@ def get_student_attendance_summary(
 
         percentage = (
             round(
-                attended / total * 100
+                attended
+                / total
+                * 100
             )
             if total > 0
             else 0
         )
-
-
-        # --------------------------------------------------------
-        # RETURN SUMMARY
-        # --------------------------------------------------------
 
         return {
             "present": present,
