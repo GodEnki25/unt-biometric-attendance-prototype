@@ -1,4 +1,4 @@
-import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, Platform, Alert } from "react-native";
+import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, Platform, Alert, ScrollView } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useState, useMemo, useRef } from "react";
 import * as Location from "expo-location";
@@ -6,9 +6,13 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
 import { File } from "expo-file-system";
 
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 //API address is now stored in constants/api.ts so the frontend
 //does not need a hardcoded backend IP in each screen.
 import { API_BASE } from "../constants/api";
+import { Colors, Radius, Spacing } from "../constants/theme";
 
 type Session = {
   id: string;
@@ -16,6 +20,9 @@ type Session = {
   center_lon: number;
   radius_m: number;
   is_open: boolean;
+  session_date?: string;
+  start_time?: string;
+  end_time?: string | null;
 };
 
 type UserLoation = {
@@ -60,6 +67,7 @@ type GeofenceResult = {
 
 export default function CheckInScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
 
   // Get the userId that was passed from dashboard.tsx
   const { userId } = useLocalSearchParams();
@@ -67,6 +75,8 @@ export default function CheckInScreen() {
   const cameraRef = useRef<any>(null);
 
   const [session, setSession] = useState<Session | null>(null);
+  const [checkInTime, setCheckInTime] = useState<Date | null>(null);
+  const [alreadyCheckedIn, setAlreadyCheckedIn] = useState(false);
   const [loc, setLoc] = useState<UserLoation | null>(null);
   const [result, setResult] = useState<CheckInResult | null>(null);
   const [faceResult, setFaceResult] = useState<FaceCheckResult | null>(null);
@@ -99,8 +109,9 @@ export default function CheckInScreen() {
       return;
     }
 
-    const interval = setInterval(() => {
-      getUserLocation(true);
+    const interval = setInterval(async() => {
+      await fetchSession();
+      await getUserLocation(true);
     }, 10000);
 
     return () => clearInterval(interval);
@@ -118,6 +129,7 @@ export default function CheckInScreen() {
 
       await fetchSession();
       await getUserLocation();
+      await fetchCheckInStatus();
 
 
     }
@@ -275,6 +287,36 @@ export default function CheckInScreen() {
     await initializeApp();
   }
 
+  async function fetchCheckInStatus() {
+    const token = await SecureStore.getItemAsync("access_token");
+
+    if(!token) {
+      return;
+    }
+
+    const res = await fetch(`${API_BASE}/checkin/status`,
+      {
+        headers: {
+          Authorization:
+            `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (!res.ok) {
+      return;
+    }
+
+    const data = await res.json();
+
+    if(data.checked_in) {
+      setAlreadyCheckedIn(true);
+
+      if(data.check_in_time) {
+        setCheckInTime(new Date(data.check_in_time));
+      }
+    }
+  }
 
   // ------------------------------------------------
   // BIOMETRIC VERIFICATION API
@@ -367,6 +409,11 @@ export default function CheckInScreen() {
       ok: data.success,
       reason: data.message || data.error || "Check-in failed",
     });
+
+    if (data.success) {
+      setAlreadyCheckedIn(true);
+      setCheckInTime(new Date());
+    }
 
     setStatus(
       data.success
@@ -539,27 +586,97 @@ export default function CheckInScreen() {
     }
   }
 
-  const renderContent = () => {
+  function formatSessionDate(date?: string) {
+    if(!date) return "Current session";
 
+    const [year, month, day] = date.split("-").map(Number);
+
+    return new Date (
+      year,
+      month - 1,
+      day
+    ).toLocaleDateString("en-US" ,{
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+
+  function formatSessionTime(time?: string) {
+    if(!time) return "";
+
+    const [hours, minutes] = time.split(":").map(Number);
+
+    const date = new Date();
+    date.setHours(hours, minutes, 0);
+
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  function formatCheckInTime(date: Date | null) {
+    if (!date) {
+      return "—";
+    }
+
+    return date.toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  }
+
+  // ============================================================
+  // PAGE CONTENT
+  // ============================================================
+
+  const renderContent = () => {
     if (isBootLoading) {
       return (
         <View style={styles.centerContent}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.statusText}>{status}</Text>
+          <ActivityIndicator
+            size="large"
+            color={Colors.primary}
+          />
+
+          <Text style={styles.statusText}>
+            {status}
+          </Text>
         </View>
       );
     }
 
     if (permisssionStatus === "denied") {
-
       return (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Location Access Required</Text>
-          <Text style={styles.cardText}>You must allow location access before checking in.</Text>
-          <Text style={styles.statusText}>{status}</Text>
+        <View style={styles.permissionCard}>
+          <View style={styles.largeSoftIcon}>
+            <Ionicons
+              name="location-outline"
+              size={40}
+              color={Colors.primary}
+            />
+          </View>
 
-          <Pressable style={styles.primaryButton} onPress={retryPermissionFlow}>
-            <Text style={styles.primaryButtonText}>Try Again</Text>
+          <Text style={styles.permissionTitle}>
+            Location Access Required
+          </Text>
+
+          <Text style={styles.permissionText}>
+            Location access is required to verify that
+            you are inside the classroom geofence.
+          </Text>
+
+          <Pressable
+            style={styles.primaryButton}
+            onPress={retryPermissionFlow}
+          >
+            <Text style={styles.primaryButtonText}>
+              Try Again
+            </Text>
           </Pressable>
         </View>
       );
@@ -568,79 +685,342 @@ export default function CheckInScreen() {
     if (!session || !loc) {
       return (
         <View style={styles.centerContent}>
-          <ActivityIndicator size={"large"} />
-          <Text style={styles.statusText}>{status}</Text>
+          <ActivityIndicator
+            size="large"
+            color={Colors.primary}
+          />
+
+          <Text style={styles.statusText}>
+            {status}
+          </Text>
         </View>
       );
     }
 
+    // ============================================================
+    // SUCCESS STATE
+    // ============================================================
 
+    if (result?.ok === true || alreadyCheckedIn) {
+      return (
+        <ScrollView
+          contentContainerStyle={
+            styles.successContent
+          }
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.successIconOuter}>
+            <View style={styles.successIconInner}>
+            <Ionicons
+              name="checkmark"
+              size={44}
+              color={Colors.success}
+            />
+            </View>
+          </View>
+
+          <Text style={styles.successTitle}>
+            Checked in successfully
+          </Text>
+
+          <Text style={styles.successSubtitle}>
+            Your attendance has been recorded.
+          </Text>
+
+          {/* =====================================================
+              SESSION DETAILS
+          ====================================================== */}
+          <View style={styles.infoCard}>
+            <Text style={styles.cardTitle}>
+              Session details
+            </Text>
+
+            <View style={styles.detailRow}>
+              <Ionicons
+                name="book-outline"
+                size={23}
+                color={Colors.textSecondary}
+              />
+
+                <Text style={styles.detailLabel}>
+                  COURSE
+                </Text>
+             
+              <Text style={styles.detailValue}>
+                CSCE 4901 - Capstone
+              </Text>
+            </View>
+
+            <View style={styles.rowDivider} />
+
+            <View style={styles.detailRow}>
+              <Ionicons
+                name="location-outline"
+                size={23}
+                color={Colors.textSecondary}
+              />
+             
+                <Text style={styles.detailLabel}>
+                  ROOM
+                </Text>
+             
+              <Text style={styles.detailValue}>
+                Classroom 266
+              </Text>
+            </View>
+
+            <View style={styles.rowDivider} />
+
+            <View style={styles.detailRow}>
+              <Ionicons
+                name="time-outline"
+                size={23}
+                color={Colors.textSecondary}
+              />
+              
+                <Text style={styles.detailLabel}>
+                  CHECK-IN TIME
+                </Text>
+
+                <Text style={styles.detailValue}>
+                  {formatCheckInTime(checkInTime)}
+                </Text>
+            </View>
+
+            <View style={styles.rowDivider} />
+
+            <View style={styles.detailRow}>
+              <Ionicons
+                name="person-outline"
+                size={23}
+                color={Colors.textSecondary}
+              />
+
+                <Text style={styles.detailLabel}>
+                  STATUS
+                </Text>
+             
+              <View style={styles.successBadge}>
+                <Text style={styles.successBadgeText}>
+                  Present
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* =====================================================
+              VERIFICATION STATUS
+          ====================================================== */}
+          <View style={styles.infoCard}>
+            <Text style={styles.cardTitle}>
+              Verification status
+            </Text>
+
+            <View style={styles.verifyRow}>
+              <View style={styles.smallSoftIcon}>
+                <Ionicons
+                  name="location-outline"
+                  size={23}
+                  color={Colors.primary}
+                />
+              </View>
+
+              <View
+                style={styles.verifyTextWrap}
+              >
+                <Text style={styles.detailLabel}>
+                  GEOFENCE STATUS
+                </Text>
+
+                <Text
+                  style={styles.verifyValue}
+                >
+                  {inside
+                    ? "Inside boundary"
+                    : "Outside boundary"}
+                </Text>
+              </View>
+
+              <View style={styles.successBadge}>
+                <Text style={styles.successBadgeText}>
+                  Verified
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.rowDivider} />
+
+            <View style={styles.verifyRow}>
+              <View style={styles.smallSoftIcon}>
+                <MaterialCommunityIcons
+                  name="face-recognition"
+                  size={23}
+                  color={Colors.primary}
+                />
+              </View>
+
+              <View
+                style={styles.verifyTextWrap}
+              >
+                <Text style={styles.detailLabel}>
+                  FACE VERIFICATION
+                </Text>
+
+                <Text
+                  style={styles.verifyValue}
+                >
+                  Complete
+                </Text>
+              </View>
+
+              <View style={styles.successBadge}>
+                <Text style={styles.successBadgeText}>
+                  Verified
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* =====================================================
+              ACTIONS
+          ====================================================== */}
+          <Pressable
+            style={styles.sessionDetailsButton}
+            onPress={() => {}}
+          >
+            <Text style={styles.sessionDetailButtonText}>
+              View Session Details
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.doneButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.doneButtonText}>
+              Done
+            </Text>
+          </Pressable>
+        </ScrollView>
+      );
+    }
+
+    // ============================================================
+    // NORMAL CHECK-IN STATE
+    // ============================================================
 
     return (
-      <View style={styles.mainContent}>
-        {!showCamera ? (
-          <>
-            <View style={styles.classHeader}>
-              <Text style={styles.classCode}>CSCE 4901</Text>
-              <Text style={styles.classRoom}>Classroom 266</Text>
+      <ScrollView
+        contentContainerStyle={styles.preCheckInContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* =====================================================
+            PAGE INTRO
+        ====================================================== */}
+        <View style={styles.pageIntro}>
+          <Text style={styles.pageTitle}>Check In</Text>
+          <Text style={styles.pageSubtitle}>
+            Verify your presence in class.
+          </Text>
+        </View>
+
+        {/* =====================================================
+            CURRENT CLASS
+        ====================================================== */}
+        <View style={styles.infoCard}>
+          <Text style={styles.cardTitle}>Current Class</Text>
+          <Text style={styles.courseHero}>
+            CSCE 4901 - Capstone
+          </Text>
+
+          <View style={styles.currentClassRow}>
+            <Ionicons name="book-outline" size={27} color={Colors.textSecondary} />
+            <Text style={styles.currentClassLabel}>Course</Text>
+            <Text style={styles.currentClassValue}>CSCE 4901 - Capstone</Text>
+          </View>
+
+          <View style={styles.currentClassRow}>
+            <Ionicons name="location-outline" size={27} color={Colors.textSecondary} />
+            <Text style={styles.currentClassLabel}>Room</Text>
+            <Text style={styles.currentClassValue}>Classroom 266</Text>
+          </View>
+
+          <View style={styles.currentClassRow}>
+            <Ionicons name="time-outline" size={27} color={Colors.textSecondary} />
+            <Text style={styles.currentClassLabel}>Session Time</Text>
+            <View style={styles.sessionTimeWrap}>
+              <Text style={styles.currentClassValue}>{formatSessionDate(session.session_date)}</Text>
+              <Text style={styles.sessionSubValue}>{session.is_open ? `Started ${formatSessionTime(session.start_time)}` : `Ended ${formatSessionTime(session.end_time ?? undefined)}`}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* =====================================================
+            LOCATION STATUS
+        ====================================================== */}
+        <View style={styles.infoCard}>
+          <Text style={styles.cardTitle}>Location Status</Text>
+
+          <View style={styles.statusCardRow}>
+            <View style={[
+              styles.largeSoftIcon,
+              inside ? styles.successSoftBackground : styles.dangerSoftBackground,
+            ]}>
+              <Ionicons
+                name="location-outline"
+                size={46}
+                color={inside ? Colors.success : Colors.danger}
+              />
             </View>
 
-            <View
-              style={[
-                styles.geofenceCircle,
-                inside ? styles.insideCircle : styles.outsideCircle,
-              ]}
-            >
-              <Text style={styles.circleIcon}>
-                {inside ? "✓" : "✕"}
+            <View style={styles.statusTextWrap}>
+              <Text style={[
+                styles.statusHeadline,
+                { color: inside ? Colors.success : Colors.danger },
+              ]}>
+                {inside
+                  ? "You are inside the classroom boundary"
+                  : "You are outside the classroom boundary"}
               </Text>
-
-              <Text style={styles.circleText}>
-                {inside ? "INSIDE\nCLASSROOM" : "OUTSIDE\nCLASSROOM"}
+              <Text style={styles.statusMeta}>
+                Lat: {loc.lat.toFixed(6)}, {loc.lon.toFixed(6)}
+              </Text>
+              <Text style={styles.statusMeta}>
+                Accuracy: ±{Math.round(loc.accuracy)} m
               </Text>
             </View>
+          </View>
+        </View>
 
-            <Text style={styles.sessionText}>
-              {inside
-                ? "Session Ends: 02:00 PM"
-                : "Move closer to classroom 266\nto check in"}
-            </Text>
+        {/* =====================================================
+            FACE VERIFICATION
+        ====================================================== */}
+        <View style={styles.infoCard}>
+          <Text style={styles.cardTitle}>Face Verification</Text>
 
-            <Pressable
-              onPress={openCameraFlow}
-              disabled={!inside || isCheckingIn}
-              style={[
-                styles.checkInButton,
-                (!inside || isCheckingIn) && styles.checkInButtonDisabled,
-              ]}
-            >
-              <Text style={styles.checkInButtonText}>
-                CHECK IN
-              </Text>
-            </Pressable>
-
-            <Text style={styles.lastAttendanceText}>
-              Last Attendance: 03/06
-            </Text>
-          </>
-        ) : (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Face Verification</Text>
-
-            {!cameraPermission?.granted ? (
-              <View style={styles.centerContent}>
-                <Text style={styles.cardText}>
-                  Camera permission is required to continue.
-                </Text>
-                <Pressable
-                  style={styles.primaryButton}
-                  onPress={openCameraFlow}
-                >
-                  <Text style={styles.primaryButtonText}>Allow Camera</Text>
-                </Pressable>
+          {!showCamera ? (
+            <View style={styles.statusCardRow}>
+              <View style={styles.largeSoftIcon}>
+                <MaterialCommunityIcons
+                  name="face-recognition"
+                  size={44}
+                  color={Colors.primary}
+                />
               </View>
-            ) : (
-              <>
+
+              <View style={styles.statusTextWrap}>
+                <Text style={styles.faceReadyTitle}>Ready to verify</Text>
+                <Text style={styles.faceReadyText}>
+                  Your face will be matched for attendance when you start check-in.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.cameraHelper}>
+                Keep your face centered in the camera to verify your identity.
+              </Text>
+              <View style={styles.cameraFrame}>
                 <CameraView
                   ref={cameraRef}
                   style={styles.camera}
@@ -650,293 +1030,703 @@ export default function CheckInScreen() {
                     setStatus("Camera ready");
                   }}
                 />
+              </View>
+              <Pressable
+                onPress={captureFaceAndCheckIn}
+                disabled={isUploadingFace || isCheckingIn}
+                style={[
+                  styles.primaryButton,
+                  (isUploadingFace || isCheckingIn) && styles.disabledButton,
+                ]}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {isUploadingFace || isCheckingIn
+                    ? "Verifying..."
+                    : "Capture Face & Check In"}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setShowCamera(false);
+                  setFaceResult(null);
+                  setStatus("Ready");
+                }}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>Close Camera</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
 
-                <Pressable
-                  onPress={captureFaceAndCheckIn}
-                  disabled={isUploadingFace || isCheckingIn}
-                  style={[
-                    styles.primaryButton,
-                    (isUploadingFace || isCheckingIn) && styles.disabledButton,
-                  ]}
-                >
-                  <Text style={styles.primaryButtonText}>
-                    {isUploadingFace || isCheckingIn
-                      ? "Verifying..."
-                      : "Capture Face & Check In"}
-                  </Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={() => {
-                    setShowCamera(false);
-                    setFaceResult(null);
-                    setStatus("Ready");
-                  }}
-                  style={styles.secondaryButton}
-                >
-                  <Text style={styles.secondaryButtonText}>Close Camera</Text>
-                </Pressable>
-              </>
-            )}
-          </View>
+        {!showCamera && (
+          <Pressable
+            onPress={openCameraFlow}
+            disabled={!inside || isCheckingIn}
+            style={[
+              styles.startButton,
+              (!inside || isCheckingIn) && styles.startButtonDisabled,
+            ]}
+          >
+            <Text style={styles.startButtonText}>Start Check-In</Text>
+            <Ionicons name="arrow-forward" size={28} color={Colors.surface} />
+          </Pressable>
         )}
 
+        <View style={styles.privacyRow}>
+          <Ionicons
+            name="information-circle-outline"
+            size={22}
+            color={Colors.textSecondary}
+          />
+          <Text style={styles.privacyText}>
+            Location is only checked during active class sessions.
+          </Text>
+        </View>
 
-        {faceResult && (
-          <View style={styles.card}>
-
-            <Text style={styles.cardTitle}>
-              Face Result
-            </Text>
-
-            <Text style={styles.cardText}>
-              Status: {faceResult.status ?? "Unknown"}
-            </Text>
-
-            {typeof faceResult.confidence === "number" && (
-              <Text style={styles.cardText}>
-                Confidence: {faceResult.confidence.toFixed(3)}
-              </Text>
-            )}
-
-            {typeof faceResult.matches === "number" && (
-              <Text style={styles.cardText}>
-                Matches: {faceResult.matches} / 3
-              </Text>
-            )}
-
-            {faceResult.error ? (
-              <Text style={styles.cardText}>
-                Error: {faceResult.error}
-              </Text>
-            ) : null}
-
+        {result && result.ok === false && (
+          <View style={styles.errorCard}>
+            <Ionicons name="alert-circle-outline" size={24} color={Colors.danger} />
+            <View style={styles.errorTextWrap}>
+              <Text style={styles.errorTitle}>Check-in unsuccessful</Text>
+              <Text style={styles.errorText}>{result.reason}</Text>
+            </View>
           </View>
         )}
-
-
-        {result && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Server Result</Text>
-            <Text style={styles.cardText}>OK: {String(result.ok)}</Text>
-            <Text style={styles.cardText}>Reason: {result.reason}</Text>
-
-            {typeof result.distance_m === "number" && (
-              <Text style={styles.cardText}>
-                Distance: {result.distance_m.toFixed(1)} m
-              </Text>
-            )}
-
-            {typeof result.allowed_distance_m === "number" && (
-              <Text style={styles.cardText}>
-                Allowed Distance: {result.allowed_distance_m.toFixed(1)} m
-              </Text>
-            )}
-
-            {result.server_time && (
-              <Text style={styles.cardText}>
-                Server Time: {result.server_time}
-              </Text>
-            )}
-          </View>
-        )}
-      </View>
+      </ScrollView>
     );
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Text style={styles.backButtonText}>{"<"}</Text>
-        </Pressable>
+      {/* =========================================================
+          HEADER
+      ========================================================== */}
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top },
+        ]}
+      >
+        <View style={styles.headerBrand}>
+          <Image
+            source={require("../assets/logo.png")}
+            style={styles.headerLogo}
+            resizeMode="contain"
+          />
+          <View style={styles.headerDivider} />
+          <Text style={styles.headerTitle}>
+            {result?.ok === true || alreadyCheckedIn ? "Attendance Status" : "Check In"}
+          </Text>
+        </View>
 
-        <Text style={styles.headerTitle}>Check In</Text>
-
-        <Image
-          source={require("../assets/logo.png")}
-          style={styles.headerLogo}
+        <Ionicons
+          name="person-outline"
+          size={30}
+          color={Colors.textSecondary}
         />
       </View>
 
-      <View style={styles.content}>{renderContent()}</View>
+      {/* =========================================================
+          PAGE CONTENT
+      ========================================================== */}
+      <View style={styles.content}>
+        {renderContent()}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+
+  // ============================================================
+  // PAGE
+  // ============================================================
+
   container: {
     flex: 1,
-    backgroundColor: "white",
+    backgroundColor: Colors.background,
   },
-  header: {
-    height: 90,
-    backgroundColor: "white",
-    paddingHorizontal: 20,
-    paddingTop: 40,
-    flexDirection: "row",
-    alignItems: "center",
-    borderBottomWidth: 1,
-    borderBottomColor: "#ddd",
-  },
-  backButton: {
-    width: 40,
-  },
-  backButtonText: {
-    fontSize: 26,
-    fontWeight: "bold",
-  },
-  headerTitle: {
-    flex: 1,
-    fontSize: 22,
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  headerLogo: {
-    width: 45,
-    height: 45,
-    borderRadius: 8,
-  },
+
   content: {
     flex: 1,
-    padding: 20,
   },
+
   centerContent: {
+    flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    gap: 14,
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.md,
   },
-  mainContent: {
-    gap: 14,
-    paddingBottom: 24,
-    alignItems: "center",
-  },
-  classHeader: {
-    width: "100%",
-    alignItems: "center",
-    marginBottom: 40,
-  },
-  classCode: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#166534",
-  },
-  classRoom: {
-    fontSize: 17,
-    color: "#166534",
-  },
-  geofenceCircle: {
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  insideCircle: {
-    backgroundColor: "#009640",
-  },
-  outsideCircle: {
-    backgroundColor: "#ff3131",
-  },
-  circleIcon: {
-    color: "white",
-    fontSize: 54,
-    fontWeight: "bold",
-    lineHeight: 58,
-  },
-  circleText: {
-    color: "white",
-    fontSize: 17,
-    fontWeight: "500",
-    textAlign: "center",
-  },
-  sessionText: {
-    marginTop: 4,
-    color: "#166534",
-    fontSize: 14,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  checkInButton: {
-    marginTop: 4,
-    backgroundColor: "#009640",
-    paddingVertical: 10,
-    paddingHorizontal: 28,
-    borderRadius: 24,
-    alignItems: "center",
-  },
-  checkInButtonDisabled: {
-    backgroundColor: "#bcbcbc",
-  },
-  checkInButtonText: {
-    color: "white",
-    fontSize: 20,
-    fontWeight: "500",
-  },
-  lastAttendanceText: {
-    marginTop: 2,
-    color: "#166534",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  card: {
-    backgroundColor: "white",
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#ddd",
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    marginBottom: 8,
-  },
-  cardText: {
-    fontSize: 15,
-    marginBottom: 4,
-    color: "#333",
-  },
+
   statusText: {
+    color: Colors.textSecondary,
     fontSize: 15,
-    color: "#444",
-    marginBottom: 8,
+    textAlign: "center",
   },
-  geofenceStatus: {
-    marginTop: 8,
-    fontSize: 16,
-    fontWeight: "bold",
+
+
+  // ============================================================
+  // HEADER
+  // ============================================================
+
+  header: {
+    minHeight: 94,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
   },
-  camera: {
-    width: 320,
-    height: 320,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  primaryButton: {
-    backgroundColor: "#111827",
-    paddingVertical: 14,
-    borderRadius: 10,
+
+  headerBrand: {
+    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
   },
-  primaryButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
+
+  headerLogo: {
+    width: 62,
+    height: 62,
   },
-  secondaryButton: {
-    backgroundColor: "white",
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
+
+  headerDivider: {
+    width: 2,
+    height: 42,
+    backgroundColor: Colors.border,
+    marginHorizontal: 20,
+  },
+
+  headerTitle: {
+    color: Colors.textPrimary,
+    fontSize: 25,
+    fontWeight: "800",
+  },
+
+
+  // ============================================================
+  // PRE-CHECK-IN PAGE
+  // ============================================================
+
+  preCheckInContent: {
+    paddingHorizontal: 22,
+    paddingTop: 28,
+    paddingBottom: 30,
+  },
+
+  pageIntro: {
+    marginBottom: Spacing.lg,
+  },
+
+  pageTitle: {
+    color: Colors.textPrimary,
+    fontSize: 40,
+    fontWeight: "800",
+  },
+
+  pageSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 20,
+    marginTop: Spacing.sm,
+  },
+
+
+  // ============================================================
+  // CARDS
+  // ============================================================
+
+  infoCard: {
+    width: "100%",
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: "#ccc",
+    borderColor: Colors.borderLight,
+    borderRadius: Radius.lg,
+    paddingHorizontal: 22,
+    paddingVertical: 22,
+    marginBottom: 18,
   },
-  secondaryButtonText: {
-    color: "#111827",
+
+  cardTitle: {
+    color: Colors.textPrimary,
+    fontSize: 24,
+    fontWeight: "800",
+    marginBottom: 22,
+  },
+
+  courseHero: {
+    color: Colors.textPrimary,
+    fontSize: 27,
+    fontWeight: "700",
+    marginBottom: 18,
+  },
+
+
+  // ============================================================
+  // CURRENT CLASS
+  // ============================================================
+
+  currentClassRow: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+
+  currentClassLabel: {
+    width: 120,
+    color: Colors.textSecondary,
     fontSize: 16,
-    fontWeight: "600",
   },
+
+  currentClassValue: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "500",
+  },
+
+  sessionRow: {
+    alignItems: "flex-start",
+    paddingTop: 10,
+  },
+
+  sessionTimeWrap: {
+    flex: 1,
+  },
+
+  sessionSubValue: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    marginTop: 5,
+  },
+
+
+  // ============================================================
+  // LOCATION STATUS
+  // ============================================================
+
+  statusCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 18,
+  },
+
+  largeSoftIcon: {
+    width: 94,
+    height: 94,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.featureIconBackground,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  successSoftBackground: {
+    backgroundColor: Colors.successSoft,
+  },
+
+  dangerSoftBackground: {
+    backgroundColor: Colors.dangerSoft,
+  },
+
+  statusTextWrap: {
+    flex: 1,
+  },
+
+  statusHeadline: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "800",
+    marginBottom: Spacing.sm,
+  },
+
+  statusMeta: {
+    color: Colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+
+
+  // ============================================================
+  // FACE VERIFICATION
+  // ============================================================
+
+  faceReadyTitle: {
+    color: Colors.primary,
+    fontSize: 19,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+
+  faceReadyText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+
+
+  // ============================================================
+  // CAMERA
+  // ============================================================
+
+  cameraHelper: {
+    color: Colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 14,
+  },
+
+  cameraFrame: {
+    width: "100%",
+    aspectRatio: 1,
+    overflow: "hidden",
+    borderRadius: Radius.md,
+    backgroundColor: Colors.textPrimary,
+    marginBottom: Spacing.md,
+  },
+
+  camera: {
+    flex: 1,
+  },
+
+
+  // ============================================================
+  // START CHECK-IN
+  // ============================================================
+
+  startButton: {
+    minHeight: 64,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+    marginTop: 2,
+  },
+
+  startButtonDisabled: {
+    backgroundColor: Colors.disabled,
+  },
+
+  startButtonText: {
+    flex: 1,
+    color: Colors.surface,
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+    marginLeft: 28,
+  },
+
+
+  // ============================================================
+  // PRIVACY NOTE
+  // ============================================================
+
+  privacyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingTop: 20,
+    paddingHorizontal: 14,
+  },
+
+  privacyText: {
+    flex: 1,
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+
+
+  // ============================================================
+  // SUCCESS STATE
+  // ============================================================
+
+  successContent: {
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 22,
+    alignItems: "center",
+  },
+
+  successIconOuter: {
+    width: 96,
+    height: 96,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.successSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
+  },
+
+  successIconInner: {
+    width: 70,
+    height: 70,
+    borderRadius: Radius.pill,
+    borderWidth: 3,
+    borderColor: Colors.success,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  successTitle: {
+    color: Colors.textPrimary,
+    fontSize: 26,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  successSubtitle: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    textAlign: "center",
+    marginTop: 6,
+    marginBottom: 22,
+  },
+
+
+  // ============================================================
+  // SESSION DETAILS
+  // ============================================================
+
+  detailRow: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+
+  detailLabel: {
+    width: 116,
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  detailValue: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "500",
+  },
+
+  rowDivider: {
+    height: 1,
+    backgroundColor: Colors.borderLight,
+  },
+
+  successBadge: {
+    backgroundColor: Colors.successSoft,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+
+  successBadgeText: {
+    color: Colors.success,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+
+  // ============================================================
+  // VERIFICATION STATUS
+  // ============================================================
+
+  verifyRow: {
+    minHeight: 76,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+
+  smallSoftIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.featureIconBackground,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  verifyTextWrap: {
+    flex: 1,
+  },
+
+  verifyLabel: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+
+  verifyValue: {
+    color: Colors.textPrimary,
+    fontSize: 17,
+    fontWeight: "500",
+  },
+
+
+  // ============================================================
+  // BUTTONS
+  // ============================================================
+
+  primaryButton: {
+    width: "100%",
+    minHeight: 58,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+    marginTop: 4,
+  },
+
+  primaryButtonText: {
+    color: Colors.surface,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  secondaryButton: {
+    width: "100%",
+    minHeight: 54,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+  },
+
+  secondaryButtonText: {
+    color: Colors.primary,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  outlineButton: {
+    width: "100%",
+    minHeight: 58,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+
+  outlineButtonText: {
+    color: Colors.primary,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  sessionDetailsButton: {
+    width: "100%",
+    minHeight: 56,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+
+  sessionDetailButtonText: {
+    color: Colors.surface,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+
+  doneButton: {
+    width: "100%",
+    minHeight: 56,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+
+  doneButtonText:{
+    color: Colors.primary,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+
   disabledButton: {
     opacity: 0.5,
   },
+
+
+  // ============================================================
+  // PERMISSION STATE
+  // ============================================================
+
+  permissionCard: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+  },
+
+  permissionTitle: {
+    color: Colors.textPrimary,
+    fontSize: 27,
+    fontWeight: "800",
+    textAlign: "center",
+    marginTop: 18,
+  },
+
+  permissionText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    lineHeight: 22,
+    textAlign: "center",
+    marginTop: 10,
+    marginBottom: 22,
+  },
+
+
+  // ============================================================
+  // ERROR STATE
+  // ============================================================
+
+  errorCard: {
+    flexDirection: "row",
+    gap: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.dangerSoft,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: 18,
+  },
+
+  errorTextWrap: {
+    flex: 1,
+  },
+
+  errorTitle: {
+    color: Colors.danger,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+
+  errorText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 19,
+    marginTop: 3,
+  },
+
 });

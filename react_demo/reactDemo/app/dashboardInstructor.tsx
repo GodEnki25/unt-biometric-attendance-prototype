@@ -227,9 +227,11 @@ export default function InstructorDashboard() {
     };
 
 
-    const loadCheckins = async () => {
+    const loadCheckins = async (showLoading = true) => {
         try {
-            setLoading(true);
+            if(showLoading){
+                setLoading(true);
+            }
 
             const token = localStorage.getItem("access_token");
 
@@ -319,7 +321,9 @@ export default function InstructorDashboard() {
             );
 
         } finally {
-            setLoading(false);
+            if(showLoading){
+                setLoading(false);
+            }
         }
     };
 
@@ -365,9 +369,16 @@ export default function InstructorDashboard() {
     };
 
     useEffect(() => {
-        loadCheckins();
+        loadCheckins(true);
         loadCourses();
         loadActiveSession();
+
+        const interval = setInterval(() => {
+            loadCheckins(false);
+            loadActiveSession();
+        }, 5000);
+
+        return () => clearInterval(interval);
     }, []);
 
     const toggleDropdown = (
@@ -1055,7 +1066,7 @@ export default function InstructorDashboard() {
 
                         <TouchableOpacity
                             style={styles.smallButton}
-                            onPress={loadCheckins}
+                            onPress={() => loadCheckins(true)}
                         >
                             <Feather
                                 name="refresh-ccw"

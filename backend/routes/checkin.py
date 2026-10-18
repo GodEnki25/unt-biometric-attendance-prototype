@@ -319,7 +319,6 @@ def get_checkins(
                 """
                 SELECT session_id
                 FROM attendance_sessions
-                WHERE course_id = 1
                 ORDER BY session_id DESC
                 LIMIT 1
                 """
@@ -331,6 +330,22 @@ def get_checkins(
                 return []
 
             session_id = session["session_id"]
+
+        cursor.execute(
+            """
+            SELECT course_id
+            FROM attendance_sessions
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+
+        session_course = cursor.fetchone()
+
+        if not session_course:
+            return[]
+
+        course_id = session_course["course_id"]
 
         # Get every enrolled student and their attendance
         # record for this specific session only.
@@ -357,16 +372,76 @@ def get_checkins(
             LEFT JOIN attendance_records ar
                 ON ar.student_id = u.user_id
                 AND ar.session_id = ?
-            WHERE ce.course_id = 1
+            WHERE ce.course_id = ?
                 AND u.role = 'student'
             ORDER BY u.full_name
             """,
-            (session_id,),
+            (session_id, course_id,),
         )
 
         records = cursor.fetchall()
 
         return [dict(row) for row in records]
+
+    finally:
+        conn.close()
+
+# =========================
+# GET CURRENT CHECK-IN STATUS
+# =========================
+
+@router.get("/checkin/status")
+def get_checkin_status(
+    current_user=Depends(get_current_user),
+):
+    user_id = current_user["user_id"]
+
+    if (
+        not ACTIVE_SESSION["is_open"]
+        or ACTIVE_SESSION["id"] is None
+    ):
+        return {
+            "checked_in": False
+        }
+
+    session_id = int(
+        ACTIVE_SESSION["id"]
+    )
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT
+                attendance_id,
+                check_in_time,
+                status
+            FROM attendance_records
+            WHERE session_id = ?
+              AND student_id = ?
+            LIMIT 1
+            """,
+            (
+                session_id,
+                user_id,
+            ),
+        )
+
+        record = cursor.fetchone()
+
+        if not record:
+            return {
+                "checked_in": False
+            }
+
+        return {
+            "checked_in": True,
+            "attendance_id": record["attendance_id"],
+            "check_in_time": record["check_in_time"],
+            "status": record["status"],
+        }
 
     finally:
         conn.close()
