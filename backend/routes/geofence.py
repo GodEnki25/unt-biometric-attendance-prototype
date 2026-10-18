@@ -182,8 +182,39 @@ class GeofenceCheckRequest(BaseModel):
 def get_active_geofence_session(
     current_user=Depends(get_current_user),
 ):
-    return ACTIVE_SESSION
+    if  ACTIVE_SESSION["id"] is None:
+        return ACTIVE_SESSION
 
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            SELECT
+                session_date,
+                start_time,
+                end_time
+            FROM attendance_sessions
+            WHERE session_id = ?
+            """,
+            (int(ACTIVE_SESSION["id"]),),
+        )
+
+        session = cursor.fetchone()
+
+        if not session:
+            return ACTIVE_SESSION
+
+        return {
+            **ACTIVE_SESSION,
+            "session_date": session["session_date"],
+            "start_time": session["start_time"],
+            "end_time": session["end_time"],
+        }
+
+    finally:
+        conn.close()
 
 # =========================
 # START SESSION
