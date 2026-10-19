@@ -133,12 +133,12 @@ def get_student_courses(
         conn.close()
 
 # ============================================================
-# STUDENT ATTENDANCE SUMMARY BY COURSE
+# STUDENT ATTENDANCE HISTORY
 # ============================================================
 
-@router.get("/student/{course_id}/attendance-summary")
-def get_student_attendance_summary(
-    course_id: int,
+@router.get("/student/attendance-history")
+def get_student_attendance_history(
+    course_id: int | None = None,
     current_user=Depends(get_current_user),
 ):
     user_id = current_user["user_id"]
@@ -148,100 +148,198 @@ def get_student_attendance_summary(
 
     try:
         # --------------------------------------------------------
-        # VERIFY STUDENT IS ENROLLED IN COURSE
+        # VERIFY OPTIONAL COURSE ENROLLMENT
         # --------------------------------------------------------
 
-        cursor.execute(
-            """
-            SELECT 1
-            FROM course_enrollments
-            WHERE course_id = ?
-              AND student_id = ?
-            """,
-            (
-                course_id,
-                user_id,
-            ),
-        )
-
-        enrollment = cursor.fetchone()
-
-        if not enrollment:
-            return {
-                "present": 0,
-                "late": 0,
-                "absent": 0,
-                "total": 0,
-                "percentage": 0,
-            }
-
-        # --------------------------------------------------------
-        # GET ALL SESSIONS FOR THIS COURSE
-        # --------------------------------------------------------
-
-        cursor.execute(
-            """
-            SELECT
-                session_id,
-                end_time
-            FROM attendance_sessions
-            WHERE course_id = ?
-            ORDER BY session_id
-            """,
-            (course_id,),
-        )
-
-        sessions = cursor.fetchall()
-
-        present = 0
-        late = 0
-        absent = 0
-        total = 0
-
-        for session in sessions:
-            session_id = session["session_id"]
-            session_ended = (
-                session["end_time"]
-                is not None
-            )
-
+        if course_id is not None:
             cursor.execute(
                 """
-                SELECT status
-                FROM attendance_records
-                WHERE session_id = ?
+                SELECT 1
+                FROM course_enrollments
+                WHERE course_id = ?
                   AND student_id = ?
-                LIMIT 1
                 """,
                 (
-                    session_id,
+                    course_id,
                     user_id,
                 ),
             )
 
-            record = cursor.fetchone()
+            if not cursor.fetchone():
+                return {
+                    "records": [],
+                    "summary": {
+                        "present": 0,
+                        "late": 0,
+                        "absent": 0,
+                        "percentage": 0,
+                    },
+                }
 
-            # Student attended this session
-            if record:
+        # --------------------------------------------------------
+        # LOAD STUDENT ATTENDANCE SESSIONS
+        # --------------------------------------------------------
+
+        query = """
+            SELECT
+                s.session_id,
+                s.course_id,
+                s.session_date,
+                s.start_time,
+                s.end_time,
+
+                c.course_code,
+                c.course_name,
+
+                ar.attendance_id,
+                ar.check_in_time,
+                ar.face_verified,
+                ar.location_verified,
+                ar.status,
+
+                (
+                    SELECT g.event_time
+                    FROM geofence_status_changes g
+                    WHERE g.attendance_id =
+                        ar.attendance_id
+                      AND g.event_type = 'EXIT'
+                    ORDER BY g.event_time DESC
+                    LIMIT 1
+                ) AS exit_time
+
+            FROM attendance_sessions s
+
+            JOIN courses c
+                ON c.course_id =
+                    s.course_id
+
+            JOIN course_enrollments ce
+                ON ce.course_id =
+                    s.course_id
+                AND ce.student_id = ?
+
+            LEFT JOIN attendance_records ar
+                ON ar.session_id =
+                    s.session_id
+                AND ar.student_id = ?
+
+            WHERE
+                (
+                    s.end_time IS NOT NULL
+                    OR
+                    ar.attendance_id IS NOT NULL
+                )
+        """
+
+        params = [
+            user_id,
+            user_id,
+        ]
+
+        if course_id is not None:
+            query += """
+                AND s.course_id = ?
+            """
+
+            params.append(
+                course_id
+            )
+
+        query += """
+            ORDER BY
+                s.session_date DESC,
+                s.start_time DESC
+        """
+
+        cursor.execute(
+            query,
+            params,
+        )
+
+        rows = cursor.fetchall()
+
+        records = []
+
+        present = 0
+        late = 0
+        absent = 0
+
+        # --------------------------------------------------------
+        # BUILD HISTORY RECORDS
+        # --------------------------------------------------------
+
+        for row in rows:
+            if row["attendance_id"]:
                 status = (
-                    record["status"]
-                    or ""
+                    row["status"]
+                    or "present"
                 ).lower()
 
                 if status == "late":
                     late += 1
+
                 else:
                     present += 1
 
-                total += 1
-
-            # Session ended without attendance record
-            elif session_ended:
+            else:
+                status = "absent"
                 absent += 1
-                total += 1
 
-            # Active session with no check-in yet:
-            # do not count it as absent yet.
+            records.append({
+                "session_id":
+                    row["session_id"],
+
+                "course_id":
+                    row["course_id"],
+
+                "course_code":
+                    row["course_code"],
+
+                "course_name":
+                    row["course_name"],
+
+                "session_date":
+                    row["session_date"],
+
+                "start_time":
+                    row["start_time"],
+
+                "end_time":
+                    row["end_time"],
+
+                "status":
+                    status,
+
+                "check_in_time":
+                    row["check_in_time"],
+
+                "exit_time":
+                    row["exit_time"],
+
+                "face_verified":
+                    bool(
+                        row["face_verified"]
+                    )
+                    if row["attendance_id"]
+                    else False,
+
+                "location_verified":
+                    bool(
+                        row["location_verified"]
+                    )
+                    if row["attendance_id"]
+                    else False,
+            })
+
+        # --------------------------------------------------------
+        # CALCULATE SUMMARY
+        # --------------------------------------------------------
+
+        total = (
+            present
+            + late
+            + absent
+        )
 
         attended = (
             present
@@ -259,11 +357,21 @@ def get_student_attendance_summary(
         )
 
         return {
-            "present": present,
-            "late": late,
-            "absent": absent,
-            "total": total,
-            "percentage": percentage,
+            "records": records,
+
+            "summary": {
+                "present":
+                    present,
+
+                "late":
+                    late,
+
+                "absent":
+                    absent,
+
+                "percentage":
+                    percentage,
+            },
         }
 
     finally:
