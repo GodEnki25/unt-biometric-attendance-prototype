@@ -1,829 +1,2845 @@
+import {View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, TextInput, Platform, Alert, ActivityIndicator } from "react-native";
 
-import { View, Text, StyleSheet, Image, Pressable, ImageBackground, ScrollView, TouchableOpacity, Platform, Alert } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState, useEffect } from "react";
-
+import React, { useEffect, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 
 import { API_BASE } from "../constants/api";
+import { Colors, Spacing, Radius } from "../constants/theme";
 
-// 9/15/26
-// Andrew added First Entry Time as the first time they 
-// entered class so that the attendance status can be done
-// Andrew thinks you might need to make some adjustments to the table later
-// also added the time total for total time in class
-// basically needs an equation that takes 
-// (first entry time - first exit time) + if there is (entry time if there is one - next exit time or 
-// whenever the session ends) however many times they have changes
-//not sure if these changes break the override but thats the stuff.
-// Next commit will probably be the actual override process which involves the auditInstructor file 
-// being the audit thing on the wireframes thing. will probably have the status clickable and take
-// you to the audit screen.
-// Probably take the student ID as info and pass it through to the audit list and use that but
-// i dont know how to change the actual information so Sorrel will probably have to implement
-// the database changes here since I can't access it probably.
-// Sorry for the inconvenience 
-type CheckinRecord = {
-    attendance_id: number;
-    session_id: number;
-    student_id: number;
-    student_name: string;
-    first_check_in_time: string; // 9/15/26 changes here
-    total_time: string; // 9/15/26 changes here
-    check_in_time: string;
-    face_verified: number;
-    location_verified: number;
-    status: string;
-};
 
-type StudentRow = {
-    name: string;
-    firstentrytime: string; // 9/15/26 changes here
-    entrytime: string;
-    exittime: string;
-    totaltime: string; // 9/15/26 changes here
-    status: string;
+// ============================================================
+// TYPES
+// ============================================================
+
+type OverrideEvent = {
+    event_type: string;
+    event_time: string;
 };
 
 
+type OverrideDetails = {
 
-export default function InstructorOverride()
-{
-    const [openPopupStudentIndex, setOpenPopupStudentIndex] = useState<number | null>(null);
-    const router = useRouter();
-    const insets = useSafeAreaInsets();
-    const [loading, setLoading] = useState(false);
-    const { course, room, date } = useLocalSearchParams<{
-        course?: string;
-        room?: string;
-        date?: string;
-    }>();
-    const [students, setStudents] = useState<StudentRow[]>([]);
-
-    const getStatusStyle = (status: string) =>
-    {
-        if (status === "Present")
-        {
-            return styles.presentText;
-        }
-        if (status === "Absent")
-        {
-            return styles.absentText;
-        }
-        if (status === "Late")
-        {
-            return styles.lateText;
-        }
-
-        return styles.defaultStatusText;
+    student: {
+        student_id: number;
+        student_name: string;
     };
 
-    const refreshPage = () => {
-        window.location.reload();
+    course: {
+        course_id: number;
+        course_code: string;
+        course_name: string;
     };
 
-    const togglePopup = (studentIndex: number) => {
-        setOpenPopupStudentIndex((currentIndex) =>
-            currentIndex === studentIndex ? null : studentIndex
+    session: {
+        session_id: number;
+        session_date: string;
+    };
+
+    attendance: {
+        attendance_id:
+            number | null;
+
+        status:
+            string;
+
+        check_in_time:
+            string | null;
+
+        face_verified:
+            boolean;
+
+        location_verified:
+            boolean;
+    };
+
+    events:
+        OverrideEvent[];
+};
+
+
+// ============================================================
+// SCREEN
+// ============================================================
+
+export default function InstructorOverride() {
+
+    const router =
+        useRouter();
+
+    const insets =
+        useSafeAreaInsets();
+
+
+    // ============================================================
+    // ROUTE PARAMETERS
+    // ============================================================
+
+    const {
+        student,
+        studentId
+    } =
+        useLocalSearchParams<{
+            student?: string;
+            studentId?: string;
+        }>();
+
+
+    // ============================================================
+    // CURRENT INSTRUCTOR
+    // ============================================================
+
+    const storedUser =
+        Platform.OS === "web"
+            ? localStorage.getItem(
+                "user"
+            )
+            : null;
+
+
+    const currentUser =
+        storedUser
+            ? JSON.parse(
+                storedUser
+            )
+            : null;
+
+
+    // ============================================================
+    // SCREEN STATE
+    // ============================================================
+
+    const [
+        details,
+        setDetails
+    ] =
+        useState<
+            OverrideDetails | null
+        >(null);
+
+
+    const [
+        selectedStatus,
+        setSelectedStatus
+    ] =
+        useState(
+            ""
         );
-    };
-
-    const formatTime = (dateTime: string) => {
-        if (!dateTime) {
-            return "-";
-        }
-
-        const parts = dateTime.split(" ");
-
-        if (parts.length < 2) {
-            return "-";
-        }
-
-        const timeParts = parts[1].split(":");
-
-        if (timeParts.length < 2) {
-            return "-";
-        }
-
-        const hour = parseInt(timeParts[0], 10);
-        const minute = timeParts[1];
-
-        const period = hour >= 12 ? "PM" : "AM";
-        const displayHour = hour % 12 || 12;
-
-        return `${displayHour}:${minute} ${period}`;
-    };
 
 
-    const formatStatus = (status: string) => {
-        if (!status) {
-            return "Unknown";
-        }
-
-        return (
-            status.charAt(0).toUpperCase() +
-            status.slice(1)
+    const [
+        notes,
+        setNotes
+    ] =
+        useState(
+            ""
         );
-    };
 
 
-    const loadCheckins = async () => {
-        try {
-            setLoading(true);
-
-            const response = await fetch(
-                `${API_BASE}/checkins`
-            );
-
-            if (!response.ok) {
-                throw new Error(
-                    `Server returned ${response.status}`
-                );
-            }
-
-            const records: CheckinRecord[] =
-                await response.json();
-
-            /* This is for testing for me specifically cause i cant get the database stuff to work
-            const records: CheckinRecord[] = [{
-                attendance_id: 1,
-                session_id: 1,
-                student_id: 1, 
-                student_name: "Person",
-                first_check_in_time: "04:20", // 9/15/26 changes here
-                total_time: "04:20", // 9/15/26 changes here
-                check_in_time: "04:20",
-                face_verified: 1,
-                location_verified: 1,
-                status: "Present"
-            }];
-            */
-            /*
-             * For now, show the latest attendance record
-             * for each student.
-             *
-             * Later we can filter this by:
-             * course
-             * session
-             * date
-             */
-            const latestByStudent =
-                new Map<number, CheckinRecord>();
-
-            records.forEach((record) => {
-                const existing =
-                    latestByStudent.get(
-                        record.student_id
-                    );
-
-                if (
-                    !existing ||
-                    record.attendance_id >
-                        existing.attendance_id
-                ) {
-                    latestByStudent.set(
-                        record.student_id,
-                        record
-                    );
-                }
-            });
+    const [
+        loading,
+        setLoading
+    ] =
+        useState(
+            true
+        );
 
 
-            const formattedStudents: StudentRow[] =
-                Array.from(
-                    latestByStudent.values()
-                ).map((record) => ({
-                    name:
-                        record.student_name ??
-                        `Student ${record.student_id}`,
-                    // 9/15/26 changes here below
-                    firstentrytime: formatTime(
-                        record.first_check_in_time
-                    ),
-                    
-                    entrytime: formatTime(
-                        record.check_in_time
-                    ),
-
-                    exittime: "-",
-                    totaltime: "-", // 9/15/26 changes here
-                    status: formatStatus(
-                        record.status
-                    )
-                }));
+    const [
+        saving,
+        setSaving
+    ] =
+        useState(
+            false
+        );
 
 
-            setStudents(formattedStudents);
+    const [
+        error,
+        setError
+    ] =
+        useState(
+            ""
+        );
 
-        } catch (error) {
-            console.error(
-                "Failed to load check-ins:",
-                error
-            );
 
-            Alert.alert(
-                "Unable to load attendance",
-                "The dashboard could not reach the backend."
-            );
-
-        } finally {
-            setLoading(false);
-        }
-    };
-
+    // ============================================================
+    // INITIAL LOAD
+    // ============================================================
 
     useEffect(() => {
-        loadCheckins();
+
+        loadOverrideData();
+
     }, []);
 
 
+    // ============================================================
+    // LOAD CURRENT STUDENT / SESSION
+    // ============================================================
+
+    const loadOverrideData =
+        async () => {
+
+        setLoading(
+            true
+        );
+
+        setError(
+            ""
+        );
+
+
+        try {
+
+            const token =
+                Platform.OS === "web"
+                    ? localStorage.getItem(
+                        "access_token"
+                    )
+                    : null;
+
+
+            if (!token) {
+
+                throw new Error(
+                    "Instructor is not logged in."
+                );
+
+            }
+
+
+            /*
+             * The instructor dashboard currently sends the
+             * student's name.
+             *
+             * If studentId is available later, we can skip
+             * the /checkins lookup entirely.
+             */
+
+            let resolvedStudentId =
+                studentId
+                    ? Number(
+                        studentId
+                    )
+                    : null;
+
+
+            // --------------------------------------------------------
+            // RESOLVE STUDENT ID FROM REAL CHECK-IN DATA
+            // --------------------------------------------------------
+
+            if (
+                !resolvedStudentId
+                && student
+            ) {
+
+                const checkinResponse =
+                    await fetch(
+                        `${API_BASE}/checkins`,
+                        {
+                            headers: {
+                                Authorization:
+                                    `Bearer ${token}`
+                            }
+                        }
+                    );
+
+
+                if (
+                    !checkinResponse.ok
+                ) {
+
+                    throw new Error(
+                        "Unable to load student attendance."
+                    );
+
+                }
+
+
+                const records =
+                    await checkinResponse.json();
+
+
+                const matchingStudent =
+                    records.find(
+                        (record: any) =>
+                            record.student_name ===
+                            student
+                    );
+
+
+                if (
+                    !matchingStudent
+                ) {
+
+                    throw new Error(
+                        "Student could not be found."
+                    );
+
+                }
+
+
+                resolvedStudentId =
+                    matchingStudent.student_id;
+
+            }
+
+
+            if (
+                !resolvedStudentId
+            ) {
+
+                throw new Error(
+                    "Student ID is missing."
+                );
+
+            }
+
+
+            // --------------------------------------------------------
+            // LOAD OVERRIDE DETAILS
+            // --------------------------------------------------------
+
+            const response =
+                await fetch(
+                    `${API_BASE}/attendance/override/${resolvedStudentId}`,
+                    {
+                        headers: {
+                            Authorization:
+                                `Bearer ${token}`
+                        }
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (
+                !response.ok
+                || !data.success
+            ) {
+
+                throw new Error(
+                    data.message ||
+                    "Unable to load override information."
+                );
+
+            }
+
+
+            setDetails(
+                data
+            );
+
+
+            setSelectedStatus(
+                normalizeStatus(
+                    data.attendance.status
+                )
+            );
+
+        }
+
+        catch (error: any) {
+
+            console.error(
+                "Override load failed:",
+                error
+            );
+
+
+            setError(
+                error.message ||
+                "Unable to load attendance override."
+            );
+
+        }
+
+        finally {
+
+            setLoading(
+                false
+            );
+
+        }
+
+    };
+
+
+    // ============================================================
+    // STATUS HELPERS
+    // ============================================================
+
+    const normalizeStatus =
+        (
+            status:
+                string
+        ) => {
+
+        if (!status) {
+
+            return "absent";
+
+        }
+
+
+        return status
+            .trim()
+            .toLowerCase();
+
+    };
+
+
+    const formatStatus =
+        (
+            status:
+                string
+        ) => {
+
+        if (!status) {
+
+            return "Unknown";
+
+        }
+
+
+        return (
+            status
+                .charAt(0)
+                .toUpperCase()
+            +
+            status
+                .slice(1)
+                .toLowerCase()
+        );
+
+    };
+
+
+    // ============================================================
+    // DATE FORMAT
+    // ============================================================
+
+    const formatDate =
+        (
+            dateValue:
+                string
+        ) => {
+
+        if (!dateValue) {
+
+            return "—";
+
+        }
+
+
+        const date =
+            new Date(
+                `${dateValue}T12:00:00`
+            );
+
+
+        if (
+            Number.isNaN(
+                date.getTime()
+            )
+        ) {
+
+            return dateValue;
+
+        }
+
+
+        return date
+            .toLocaleDateString(
+                "en-US",
+                {
+                    month:
+                        "short",
+
+                    day:
+                        "numeric",
+
+                    year:
+                        "numeric"
+                }
+            );
+
+    };
+
+
+    // ============================================================
+    // TIME FORMAT
+    // ============================================================
+
+    const formatTime =
+        (
+            dateTime:
+                string
+        ) => {
+
+        if (!dateTime) {
+
+            return "—";
+
+        }
+
+
+        const parts =
+            dateTime.split(
+                " "
+            );
+
+
+        if (
+            parts.length < 2
+        ) {
+
+            return dateTime;
+
+        }
+
+
+        const timeParts =
+            parts[1].split(
+                ":"
+            );
+
+
+        if (
+            timeParts.length < 2
+        ) {
+
+            return dateTime;
+
+        }
+
+
+        const hour =
+            parseInt(
+                timeParts[0],
+                10
+            );
+
+
+        const minute =
+            timeParts[1];
+
+
+        const period =
+            hour >= 12
+                ? "PM"
+                : "AM";
+
+
+        const displayHour =
+            hour % 12 || 12;
+
+
+        return (
+            `${displayHour}:${minute} ${period}`
+        );
+
+    };
+
+
+    // ============================================================
+    // SAVE OVERRIDE
+    // ============================================================
+
+    const saveOverride =
+        async () => {
+
+        if (
+            !details
+            || !selectedStatus
+        ) {
+
+            return;
+
+        }
+
+
+        setSaving(
+            true
+        );
+
+
+        try {
+
+            const token =
+                Platform.OS === "web"
+                    ? localStorage.getItem(
+                        "access_token"
+                    )
+                    : null;
+
+
+            if (!token) {
+
+                throw new Error(
+                    "Instructor is not logged in."
+                );
+
+            }
+
+
+            const response =
+                await fetch(
+                    `${API_BASE}/attendance/override`,
+                    {
+                        method:
+                            "POST",
+
+                        headers: {
+                            "Content-Type":
+                                "application/json",
+
+                            Authorization:
+                                `Bearer ${token}`
+                        },
+
+                        body:
+                            JSON.stringify({
+                                session_id:
+                                    details.session.session_id,
+
+                                student_id:
+                                    details.student.student_id,
+
+                                status:
+                                    selectedStatus
+
+                                /*
+                                 * Notes intentionally are NOT
+                                 * being sent yet.
+                                 *
+                                 * The DB / audit schema does not
+                                 * currently have somewhere to
+                                 * persist them.
+                                 */
+                            })
+                    }
+                );
+
+
+            const data =
+                await response.json();
+
+
+            if (
+                !response.ok
+                || !data.success
+            ) {
+
+                throw new Error(
+                    data.message ||
+                    "Unable to save attendance override."
+                );
+
+            }
+
+
+            Alert.alert(
+                "Override Saved",
+                `${details.student.student_name}'s attendance is now ${formatStatus(selectedStatus)}.`
+            );
+
+
+            await loadOverrideData();
+
+        }
+
+        catch (error: any) {
+
+            console.error(
+                "Override save failed:",
+                error
+            );
+
+
+            Alert.alert(
+                "Save Failed",
+                error.message ||
+                "Unable to save attendance override."
+            );
+
+        }
+
+        finally {
+
+            setSaving(
+                false
+            );
+
+        }
+
+    };
+
+
+    // ============================================================
+    // LOGOUT
+    // ============================================================
+
+    const logout =
+        () => {
+
+        if (
+            Platform.OS === "web"
+        ) {
+
+            localStorage.removeItem(
+                "access_token"
+            );
+
+
+            localStorage.removeItem(
+                "user"
+            );
+
+        }
+
+
+        router.replace(
+            "/loginInstructor"
+        );
+
+    };
+
+
+    // ============================================================
+    // STATUS OPTIONS
+    // ============================================================
+
+    const statusOptions = [
+
+        {
+            value:
+                "present",
+
+            title:
+                "Present",
+
+            description:
+                "Student was present for this session."
+        },
+
+        {
+            value:
+                "late",
+
+            title:
+                "Late",
+
+            description:
+                "Student arrived after the session start time."
+        },
+
+        {
+            value:
+                "excused",
+
+            title:
+                "Excused",
+
+            description:
+                "Absence is excused."
+        },
+
+        {
+            value:
+                "absent",
+
+            title:
+                "Absent",
+
+            description:
+                "Student did not attend this session."
+        }
+
+    ];
+
 
     return (
-        <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-            <View style={styles.container}>
-                {/* Top Header */}
-                <View style={styles.topHeader}>
-                    <Image
-                        source={require("../assets/logo.png")}
-                        style={styles.logoBox}
-                    />
 
-                    <Text style={styles.dashboardTitle}>Override Dashboard</Text>
-                    {/* This is just a note for later but we should add the name for this here.
-                    probably get the username of the stuff and put it here. */}
-                    <View style={styles.profileBox}>
-                        <Text style={styles.profileText}>Professor Emptynow</Text>
-                        <Image
-                            source={require("../assets/empty.png")}
-                            style={styles.profileIcon}
-                        />
-                    </View>
-                </View>
+        <View
+            style={[
+                styles.safe,
+                {
+                    paddingTop:
+                        insets.top,
 
-                {/* Course / Room / Date Bar */}
-                <View style={styles.infoBar}>
-                    <View style={styles.infoField}>
-                        <Text style={styles.infoText}>
-                            <Text style={styles.bold}>Course: </Text>
-                            {!course || course === "Choose Course"
-                                ? "Not selected"
-                                : course}
-                        </Text>
-                    </View>
+                    paddingBottom:
+                        insets.bottom
+                }
+            ]}
+        >
 
-                    <View style={styles.infoField}>
-                        <Text style={styles.infoText}>
-                            <Text style={styles.bold}>Room: </Text>
-                            {!room || room === "Room Number"
-                                ? "Not selected"
-                                : room}
-                        </Text>
-                    </View>
+            <View
+                style={
+                    styles.container
+                }
+            >
 
-                    <View style={styles.infoField}>
-                        <Text style={styles.infoText}>
-                            <Text style={styles.bold}>Date: </Text>
-                            {!date || date === "Date"
-                                ? "Not selected"
-                                : date}
-                        </Text>
-                    </View>
-                </View>
 
-                {/* Main Content */}
-                <ScrollView contentContainerStyle={styles.mainContent}>
+                {/* =====================================================
+                    TOP HEADER
+                ====================================================== */}
 
-                    {/* Student Table */}
-                    {course === "Choose Course" || room === "Room Number" || date === "Date" ? (
-                        <View style={styles.invalidInputBox}>
-                            <Text style={styles.invalidInputText}>
-                                Missing Course, Room, or Date input. Please select valid Options.
-                            </Text>
-                        </View>
-                    ) : (
+                <View
+                    style={
+                        styles.topHeader
+                    }
+                >
+
                     <View
-                        style={styles.tableContainer}
+                        style={
+                            styles.brandBox
+                        }
                     >
+
+                        <Image
+                            source={require(
+                                "../assets/logo.png"
+                            )}
+                            style={
+                                styles.logoBox
+                            }
+                            resizeMode="contain"
+                        />
+
 
                         <View
                             style={
-                                styles.tableHeaderRow
+                                styles.brandDivider
+                            }
+                        />
+
+
+                        <Text
+                            style={
+                                styles.brandText
                             }
                         >
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colStudent
-                                ]} 
-                            >
-                                Student
-                            </Text>
-                            {/* 9/15/26 changes here for First Entry Time */}
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colTime
-                                ]}
-                            >
-                                First Entry Time
-                            </Text>
+                            Attendance
+                        </Text>
 
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colTime
-                                ]}
-                            >
-                                Latest Entry Time
-                            </Text>
-
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colTime
-                                ]}
-                            >
-                                Latest Exit Time
-                            </Text>
-                            {/* 9/15/26 changes here for First Entry Time */}
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colTime
-                                ]}
-                            >
-                            Total Time in Class
-                            </Text>
-                            <Text
-                                style={[
-                                    styles.tableHeaderText,
-                                    styles.colStatus
-                                ]}
-                            >
-                                Status
-                            </Text>
-                        </View>
+                    </View>
 
 
-                        {loading ? (
-                            <Text
-                                style={
-                                    styles.loadingText
-                                }
-                            >
-                                Loading attendance...
-                            </Text>
+                    <View
+                        style={
+                            styles.profileBox
+                        }
+                    >
 
-                        ) : students.length === 0 ? (
+                        <Text
+                            style={
+                                styles.profileText
+                            }
+                        >
+                            {
+                                currentUser?.name ||
+                                "Instructor"
+                            }
+                        </Text>
+
+
+                        <View
+                            style={
+                                styles.profileDivider
+                            }
+                        />
+
+
+                        <Ionicons
+                            name="person-outline"
+                            size={23}
+                            color={
+                                Colors.textSecondary
+                            }
+                        />
+
+
+                        <TouchableOpacity
+                            onPress={
+                                logout
+                            }
+                        >
 
                             <Text
                                 style={
-                                    styles.loadingText
+                                    styles.logoutText
                                 }
                             >
-                                No attendance records found.
+                                Logout
                             </Text>
 
-                        ) : (
+                        </TouchableOpacity>
 
-                            students.map(
-                                (
-                                    student,
-                                    index
-                                ) => (
-                                    <View
-                                        key={index}
+                    </View>
+
+                </View>
+
+
+                {/* =====================================================
+                    PAGE
+                ====================================================== */}
+
+                <ScrollView
+                    contentContainerStyle={
+                        styles.pageContent
+                    }
+                >
+
+
+                    {/* =================================================
+                        BACK LINK
+                    ================================================== */}
+
+                    <TouchableOpacity
+                        style={
+                            styles.backLink
+                        }
+                        onPress={() =>
+                            router.replace(
+                                "/dashboardInstructor"
+                            )
+                        }
+                    >
+
+                        <Ionicons
+                            name="arrow-back"
+                            size={20}
+                            color={
+                                Colors.primary
+                            }
+                        />
+
+
+                        <Text
+                            style={
+                                styles.backLinkText
+                            }
+                        >
+                            Back to Instructor Dashboard
+                        </Text>
+
+                    </TouchableOpacity>
+
+
+                    {/* =================================================
+                        PAGE HEADING
+                    ================================================== */}
+
+                    <View
+                        style={
+                            styles.pageHeading
+                        }
+                    >
+
+                        <Text
+                            style={
+                                styles.pageTitle
+                            }
+                        >
+                            Attendance Override
+                        </Text>
+
+
+                        <Text
+                            style={
+                                styles.pageSubtitle
+                            }
+                        >
+                            Update a student's attendance for this class session.
+                        </Text>
+
+                    </View>
+
+
+                    {/* =================================================
+                        LOADING
+                    ================================================== */}
+
+                    {
+                        loading && (
+
+                            <View
+                                style={
+                                    styles.loadingCard
+                                }
+                            >
+
+                                <ActivityIndicator
+                                    size="large"
+                                    color={
+                                        Colors.primary
+                                    }
+                                />
+
+
+                                <Text
+                                    style={
+                                        styles.loadingText
+                                    }
+                                >
+                                    Loading attendance...
+                                </Text>
+
+                            </View>
+
+                        )
+                    }
+
+
+                    {/* =================================================
+                        ERROR
+                    ================================================== */}
+
+                    {
+                        !loading &&
+                        error ? (
+
+                            <View
+                                style={
+                                    styles.errorCard
+                                }
+                            >
+
+                                <Ionicons
+                                    name="alert-circle-outline"
+                                    size={34}
+                                    color={
+                                        Colors.danger
+                                    }
+                                />
+
+
+                                <Text
+                                    style={
+                                        styles.errorText
+                                    }
+                                >
+                                    {error}
+                                </Text>
+
+
+                                <TouchableOpacity
+                                    style={
+                                        styles.retryButton
+                                    }
+                                    onPress={
+                                        loadOverrideData
+                                    }
+                                >
+
+                                    <Text
                                         style={
-                                            styles.tableRow
+                                            styles.retryButtonText
                                         }
-                                    >{/* 9/15/26 made this a popup so that there's a way to view 
-                                    the students information like everytime they clocked in and clocked out.
-                                    Probably something like
-                                    a small table inside there.*/}
-                                        <Pressable
-                                            style={styles.colStudent}
-                                            onPress={() => togglePopup(index)}
-                                        >
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.linkText
-                                            ]}
-                                        >
-                                            {
-                                                student.name
-                                            }
-                                        </Text>
-                                        </Pressable>
-                                        {openPopupStudentIndex === index && (
-                                            <View style={styles.popupBox}>
-                                            <Text style={styles.popupText}>{student.name}</Text>
-                                            <TouchableOpacity onPress={() => setOpenPopupStudentIndex(null)}>
-                                                <Text style={styles.popupClose}>Close</Text>
-                                            </TouchableOpacity>
-                                            </View>
-                                        )}
-                                            {/* 9/15/26 changes here for First Entry Time */}
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colTime
-                                            ]}
-                                        >
-                                            {
-                                                student.firstentrytime
-                                            }
-                                        </Text>
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colTime
-                                            ]}
-                                        >
-                                            {
-                                                student.entrytime
-                                            }
-                                        </Text>
+                                    >
+                                        Retry
+                                    </Text>
 
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colTime
-                                            ]}
-                                        >
-                                            {
-                                                student.exittime
+                                </TouchableOpacity>
+
+                            </View>
+
+                        ) : null
+                    }
+
+
+                    {/* =================================================
+                        OVERRIDE CONTENT
+                    ================================================== */}
+
+                    {
+                        !loading &&
+                        !error &&
+                        details && (
+
+                            <>
+
+
+                                {/* =================================================
+                                    STUDENT DETAILS
+                                ================================================== */}
+
+                                <View
+                                    style={
+                                        styles.detailsCard
+                                    }
+                                >
+
+                                    <Text
+                                        style={
+                                            styles.sectionTitle
+                                        }
+                                    >
+                                        Student Details
+                                    </Text>
+
+
+                                    <View
+                                        style={
+                                            styles.detailsRow
+                                        }
+                                    >
+
+
+                                        {/* Student */}
+
+                                        <View
+                                            style={
+                                                styles.detailSection
                                             }
-                                        </Text>
-                                            {/* 9/15/26 changes here for total time */}
-                                        <Text
-                                            style={[
-                                                styles.tableCellText,
-                                                styles.colTime
-                                            ]}
                                         >
-                                            {
-                                                student.totaltime
-                                            }
-                                        </Text>
-                                        {/* 9/15/26 Probably make this clickable to go to the audit screen. */}
-                                        <Pressable
-                                            style={styles.colStatus}
-                                            onPress={() => router.push({
-                                                pathname: "/auditInstructor",
-                                                params: {
-                                                    studentName: student.name,
-                                                    status: student.status,
-                                                    course: course,
-                                                    room: room,
-                                                    date: date
-                                                }
-                                            })}
-                                        >
+
                                             <Text
+                                                style={
+                                                    styles.detailLabel
+                                                }
+                                            >
+                                                Student
+                                            </Text>
+
+
+                                            <Text
+                                                style={
+                                                    styles.studentName
+                                                }
+                                            >
+                                                {
+                                                    details.student.student_name
+                                                }
+                                            </Text>
+
+
+                                            <Text
+                                                style={
+                                                    styles.studentId
+                                                }
+                                            >
+                                                ID: {
+                                                    details.student.student_id
+                                                }
+                                            </Text>
+
+                                        </View>
+
+
+                                        <View
+                                            style={
+                                                styles.detailDivider
+                                            }
+                                        />
+
+
+                                        {/* Course */}
+
+                                        <View
+                                            style={
+                                                styles.detailSection
+                                            }
+                                        >
+
+                                            <Text
+                                                style={
+                                                    styles.detailLabel
+                                                }
+                                            >
+                                                Course
+                                            </Text>
+
+
+                                            <Text
+                                                style={
+                                                    styles.detailValue
+                                                }
+                                            >
+                                                {
+                                                    details.course.course_code
+                                                }
+                                                {" — "}
+                                                {
+                                                    details.course.course_name
+                                                }
+                                            </Text>
+
+                                        </View>
+
+
+                                        <View
+                                            style={
+                                                styles.detailDivider
+                                            }
+                                        />
+
+
+                                        {/* Session Date */}
+
+                                        <View
+                                            style={
+                                                styles.detailSection
+                                            }
+                                        >
+
+                                            <Text
+                                                style={
+                                                    styles.detailLabel
+                                                }
+                                            >
+                                                Session Date
+                                            </Text>
+
+
+                                            <Text
+                                                style={
+                                                    styles.detailValue
+                                                }
+                                            >
+                                                {
+                                                    formatDate(
+                                                        details.session.session_date
+                                                    )
+                                                }
+                                            </Text>
+
+                                        </View>
+
+
+                                        <View
+                                            style={
+                                                styles.detailDivider
+                                            }
+                                        />
+
+
+                                        {/* Current Status */}
+
+                                        <View
+                                            style={
+                                                styles.detailSection
+                                            }
+                                        >
+
+                                            <Text
+                                                style={
+                                                    styles.detailLabel
+                                                }
+                                            >
+                                                Current Status
+                                            </Text>
+
+
+                                            <View
                                                 style={[
-                                                    styles.tableCellText,
-                                                    getStatusStyle(student.status),
-                                                    styles.statusLinkText
+                                                    styles.statusBadge,
+
+                                                    normalizeStatus(
+                                                        details.attendance.status
+                                                    ) === "present"
+                                                        ? styles.presentBadge
+
+                                                    : normalizeStatus(
+                                                        details.attendance.status
+                                                    ) === "late"
+                                                        ? styles.lateBadge
+
+                                                    : normalizeStatus(
+                                                        details.attendance.status
+                                                    ) === "excused"
+                                                        ? styles.excusedBadge
+
+                                                    : styles.absentBadge
                                                 ]}
                                             >
-                                                {student.status}
-                                            </Text>
-                                        </Pressable>
+
+                                                <Text
+                                                    style={[
+                                                        styles.statusBadgeText,
+
+                                                        normalizeStatus(
+                                                            details.attendance.status
+                                                        ) === "present"
+                                                            ? styles.presentText
+
+                                                        : normalizeStatus(
+                                                            details.attendance.status
+                                                        ) === "late"
+                                                            ? styles.lateText
+
+                                                        : normalizeStatus(
+                                                            details.attendance.status
+                                                        ) === "excused"
+                                                            ? styles.excusedText
+
+                                                        : styles.absentText
+                                                    ]}
+                                                >
+                                                    {
+                                                        formatStatus(
+                                                            details.attendance.status
+                                                        )
+                                                    }
+                                                </Text>
+
+                                            </View>
+
+                                        </View>
+
                                     </View>
-                                )
-                            )
 
-                        )}
-
-                    </View>)}
+                                </View>
 
 
-                    {/* Bottom Buttons */}
-                    <View style={styles.bottomButtonsRow}>
-                        <TouchableOpacity style={styles.smallButton} onPress={() => router.push("/dashboardInstructor")}>
-                            <Text style={styles.smallButtonText}>Back to Dashboard</Text>
-                        </TouchableOpacity>
+                                {/* =================================================
+                                    LOWER CONTENT
+                                ================================================== */}
 
-                        <TouchableOpacity style={styles.smallButton} onPress={refreshPage}>
-                            <Text style={styles.smallButtonText}>Refresh</Text>
-                        </TouchableOpacity>
-                    </View>
+                                <View
+                                    style={
+                                        styles.lowerLayout
+                                    }
+                                >
+
+
+                                    {/* =================================================
+                                        ATTENDANCE EVENTS
+                                    ================================================== */}
+
+                                    <View
+                                        style={
+                                            styles.eventsCard
+                                        }
+                                    >
+
+                                        <Text
+                                            style={
+                                                styles.sectionTitle
+                                            }
+                                        >
+                                            Attendance Events
+                                        </Text>
+
+
+                                        <Text
+                                            style={
+                                                styles.sectionSubtitle
+                                            }
+                                        >
+                                            Biometric check-in/out events for this session.
+                                        </Text>
+
+
+                                        {/* Table Header */}
+
+                                        <View
+                                            style={
+                                                styles.eventHeader
+                                            }
+                                        >
+
+                                            <Text
+                                                style={[
+                                                    styles.eventHeaderText,
+                                                    styles.eventTimeColumn
+                                                ]}
+                                            >
+                                                TIME
+                                            </Text>
+
+
+                                            <Text
+                                                style={[
+                                                    styles.eventHeaderText,
+                                                    styles.eventTypeColumn
+                                                ]}
+                                            >
+                                                EVENT TYPE
+                                            </Text>
+
+
+                                            <Text
+                                                style={[
+                                                    styles.eventHeaderText,
+                                                    styles.eventNotesColumn
+                                                ]}
+                                            >
+                                                NOTES
+                                            </Text>
+
+                                        </View>
+
+
+                                        {/* Events */}
+
+                                        {
+                                            details.events.length >
+                                            0 ? (
+
+                                                details.events.map(
+                                                    (
+                                                        event,
+                                                        index
+                                                    ) => (
+
+                                                        <View
+                                                            key={
+                                                                `${event.event_time}-${index}`
+                                                            }
+                                                            style={
+                                                                styles.eventRow
+                                                            }
+                                                        >
+
+                                                            <Text
+                                                                style={[
+                                                                    styles.eventCellText,
+                                                                    styles.eventTimeColumn
+                                                                ]}
+                                                            >
+                                                                {
+                                                                    formatTime(
+                                                                        event.event_time
+                                                                    )
+                                                                }
+                                                            </Text>
+
+
+                                                            <Text
+                                                                style={[
+                                                                    styles.eventCellText,
+                                                                    styles.eventTypeColumn
+                                                                ]}
+                                                            >
+                                                                {
+                                                                    event.event_type
+                                                                }
+                                                            </Text>
+
+
+                                                            <Text
+                                                                style={[
+                                                                    styles.eventCellMuted,
+                                                                    styles.eventNotesColumn
+                                                                ]}
+                                                            >
+                                                                {
+                                                                    event.event_type === "ENTER"
+                                                                        ? "Entered classroom geofence"
+
+                                                                    : event.event_type === "EXIT"
+                                                                        ? "Exited classroom geofence"
+
+                                                                    : event.event_type === "REENTER"
+                                                                        ? "Re-entered classroom geofence"
+
+                                                                    : "Attendance event"
+                                                                }
+                                                            </Text>
+
+                                                        </View>
+
+                                                    )
+                                                )
+
+                                            ) : (
+
+                                                <View
+                                                    style={
+                                                        styles.emptyEvents
+                                                    }
+                                                >
+
+                                                    <Ionicons
+                                                        name="document-text-outline"
+                                                        size={52}
+                                                        color={
+                                                            Colors.disabled
+                                                        }
+                                                    />
+
+
+                                                    <Text
+                                                        style={
+                                                            styles.emptyEventsTitle
+                                                        }
+                                                    >
+                                                        No attendance events
+                                                    </Text>
+
+
+                                                    <Text
+                                                        style={
+                                                            styles.emptyEventsText
+                                                        }
+                                                    >
+                                                        There are no biometric events recorded for this student in this session.
+                                                    </Text>
+
+                                                </View>
+
+                                            )
+                                        }
+
+                                    </View>
+
+
+                                    {/* =================================================
+                                        OVERRIDE ATTENDANCE
+                                    ================================================== */}
+
+                                    <View
+                                        style={
+                                            styles.overrideCard
+                                        }
+                                    >
+
+                                        <Text
+                                            style={
+                                                styles.sectionTitle
+                                            }
+                                        >
+                                            Override Attendance
+                                        </Text>
+
+
+                                        <Text
+                                            style={
+                                                styles.sectionSubtitle
+                                            }
+                                        >
+                                            Set a new attendance status for this student.
+                                        </Text>
+
+
+                                        <Text
+                                            style={
+                                                styles.fieldLabel
+                                            }
+                                        >
+                                            Attendance Status
+                                        </Text>
+
+
+                                        {/* Status Options */}
+
+                                        <View
+                                            style={
+                                                styles.statusOptions
+                                            }
+                                        >
+
+                                            {
+                                                statusOptions.map(
+                                                    (
+                                                        option
+                                                    ) => {
+
+                                                        const selected =
+                                                            selectedStatus ===
+                                                            option.value;
+
+
+                                                        return (
+
+                                                            <TouchableOpacity
+                                                                key={
+                                                                    option.value
+                                                                }
+                                                                style={[
+                                                                    styles.statusOption,
+
+                                                                    selected &&
+                                                                    styles.statusOptionSelected
+                                                                ]}
+                                                                onPress={() =>
+                                                                    setSelectedStatus(
+                                                                        option.value
+                                                                    )
+                                                                }
+                                                            >
+
+                                                                <View
+                                                                    style={[
+                                                                        styles.radioOuter,
+
+                                                                        selected &&
+                                                                        styles.radioOuterSelected
+                                                                    ]}
+                                                                >
+
+                                                                    {
+                                                                        selected && (
+
+                                                                            <View
+                                                                                style={
+                                                                                    styles.radioInner
+                                                                                }
+                                                                            />
+
+                                                                        )
+                                                                    }
+
+                                                                </View>
+
+
+                                                                <View
+                                                                    style={
+                                                                        styles.statusOptionText
+                                                                    }
+                                                                >
+
+                                                                    <Text
+                                                                        style={[
+                                                                            styles.statusOptionTitle,
+
+                                                                            selected &&
+                                                                            styles.statusOptionTitleSelected
+                                                                        ]}
+                                                                    >
+                                                                        {
+                                                                            option.title
+                                                                        }
+                                                                    </Text>
+
+
+                                                                    <Text
+                                                                        style={
+                                                                            styles.statusOptionDescription
+                                                                        }
+                                                                    >
+                                                                        {
+                                                                            option.description
+                                                                        }
+                                                                    </Text>
+
+                                                                </View>
+
+                                                            </TouchableOpacity>
+
+                                                        );
+
+                                                    }
+                                                )
+                                            }
+
+                                        </View>
+
+
+                                        {/* =================================================
+                                            NOTES
+                                        ================================================== */}
+
+                                        <Text
+                                            style={
+                                                styles.fieldLabel
+                                            }
+                                        >
+                                            Reason / Notes
+                                        </Text>
+
+
+                                        <TextInput
+                                            style={
+                                                styles.notesInput
+                                            }
+                                            multiline
+                                            maxLength={
+                                                500
+                                            }
+                                            value={
+                                                notes
+                                            }
+                                            onChangeText={
+                                                setNotes
+                                            }
+                                            placeholder="Enter a reason or note for this override (optional)."
+                                            placeholderTextColor={
+                                                Colors.disabled
+                                            }
+                                            textAlignVertical="top"
+                                        />
+
+
+                                        <Text
+                                            style={
+                                                styles.characterCount
+                                            }
+                                        >
+                                            {
+                                                notes.length
+                                            } / 500
+                                        </Text>
+
+
+                                        <Text
+                                            style={
+                                                styles.notesNotice
+                                            }
+                                        >
+                                            Notes are not stored yet.
+                                        </Text>
+
+
+                                        {/* =================================================
+                                            ACTION BUTTONS
+                                        ================================================== */}
+
+                                        <View
+                                            style={
+                                                styles.actionRow
+                                            }
+                                        >
+
+                                            <TouchableOpacity
+                                                style={[
+                                                    styles.saveButton,
+
+                                                    saving &&
+                                                    styles.disabledButton
+                                                ]}
+                                                onPress={
+                                                    saveOverride
+                                                }
+                                                disabled={
+                                                    saving
+                                                }
+                                            >
+
+                                                {
+                                                    saving ? (
+
+                                                        <ActivityIndicator
+                                                            color={
+                                                                Colors.surface
+                                                            }
+                                                        />
+
+                                                    ) : (
+
+                                                        <Text
+                                                            style={
+                                                                styles.saveButtonText
+                                                            }
+                                                        >
+                                                            Save Override
+                                                        </Text>
+
+                                                    )
+                                                }
+
+                                            </TouchableOpacity>
+
+
+                                            <TouchableOpacity
+                                                style={
+                                                    styles.cancelButton
+                                                }
+                                                onPress={() =>
+                                                    router.replace(
+                                                        "/dashboardInstructor"
+                                                    )
+                                                }
+                                            >
+
+                                                <Text
+                                                    style={
+                                                        styles.cancelButtonText
+                                                    }
+                                                >
+                                                    Cancel
+                                                </Text>
+
+                                            </TouchableOpacity>
+
+                                        </View>
+
+                                    </View>
+
+                                </View>
+
+
+                                {/* =================================================
+                                    FOOTER
+                                ================================================== */}
+
+                                <View
+                                    style={
+                                        styles.footer
+                                    }
+                                >
+
+                                    <Text
+                                        style={
+                                            styles.footerText
+                                        }
+                                    >
+                                        University of North Texas
+                                    </Text>
+
+
+                                    <Text
+                                        style={
+                                            styles.footerDot
+                                        }
+                                    >
+                                        •
+                                    </Text>
+
+
+                                    <Text
+                                        style={
+                                            styles.footerText
+                                        }
+                                    >
+                                        Biometric Attendance
+                                    </Text>
+
+                                </View>
+
+                            </>
+
+                        )
+                    }
+
                 </ScrollView>
+
             </View>
+
         </View>
+
     );
+
 }
 
-const styles = StyleSheet.create({
-    safe: {
-        flex: 1,
-        backgroundColor: "#f2f2f2"
-    },
 
-    container: {
-        flex: 1
-    },
+// ============================================================
+// STYLES
+// ============================================================
 
-    topHeader: {
-        height: 90,
-        backgroundColor: "#0b7d3b",
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 15,
-        justifyContent: "space-between"
-    },
+const styles =
+    StyleSheet.create({
 
-    logoBox: {
-        width: 90,
-        height: 90,
-        borderRadius: 40,
-        justifyContent: "center",
-        alignItems: "center"
-    },
 
-    logoText: {
-        color: "white",
-        fontSize: 20,
-        fontWeight: "bold"
-    },
+        // ============================================================
+        // PAGE
+        // ============================================================
 
-    logoSubText: {
-        color: "white",
-        fontSize: 8,
-        marginTop: 2,
-        textAlign: "center"
-    },
+        safe: {
+            flex: 1,
 
-    dashboardTitle: {
-        color: "white",
-        fontSize: 22,
-        fontWeight: "bold"
-    },
+            backgroundColor:
+                Colors.background
+        },
 
-    profileBox: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10
-    },
 
-    profileText: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "bold"
-    },
+        container: {
+            flex: 1,
 
-    profileIcon: {
-        width: 45,
-        height: 45,
-        backgroundColor: "white",
-        borderRadius: 10,
-        justifyContent: "center",
-        alignItems: "center"
-    },
+            backgroundColor:
+                Colors.background
+        },
 
-    profileIconText: {
-        fontSize: 22
-    },
 
-    infoBar: {
-        backgroundColor: "#0b7d3b",
-        marginHorizontal: 10,
-        marginTop: 10,
-        borderRadius: 15,
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        flexDirection: "row",
-        justifyContent: "space-between"
-    },
+        pageContent: {
+            paddingHorizontal: 48,
 
-    infoField: {
-        flex: 1,
-        paddingHorizontal: 10
-    },
+            paddingTop: 24,
 
-    infoText: {
-        color: "white",
-        fontSize: 15
-    },
+            paddingBottom: 28
+        },
 
-    bold: {
-        fontWeight: "bold"
-    },
 
-    mainContent: {
-        paddingVertical: 20,
-        paddingHorizontal: 10
-    },
+        // ============================================================
+        // HEADER
+        // ============================================================
 
-    sessionButtonsRow: {
-        flexDirection: "row",
-        justifyContent: "center",
-        gap: 20,
-        marginBottom: 25
-    },
+        topHeader: {
+            minHeight: 86,
 
-    startButton: {
-        backgroundColor: "#0b7d3b",
-        paddingVertical: 15,
-        paddingHorizontal: 35,
-        borderRadius: 40
-    },
+            backgroundColor:
+                Colors.surface,
 
-    endButton: {
-        backgroundColor: "#ff2c2c",
-        paddingVertical: 15,
-        paddingHorizontal: 35,
-        borderRadius: 40
-    },
+            flexDirection:
+                "row",
 
-    sessionButtonText: {
-        color: "white",
-        fontSize: 18,
-        fontWeight: "bold"
-    },
+            alignItems:
+                "center",
 
-    tableContainer: {
-        backgroundColor: "#f9fff9",
-        borderRadius: 20,
-        borderWidth: 2,
-        borderColor: "#b6d7b6",
-        padding: 15,
-        marginHorizontal: 30
-    },
+            justifyContent:
+                "space-between",
 
-    invalidInputBox: {
-        height: 250,
-        marginHorizontal: 30,
-        borderWidth: 2,
-        borderColor: "#b6d7b6",
-        backgroundColor: "#f9fff9",
-        justifyContent: "center",
-        alignItems: "center"
-    },
+            paddingHorizontal: 48,
 
-    invalidInputText: {
-        color: "#000000",
-        fontSize: 20,
-        fontWeight: "bold"
-    },
+            borderTopWidth: 10,
 
-    tableHeaderRow: {
-        flexDirection: "row",
-        marginBottom: 10
-    },
+            borderTopColor:
+                Colors.primary,
 
-    tableHeaderText: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#0b7d3b"
-    },
+            borderBottomWidth: 4,
 
-    linkText: {
-        color: "#0b7d3b",
-        textDecorationLine: "underline",
-        fontWeight: "bold"
-    },
+            borderBottomColor:
+                Colors.tableBorder
+        },
 
-    statusLinkText: {
-        textDecorationLine: "underline"
-    },
 
-    popupBox: {
-        position: "absolute",
-        top: 0,
-        left: 135,
-        width: 190,
-        backgroundColor: "#ffffff",
-        borderColor: "#cfe4d1",
-        borderWidth: 1,
-        borderRadius: 10,
-        padding: 10,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 4,
-        zIndex: 10
-    },
+        brandBox: {
+            flexDirection:
+                "row",
 
-    popupText: {
-        color: "#222",
-        fontSize: 13
-        
-    },
+            alignItems:
+                "center",
 
-    popupClose: {
-        color: "#0b7d3b",
-        fontWeight: "bold",
-        fontSize: 12,
-        textAlign: "right"
-    },
+            gap:
+                Spacing.md
+        },
 
-    tableRow: {
-        flexDirection: "row",
-        paddingVertical: 10
-    },
 
-    tableCellText: {
-        fontSize: 15,
-        color: "#222"
-    },
+        logoBox: {
+            width: 72,
 
-    colStudent: {
-        flex: 1.2
-    },
+            height: 72
+        },
 
-    colTime: {
-        flex: 1
-    },
 
-    colStatus: {
-        flex: 1
-    },
+        brandDivider: {
+            width: 2,
 
-    presentText: {
-        color: "#0b7d3b",
-        fontWeight: "bold"
-    },
+            height: 32,
 
-    absentText: {
-        color: "#ff2c2c",
-        fontWeight: "bold"
-    },
+            backgroundColor:
+                Colors.border
+        },
 
-    lateText: {
-        color: "#d7a300",
-        fontWeight: "bold"
-    },
 
-    defaultStatusText: {
-        color: "#222"
-    },
+        brandText: {
+            color:
+                Colors.textPrimary,
 
-    bottomButtonsRow: {
-        flexDirection: "row",
-        justifyContent: "space-evenly",
-        marginTop: 25
-    },
+            fontSize: 22,
 
-    smallButton: {
-        backgroundColor: "#0b7d3b",
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        borderRadius: 25
-    },
+            fontWeight:
+                "700"
+        },
 
-    smallButtonText: {
-        color: "white",
-        fontWeight: "bold",
-        fontSize: 14
-    },
 
-    dropdownButton: {
-        height: 50,
-        borderWidth: 1,
-        borderColor: '#999',
-        borderRadius: 8,
-        paddingHorizontal: 15,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'white',
-    },
+        profileBox: {
+            flexDirection:
+                "row",
 
-    buttonText: {
-        color: "#0b7d3b",
-        fontSize: 16,
-    },
+            alignItems:
+                "center",
 
-    arrow: {
-        color: "#0b7d3b",
-        fontSize: 14,
-    },
-    dropdownMenu: {
-        
-        marginTop: 5,
-        borderWidth: 1,
-        borderColor: '#999',
-        borderRadius: 8,
-        backgroundColor: 'white',
-        overflow: 'hidden',
-        color: "#0b7d3b"
-    },  
-    dropdownItem: {
-        padding: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-    },
+            gap: 14
+        },
 
-    itemText: {
-        fontSize: 16,
-    },
-    
-    loadingText: {
-        paddingVertical: 20,
-        textAlign: "center",
-        color: "#666"
-    }
-});
+
+        profileText: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 18,
+
+            fontWeight:
+                "700"
+        },
+
+
+        profileDivider: {
+            width: 2,
+
+            height: 28,
+
+            backgroundColor:
+                Colors.border
+        },
+
+
+        logoutText: {
+            color:
+                Colors.primary,
+
+            fontSize: 18,
+
+            fontWeight:
+                "700"
+        },
+
+
+        // ============================================================
+        // BACK LINK
+        // ============================================================
+
+        backLink: {
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            gap: 7,
+
+            alignSelf:
+                "flex-start",
+
+            marginBottom: 18
+        },
+
+
+        backLinkText: {
+            color:
+                Colors.primary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "700"
+        },
+
+
+        // ============================================================
+        // PAGE HEADING
+        // ============================================================
+
+        pageHeading: {
+            marginBottom: 22
+        },
+
+
+        pageTitle: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 36,
+
+            lineHeight: 42,
+
+            fontWeight:
+                "800"
+        },
+
+
+        pageSubtitle: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 20,
+
+            fontWeight:
+                "500",
+
+            marginTop: 4
+        },
+
+
+        // ============================================================
+        // SHARED
+        // ============================================================
+
+        sectionTitle: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 20,
+
+            fontWeight:
+                "800"
+        },
+
+
+        sectionSubtitle: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 14,
+
+            marginTop: 4,
+
+            marginBottom: 14
+        },
+
+
+        // ============================================================
+        // STUDENT DETAILS
+        // ============================================================
+
+        detailsCard: {
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.tableBorder,
+
+            borderRadius:
+                Radius.md,
+
+            padding: 24,
+
+            marginBottom: 18
+        },
+
+
+        detailsRow: {
+            flexDirection:
+                "row",
+
+            alignItems:
+                "stretch",
+
+            marginTop: 18
+        },
+
+
+        detailSection: {
+            flex: 1,
+
+            justifyContent:
+                "center",
+
+            paddingHorizontal: 18
+        },
+
+
+        detailDivider: {
+            width: 1,
+
+            minHeight: 70,
+
+            backgroundColor:
+                Colors.tableBorder
+        },
+
+
+        detailLabel: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 13,
+
+            fontWeight:
+                "700",
+
+            marginBottom: 5
+        },
+
+
+        detailValue: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 16,
+
+            fontWeight:
+                "700"
+        },
+
+
+        studentName: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 18,
+
+            fontWeight:
+                "800"
+        },
+
+
+        studentId: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 13,
+
+            marginTop: 3
+        },
+
+
+        // ============================================================
+        // STATUS BADGES
+        // ============================================================
+
+        statusBadge: {
+            alignSelf:
+                "flex-start",
+
+            borderRadius:
+                Radius.pill,
+
+            paddingHorizontal: 16,
+
+            paddingVertical: 7
+        },
+
+
+        statusBadgeText: {
+            fontSize: 14,
+
+            fontWeight:
+                "700"
+        },
+
+
+        presentBadge: {
+            backgroundColor:
+                Colors.successSoft
+        },
+
+
+        lateBadge: {
+            backgroundColor:
+                Colors.warningSoft
+        },
+
+
+        absentBadge: {
+            backgroundColor:
+                Colors.dangerSoft
+        },
+
+
+        excusedBadge: {
+            backgroundColor:
+                Colors.featureIconBackground
+        },
+
+
+        presentText: {
+            color:
+                Colors.success
+        },
+
+
+        lateText: {
+            color:
+                Colors.warning
+        },
+
+
+        absentText: {
+            color:
+                Colors.danger
+        },
+
+
+        excusedText: {
+            color:
+                Colors.primary
+        },
+
+
+        // ============================================================
+        // LOWER LAYOUT
+        // ============================================================
+
+        lowerLayout: {
+            flexDirection:
+                "row",
+
+            alignItems:
+                "stretch",
+
+            gap: 18
+        },
+
+
+        // ============================================================
+        // ATTENDANCE EVENTS
+        // ============================================================
+
+        eventsCard: {
+            flex: 1.55,
+
+            minHeight: 430,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.tableBorder,
+
+            borderRadius:
+                Radius.md,
+
+            padding: 24
+        },
+
+
+        eventHeader: {
+            minHeight: 46,
+
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            backgroundColor:
+                Colors.tableHeader,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.tableBorder
+        },
+
+
+        eventHeaderText: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 12,
+
+            fontWeight:
+                "800",
+
+            paddingHorizontal: 14
+        },
+
+
+        eventRow: {
+            minHeight: 52,
+
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            borderLeftWidth: 1,
+
+            borderRightWidth: 1,
+
+            borderBottomWidth: 1,
+
+            borderColor:
+                Colors.tableBorder
+        },
+
+
+        eventCellText: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 13,
+
+            paddingHorizontal: 14
+        },
+
+
+        eventCellMuted: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 13,
+
+            paddingHorizontal: 14
+        },
+
+
+        eventTimeColumn: {
+            flex: 1
+        },
+
+
+        eventTypeColumn: {
+            flex: 1.2
+        },
+
+
+        eventNotesColumn: {
+            flex: 1.6
+        },
+
+
+        emptyEvents: {
+            flex: 1,
+
+            minHeight: 300,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center",
+
+            paddingHorizontal: 40
+        },
+
+
+        emptyEventsTitle: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 18,
+
+            fontWeight:
+                "800",
+
+            marginTop: 14
+        },
+
+
+        emptyEventsText: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 14,
+
+            lineHeight: 20,
+
+            textAlign:
+                "center",
+
+            maxWidth: 420,
+
+            marginTop: 6
+        },
+
+
+        // ============================================================
+        // OVERRIDE CARD
+        // ============================================================
+
+        overrideCard: {
+            flex: 1,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.tableBorder,
+
+            borderRadius:
+                Radius.md,
+
+            padding: 24
+        },
+
+
+        fieldLabel: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "800",
+
+            marginTop: 10,
+
+            marginBottom: 8
+        },
+
+
+        // ============================================================
+        // STATUS OPTIONS
+        // ============================================================
+
+        statusOptions: {
+            gap: 8
+        },
+
+
+        statusOption: {
+            minHeight: 56,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.borderLight,
+
+            borderRadius:
+                Radius.sm,
+
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            paddingHorizontal: 14,
+
+            paddingVertical: 8
+        },
+
+
+        statusOptionSelected: {
+            borderWidth: 2,
+
+            borderColor:
+                Colors.primary
+        },
+
+
+        radioOuter: {
+            width: 20,
+
+            height: 20,
+
+            borderRadius:
+                Radius.pill,
+
+            borderWidth: 2,
+
+            borderColor:
+                Colors.disabled,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center",
+
+            marginRight: 13
+        },
+
+
+        radioOuterSelected: {
+            borderColor:
+                Colors.primary
+        },
+
+
+        radioInner: {
+            width: 9,
+
+            height: 9,
+
+            borderRadius:
+                Radius.pill,
+
+            backgroundColor:
+                Colors.primary
+        },
+
+
+        statusOptionText: {
+            flex: 1
+        },
+
+
+        statusOptionTitle: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "700"
+        },
+
+
+        statusOptionTitleSelected: {
+            color:
+                Colors.primary
+        },
+
+
+        statusOptionDescription: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 12,
+
+            marginTop: 2
+        },
+
+
+        // ============================================================
+        // NOTES
+        // ============================================================
+
+        notesInput: {
+            minHeight: 88,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.border,
+
+            borderRadius:
+                Radius.sm,
+
+            paddingHorizontal: 12,
+
+            paddingVertical: 10,
+
+            color:
+                Colors.textPrimary,
+
+            fontSize: 13
+        },
+
+
+        characterCount: {
+            alignSelf:
+                "flex-end",
+
+            color:
+                Colors.disabled,
+
+            fontSize: 11,
+
+            marginTop: 4
+        },
+
+
+        notesNotice: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 11,
+
+            fontStyle:
+                "italic",
+
+            marginTop: 2
+        },
+
+
+        // ============================================================
+        // ACTION BUTTONS
+        // ============================================================
+
+        actionRow: {
+            flexDirection:
+                "row",
+
+            gap: 12,
+
+            marginTop: 18
+        },
+
+
+        saveButton: {
+            flex: 1.7,
+
+            minHeight: 46,
+
+            backgroundColor:
+                Colors.primary,
+
+            borderRadius:
+                Radius.sm,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center"
+        },
+
+
+        saveButtonText: {
+            color:
+                Colors.surface,
+
+            fontSize: 14,
+
+            fontWeight:
+                "800"
+        },
+
+
+        cancelButton: {
+            flex: 1,
+
+            minHeight: 46,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1.5,
+
+            borderColor:
+                Colors.primary,
+
+            borderRadius:
+                Radius.sm,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center"
+        },
+
+
+        cancelButtonText: {
+            color:
+                Colors.primary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "800"
+        },
+
+
+        disabledButton: {
+            opacity: 0.55
+        },
+
+
+        // ============================================================
+        // LOADING / ERROR
+        // ============================================================
+
+        loadingCard: {
+            minHeight: 260,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.tableBorder,
+
+            borderRadius:
+                Radius.md,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center"
+        },
+
+
+        loadingText: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 14,
+
+            marginTop: 12
+        },
+
+
+        errorCard: {
+            minHeight: 260,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.tableBorder,
+
+            borderRadius:
+                Radius.md,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center",
+
+            padding: 30
+        },
+
+
+        errorText: {
+            color:
+                Colors.danger,
+
+            fontSize: 15,
+
+            textAlign:
+                "center",
+
+            marginTop: 10
+        },
+
+
+        retryButton: {
+            minWidth: 120,
+
+            minHeight: 42,
+
+            backgroundColor:
+                Colors.primary,
+
+            borderRadius:
+                Radius.sm,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center",
+
+            marginTop: 18
+        },
+
+
+        retryButtonText: {
+            color:
+                Colors.surface,
+
+            fontSize: 14,
+
+            fontWeight:
+                "800"
+        },
+
+
+        // ============================================================
+        // FOOTER
+        // ============================================================
+
+        footer: {
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            gap: 8,
+
+            marginTop: 26,
+
+            paddingTop: 18,
+
+            borderTopWidth: 1,
+
+            borderTopColor:
+                Colors.tableBorder
+        },
+
+
+        footerText: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 12
+        },
+
+
+        footerDot: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 12
+        }
+
+    });

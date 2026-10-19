@@ -445,3 +445,358 @@ def get_checkin_status(
 
     finally:
         conn.close()
+
+# ============================================================
+# INSTRUCTOR ATTENDANCE OVERRIDE DETAILS
+# ============================================================
+@router.get("/attendance/override/{student_id}")
+def get_attendance_override_details(
+    student_id: int,
+    current_user=Depends(require_instructor),
+):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        # --------------------------------------------------------
+        # DETERMINE CURRENT / MOST RECENT SESSION
+        # --------------------------------------------------------
+
+        if(ACTIVE_SESSION["is_open"] and ACTIVE_SESSION["id"] is not None):
+            session_id = int(ACTIVE_SESSION["id"])
+
+        else:
+            cursor.execute(
+                """
+                SELECT session_id
+                FROM attendance_sessions
+                ORDER BY session_id DESC
+                LIMIT 1
+                """
+            )
+
+            session = cursor.fetchone()
+
+            if not session: 
+                return {
+                    "success": False,
+                    "message": "No attendance session found.",
+                }
+
+            session_id = session ["session_id"]
+
+        # --------------------------------------------------------
+        # LOAD SESSION / COURSE / STUDENT / ATTENDANCE
+        # --------------------------------------------------------
+        cursor.execute(
+            """
+            SELECT
+                s.session_id,
+                s.session_date,
+                
+                c.course_id,
+                c.course_code,
+                c.course_name,
+                
+                u.user_id AS student_id,
+                u.full_name AS student_name,
+                
+                ar.attendance_id,
+                ar.check_in_time,
+                ar.face_verified,
+                ar.location_verified,
+                
+                CASE
+                    WHEN ar.attendance_id IS NULL
+                        THEN 'absent'
+                    ELSE ar.status
+                END AS status
+            
+            FROM attendance_sessions s
+
+            JOIN courses c
+                ON c.course_id = s.course_id
+
+            JOIN course_enrollments ce 
+                ON ce.course_id = s.course_id
+
+            JOIN users u
+                ON u.user_id = ce.student_id
+
+            LEFT JOIN attendance_records ar
+                ON ar.session_id = s.session_id
+                AND ar.student_id = u.user_id
+
+            WHERE s.session_id = ?
+                AND u.user_id = ?
+                AND u.role = 'student'
+
+            LIMIT 1
+            """,
+            (
+                session_id,
+                student_id,
+            ),
+        )
+
+        record = cursor.fetchone()
+
+        if not record:
+            return {
+                "success": False,
+                "message": "Student attendance record not found.",
+            }
+
+        attendance_id = record["attendance_id"]
+
+        # --------------------------------------------------------
+        # LOAD GEOFENCE / ATTENDANCE EVENTS
+        # --------------------------------------------------------
+
+        events = []
+
+        if attendance_id is not None:
+            cursor.execute(
+                """
+                SELECT event_type, event_time
+                FROM geofence_status change
+                WHERE attendance_id = ?
+                ORDER BY event_time ASC
+                """,
+                (
+                    attendance_id,
+                ),
+            )
+
+            event_rows = cursor.fetchall()
+
+            events = [
+                {
+                    "event_type": row["event_type"],
+                    "event_time": row["event_time"],
+                }
+
+                for row in event_rows
+            ]
+
+        # --------------------------------------------------------
+        # RETURN OVERRIDE DATA
+        # --------------------------------------------------------
+
+        return {
+            "success": True,
+            "student": {
+                "student_id": record["student_id"],
+                "student_name": record["student_name"],
+            },
+
+            "course": {
+                "course_id": record["course_id"],
+                "course_code": record["course_code"],
+                "course_name": record["course_name"],
+            },
+
+            "session": {
+                "session_id": record["session_id"],
+                "session_date": record["session_date"],
+            },
+
+            "attendance": {
+                "attendance_id": record["attendance_id"],
+
+                "status": record["status"],
+
+                "check_in_time": record["check_in_time"],
+
+                "face_verified": bool (record["face_verified"])
+
+                    if attendance_id
+                    else False,
+
+                "location_verified": bool(record["location_verified"])
+
+                    if attendance_id
+                    else False,
+            },
+
+            "events": events,
+        }
+
+    finally:
+        conn.close()
+
+# ============================================================
+# SAVE INSTRUCTOR ATTENDANCE OVERRIDE
+# ============================================================
+@router.post("/attendance/override")
+def save_attendance_override(data: dict, current_user=Depends(require_instructor), ):
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        # --------------------------------------------------------
+        # REQUEST DATA
+        # --------------------------------------------------------
+
+        session_id = data.get("session_id")
+
+        student_id = data.get("student_id")
+
+        status = ( data.get("status") or "" ).lower()
+
+        # --------------------------------------------------------
+        # VALIDATE REQUEST
+        # --------------------------------------------------------   
+
+        if(session_id is None or student_id is None):
+
+            return{
+                "success": False,
+                "message": "Session and student are required.",
+            }
+
+        allowed_statuses = {
+            "present",
+            "late",
+            "excused",
+            "absent",
+        }
+
+        if status not in allowed_statuses:
+            return {
+                "success": False,
+                "message": "Invalid attendance status.",
+            }
+
+        # --------------------------------------------------------
+        # VERIFY SESSION / STUDENT ENROLLMENT
+        # --------------------------------------------------------
+
+        cursor.execute(
+            """
+            SELECT 1
+            FROM attendance_sessions s
+            JOIN course_enrollments ce 
+                ON ce.course_id = s.course_id
+            WHERE s.session_id = ?
+                AND ce.student_id = ?
+            """,
+            (
+                session_id,
+                student_id,
+            ),
+        )
+
+        if not cursor.fetchone():
+            return{
+                "success": False,
+                "message": "Student is not enrolled in this session's course.",
+            }
+
+        # --------------------------------------------------------
+        # FIND EXISTING ATTENDANCE RECORD
+        # --------------------------------------------------------
+
+        cursor.execute(
+            """
+            SELECT attendance_id
+            FROM attendance_records
+            WHERE session_id = ?
+                AND student_id = ?
+            LIMIT 1
+            """,
+            (
+                session_id,
+                student_id,
+            ),
+        )
+
+        existing = cursor.fetchone()
+
+        # --------------------------------------------------------
+        # EXISTING RECORD -> UPDATE STATUS
+        # --------------------------------------------------------
+
+        if existing:
+            cursor.execute(
+                """
+                UPDATE attendance_records
+                SET status = ?
+                WHERE attendance_id = ?
+                """,
+                (
+                    status,
+                    existing["attendance_id"],
+                ),
+            )
+
+        # --------------------------------------------------------
+        # ABSENT WITH NO RECORD
+        # --------------------------------------------------------
+
+        elif status == "absent":
+            # No attendance row is required for a naturally
+            # absent student. /checkins already interprets
+            # a missing row as absent.
+
+            conn.commit()
+
+            return {
+                "success": True,
+                "message": "Attendance remains absent.",
+                "status": status,
+            }
+
+        # --------------------------------------------------------
+        # NO RECORD -> CREATE MANUAL ATTENDANCE RECORD
+        # --------------------------------------------------------
+
+        else:
+            override_time = datetime.now(CENTRAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+            cursor.execute(
+                """
+                INSERT INTO attendance_records (
+                    session_id,
+                    student_id,
+                    cheeck_in_time,
+                    face_verified,
+                    location_verified,
+                    status
+                )
+                
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    student_id,
+                    override_time,
+
+                    0,
+                    0,
+                    status,
+                ),
+            )
+
+        conn.commit()
+
+        return {
+            "success": True,
+            "message": "Attendance overrride saved.",
+            "status": status,
+        }
+
+    except Exception as error:
+
+        conn.rollback()
+
+        return{
+            "success": False,
+            "message": str(error),
+        }
+
+    finally:
+        conn.close()
