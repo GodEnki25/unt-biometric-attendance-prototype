@@ -12,7 +12,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { Colors, Radius, Spacing } from "../constants/theme";
 import { useEffect, useState } from "react";
 import { API_BASE } from "@/constants/api";
-import Svg, { Circle } from "react-native-svg";
 
 // ============================================================
 // ATTENDANCE PERCENTAGE RING
@@ -24,24 +23,17 @@ function AttendanceRing({
   percentage: number;
 }) {
   const size = 92;
-  const strokeWidth = 10;
-
-  const radius =
-    (size - strokeWidth) / 2;
-
-  const circumference =
-    2 * Math.PI * radius;
-
   const safePercentage =
     Math.min(
       Math.max(percentage, 0),
       100
     );
 
-  const strokeDashoffset =
-    circumference -
-    (safePercentage / 100) *
-      circumference;
+  const dotCount = 36;
+  const dotRadius = 36;
+  const activeDotCount = Math.round(
+    (safePercentage / 100) * dotCount
+  );
 
   return (
     <View
@@ -53,50 +45,32 @@ function AttendanceRing({
         },
       ]}
     >
-      <Svg
-        width={size}
-        height={size}
-        style={
-          styles.percentageRingSvg
-        }
-      >
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={
-            Colors.borderLight
-          }
-          strokeWidth={
-            strokeWidth
-          }
-          fill="none"
-        />
+      {Array.from({ length: dotCount }, (_, index) => {
+        const angle =
+          (index / dotCount) * 2 * Math.PI - Math.PI / 2;
+        const x =
+          size / 2 + dotRadius * Math.cos(angle) - 2;
+        const y =
+          size / 2 + dotRadius * Math.sin(angle) - 2;
 
-        <Circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={
-            Colors.primary
-          }
-          strokeWidth={
-            strokeWidth
-          }
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={[
-            circumference,
-            circumference
-          ]}
-          strokeDashoffset={
-            strokeDashoffset
-          }
-          rotation="-90"
-          originX={size / 2}
-          originY={size / 2}
-        />
-      </Svg>
+        return (
+          <View
+            key={index}
+            style={{
+              position: "absolute",
+              left: x,
+              top: y,
+              width: 4,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor:
+                index < activeDotCount
+                  ? Colors.primary
+                  : Colors.borderLight,
+            }}
+          />
+        );
+      })}
 
       <View
         style={
@@ -1258,12 +1232,6 @@ const styles = StyleSheet.create({
     position: "relative",
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  percentageRingSvg: {
-    position: "absolute",
-    top: 0,
-    left: 0,
   },
 
   percentageRingText: {

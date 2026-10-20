@@ -5,6 +5,7 @@ import * as Location from "expo-location";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
 import { File } from "expo-file-system";
+import { fetch as expoFetch } from "expo/fetch";
 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -45,6 +46,12 @@ type FaceCheckResult = {
   user?: string;
   confidence?: number;
   matches?: number;
+  required?: number;
+  action?: string;
+  step?: number;
+  total_steps?: number;
+  seconds_remaining?: number;
+  reason?: string;
   error?: string;
   detail?: any;
 };
@@ -72,7 +79,11 @@ export default function CheckInScreen() {
   // Get the userId that was passed from dashboard.tsx
   const { userId } = useLocalSearchParams();
 
-  const cameraRef = useRef<any>(null);
+  const cameraRef = useRef<CameraView | null>(null);
+  const scanStopped = useRef(false);
+  const scanningRef = useRef(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [challengeText, setChallengeText] = useState("");
 
   const [session, setSession] = useState<Session | null>(null);
   const [checkInTime, setCheckInTime] = useState<Date | null>(null);
@@ -97,6 +108,9 @@ export default function CheckInScreen() {
 
   useEffect(() => {
     initializeApp();
+    return () => {
+      scanStopped.current = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -322,47 +336,54 @@ export default function CheckInScreen() {
   // BIOMETRIC VERIFICATION API
   // ------------------------------------------------
 
-  async function sendToFaceAPI(photoUri: string) {
-
+  async function sendToFaceAPI(photoUri: string): Promise<FaceCheckResult> {
     const token = await SecureStore.getItemAsync("access_token");
-
-    if (!token) {
-      throw new Error("Authentication token not found. Please log in again.");
-    }
-
+    if (!token) throw new Error("Authentication token not found. Please log in again.");
     const formData = new FormData();
-
-    // const formData = new FormData();
-
-    const photoFile = new File(photoUri);
-
-    formData.append("file", photoFile);
-
-    // formData.append("file", {
-    //  uri: photoUri,
-    //  name: "photo.jpg",
-    // type: "image/jpeg",
-    // } as any);
-
-    const res = await fetch(`${API_BASE}/verify`, {
+    formData.append("file", new File(photoUri));
+    const res = await expoFetch(`${API_BASE}/verify`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
-
     const data = await res.json();
-
     if (!res.ok) {
-      throw new Error(
-        data?.detail ||
-        data?.error ||
-        "Face verification failed"
-      );
+      throw new Error(typeof data?.detail === "string" ? data.detail : "Face verification failed");
     }
-
     return data;
+  }
+
+  async function cancelFaceVerification() {
+    try {
+      const token = await SecureStore.getItemAsync("access_token");
+      if (token) {
+        await expoFetch(`${API_BASE}/verify/cancel`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      }
+    } catch (error) {
+      console.log("Verification cleanup error:", error);
+    }
+  }
+
+  function deleteTemporaryPhoto(uri: string | undefined) {
+    if (!uri) return;
+    try {
+      const file = new File(uri);
+      if (file.exists) file.delete();
+    } catch (error) {
+      console.log("Temporary photo cleanup error:", error);
+    }
+  }
+
+  function labelForAction(action?: string) {
+    switch (action) {
+      case "blink": return "Blink once: open, close, then open your eyes";
+      case "open_mouth": return "Close your mouth, then open it";
+      case "turn_head": return "Look forward, then gently turn your head";
+      default: return "Keep your face in view";
+    }
   }
 
   async function submitAttendanceCheckIn(photoUri: string) {
@@ -383,7 +404,7 @@ export default function CheckInScreen() {
     const photoFile = new File(photoUri);
     formData.append("file", photoFile);
 
-    const res = await fetch(`${API_BASE}/checkin`, {
+    const res = await expoFetch(`${API_BASE}/checkin`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
@@ -423,8 +444,11 @@ export default function CheckInScreen() {
   }
 
   async function openCameraFlow() {
-    if (!inside) return;
+    if (!inside || !session?.is_open) return;
 
+    scanStopped.current = false;
+    setCameraReady(false);
+    setChallengeText("");
     setResult(null);
     setFaceResult(null);
 
@@ -444,7 +468,7 @@ export default function CheckInScreen() {
     }
 
     setShowCamera(true);
-    setStatus("Cemera ready");
+    setStatus("Position your face in the camera");
   }
 
 
@@ -453,134 +477,78 @@ export default function CheckInScreen() {
   // ------------------------------------------------
 
   async function captureFaceAndCheckIn() {
-
-    if (!cameraRef.current || !loc || !inside) return;
-
+    if (!cameraRef.current || !cameraReady || !loc || !inside || !session?.is_open || scanningRef.current) return;
+    scanningRef.current = true;
+    scanStopped.current = false;
+    let verified = false;
     try {
-
       setIsCheckingIn(true);
       setIsuploadingFace(true);
       setResult(null);
       setFaceResult(null);
-
-      while (true) {
-
-        setStatus("Capturing face...");
-
-        const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.7,
-          skipProcessing: false,
-        });
-
-
-        setStatus("Verifying face...");
-
-        const faceData = await sendToFaceAPI(photo.uri);
-
-        setFaceResult(faceData);
-
-
-        if (faceData.status === "no_face_detected") {
-
-          setStatus("No face detected");
-
-          setResult({
-            ok: false,
-            reason: "No face detected. Please try again.",
+      setChallengeText("");
+      const startedAt = Date.now();
+      const maxScanMs = 27000;
+            for (let attempt = 0; attempt < 55 && Date.now() - startedAt < maxScanMs; attempt++) {
+        if (scanStopped.current || !cameraRef.current) break;
+        let photoUri: string | undefined;
+        try {
+          const photo = await cameraRef.current.takePictureAsync({
+            quality: 0.55,
+            skipProcessing: false,
           });
-
-          return;
+          photoUri = photo?.uri;
+          if (!photoUri || scanStopped.current) break;
+          setStatus("Checking identity and liveness...");
+          const data = await sendToFaceAPI(photoUri);
+          if (scanStopped.current) break;
+          setFaceResult(data);
+          if (data.status === "liveness_pending") {
+            const action = labelForAction(data.action);
+            setChallengeText(`${action} · Step ${data.step ?? 1}/${data.total_steps ?? 2} · ${Math.ceil(data.seconds_remaining ?? 0)}s`);
+            setStatus("Complete the liveness challenge");
+            continue;
+          }
+          if (data.status === "scanning") {
+            setStatus(`Matching face... ${data.matches ?? 0}/${data.required ?? 3}`);
+            continue;
+          }
+          if (data.status === "no_face_detected" || data.status === "invalid_frame") {
+            setStatus("Keep one face centered in the frame");
+            continue;
+          }
+          if (data.status === "verified") {
+            verified = true;
+            setChallengeText("Liveness and identity verified");
+            setStatus("Face verified. Submitting check-in...");
+            // Preserve the existing attendance endpoint, payload and geofence values.
+            await submitAttendanceCheckIn(photoUri);
+            setShowCamera(false);
+            return;
+          }
+          if (data.status === "face_not_matched" || data.status === "face_not_enrolled" || data.status === "liveness_failed") {
+            throw new Error(data.status === "liveness_failed"
+              ? "Liveness challenge failed or expired. Please retry."
+              : data.status === "face_not_enrolled"
+                ? "No enrolled face profile was found."
+                : "Face does not match the enrolled student.");
+          }
+          throw new Error(`Unexpected verification status: ${data.status ?? "unknown"}`);
+        } finally {
+          deleteTemporaryPhoto(photoUri);
         }
-
-
-        if (faceData.status === "liveness_check_failed") {
-
-          setStatus("Liveness check failed");
-
-          setResult({
-            ok: false,
-            reason: "Liveness check failed. Please try again.",
-          });
-
-          return;
-        }
-
-
-        if (faceData.status === "user_not_recognized") {
-
-          setStatus("User not recognized");
-
-          setResult({
-            ok: false,
-            reason: "User not recognized. Please try again.",
-          });
-
-          return;
-        }
-
-
-        if (faceData.status === "face_not_enrolled") {
-
-          setStatus("Face enrollment required");
-
-          setResult({
-            ok: false,
-            reason: "No enrolled face profile was found.",
-          });
-
-          return;
-        }
-
-
-        if (faceData.status === "scanning") {
-
-          setStatus(
-            `Verifying face... ${faceData.matches ?? 0} / 3`
-          );
-
-          await new Promise(resolve =>
-            setTimeout(resolve, 300)
-          );
-
-          continue;
-        }
-
-
-        if (faceData.status === "verified") {
-
-          setStatus("Face verified. Submitting check-in...");
-
-          await submitAttendanceCheckIn(photo.uri);
-
-          setShowCamera(false);
-
-          return;
-        }
-
-
-        setStatus("Unexpected verification response");
-
-        setResult({
-          ok: false,
-          reason: "Unexpected biometric verification response.",
-        });
-
-        return;
       }
-    }
-
-    catch (err: any) {
-
-      setResult({
-        ok: false,
-        reason: err.message || "Face verification failed",
-      });
-
-      setStatus("Check-in failed");
-    }
-
-    finally {
-
+      if (!scanStopped.current) {
+        throw new Error("Verification timed out. Please try again.");
+      }
+    } catch (err: any) {
+      if (!scanStopped.current) {
+        setResult({ ok: false, reason: err?.message || "Face verification failed" });
+        setStatus("Check-in failed");
+      }
+    } finally {
+      if (!verified) await cancelFaceVerification();
+      scanningRef.current = false;
       setIsuploadingFace(false);
       setIsCheckingIn(false);
     }
@@ -1018,22 +986,27 @@ export default function CheckInScreen() {
           ) : (
             <>
               <Text style={styles.cameraHelper}>
-                Keep your face centered in the camera to verify your identity.
+                Keep your face centered and follow the instructions that appear below.
               </Text>
               <View style={styles.cameraFrame}>
                 <CameraView
                   ref={cameraRef}
                   style={styles.camera}
                   facing="front"
+                  mode="picture"
                   onCameraReady={() => {
+                    setCameraReady(true);
                     console.log("CAMERA READY");
                     setStatus("Camera ready");
                   }}
                 />
               </View>
+              {!!challengeText && (
+                <Text style={styles.cameraHelper}>{challengeText}</Text>
+              )}
               <Pressable
                 onPress={captureFaceAndCheckIn}
-                disabled={isUploadingFace || isCheckingIn}
+                disabled={!cameraReady || isUploadingFace || isCheckingIn}
                 style={[
                   styles.primaryButton,
                   (isUploadingFace || isCheckingIn) && styles.disabledButton,
@@ -1042,11 +1015,13 @@ export default function CheckInScreen() {
                 <Text style={styles.primaryButtonText}>
                   {isUploadingFace || isCheckingIn
                     ? "Verifying..."
-                    : "Capture Face & Check In"}
+                    : "Verify Face & Check In"}
                 </Text>
               </Pressable>
               <Pressable
                 onPress={() => {
+                  scanStopped.current = true;
+                  void cancelFaceVerification();
                   setShowCamera(false);
                   setFaceResult(null);
                   setStatus("Ready");
@@ -1062,7 +1037,7 @@ export default function CheckInScreen() {
         {!showCamera && (
           <Pressable
             onPress={openCameraFlow}
-            disabled={!inside || isCheckingIn}
+            disabled={!inside || !session.is_open || isCheckingIn}
             style={[
               styles.startButton,
               (!inside || isCheckingIn) && styles.startButtonDisabled,
