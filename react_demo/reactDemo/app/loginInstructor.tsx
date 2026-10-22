@@ -1,17 +1,17 @@
-
+import { Platform } from "react-native";
+import * as SecureStore from "expo-secure-store";
 import { View, Text, TextInput, StyleSheet, Image, Pressable, ScrollView, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { API_BASE } from "@/constants/api";
 
-import { Ionicons, MaterialCommunityIcons  } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Colors, Spacing, Radius } from "@/constants/theme";
 
-export default function LoginScreen()
-{
+export default function LoginScreen() {
     const router = useRouter();
 
-    const {height} = useWindowDimensions();
+    const { height } = useWindowDimensions();
 
     const shortViewport = height < 830;
 
@@ -22,343 +22,340 @@ export default function LoginScreen()
     const [isLoggingIn, setIsLoggingIn] = useState(false);
 
     const handleLogin = async () => {
-    if (!email.trim() || !password) {
-        setError("Please enter your email and password.");
-        return;
-    }
-
-    setError("");
-    setIsLoggingIn(true);
-
-    try {
-        const response = await fetch(`${API_BASE}/login`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                email: email.trim().toLowerCase(),
-                password,
-            }),
-        });
-
-        const data = await response.json();
-
-        if (!data.success) {
-            setError(data.message || "Login failed.");
+        if (!email.trim() || !password) {
+            setError("Please enter your email and password.");
             return;
         }
 
-        if (
-            data.user.role !== "instructor" &&
-            data.user.role !== "admin"
-        ) {
-            setError("Instructor account required.");
-            return;
+        setError("");
+        setIsLoggingIn(true);
+
+        try {
+            const response = await fetch(`${API_BASE}/login`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    email: email.trim().toLowerCase(),
+                    password,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (!data.success) {
+                setError(data.message || "Login failed.");
+                return;
+            }
+
+            if (
+                data.user.role !== "instructor" &&
+                data.user.role !== "admin"
+            ) {
+                setError("Instructor account required.");
+                return;
+            }
+
+            if (Platform.OS === "web") {
+                localStorage.setItem("access_token", data.access_token);
+                localStorage.setItem("user", JSON.stringify(data.user));
+            } else {
+                await SecureStore.setItemAsync("access_token", data.access_token);
+                await SecureStore.setItemAsync("user", JSON.stringify(data.user));
+            }
+            router.push("/dashboardInstructor");
         }
-
-        localStorage.setItem(
-            "access_token",
-            data.access_token
-        );
-
-        localStorage.setItem(
-            "user",
-            JSON.stringify(data.user)
-        );
-
-        router.push("/dashboardInstructor");
-    }
-    catch (error) {
-        console.error("Instructor login error:", error);
-        setError("Unable to connect to server.");
-    }
-    finally {
-        setIsLoggingIn(false);
-    }
-};
+        catch (error) {
+            console.error("Instructor login error:", error);
+            setError("Unable to connect to server.");
+        }
+        finally {
+            setIsLoggingIn(false);
+        }
+    };
 
     return (
-    <View style={styles.container}>
+        <View style={styles.container}>
 
-        {/* =====================================================
+            {/* =====================================================
             TOP HEADER
         ====================================================== */}
-        <View style={styles.topHeader}>
+            <View style={styles.topHeader}>
 
-            <View style={styles.brandBox}>
+                <View style={styles.brandBox}>
 
-                <Image
-                    source={require("../assets/logo.png")}
-                    style={styles.logoBox}
-                    resizeMode="contain"
-                />
+                    <Image
+                        source={require("../assets/logo.png")}
+                        style={styles.logoBox}
+                        resizeMode="contain"
+                    />
 
-                <View style={styles.brandDivider} />
+                    <View style={styles.brandDivider} />
 
-                <Text style={styles.brandText}>
-                    Attendance
-                </Text>
+                    <Text style={styles.brandText}>
+                        Attendance
+                    </Text>
+
+                </View>
 
             </View>
 
-        </View>
 
-
-        {/* =====================================================
+            {/* =====================================================
             MAIN CONTENT
         ====================================================== */}
-        <ScrollView
-            style={styles.contentScroll}
-            contentContainerStyle={styles.content}
-            showsVerticalScrollIndicator={false}
-        >
+            <ScrollView
+                style={styles.contentScroll}
+                contentContainerStyle={styles.content}
+                showsVerticalScrollIndicator={false}
+            >
 
-            {/* =================================================
+                {/* =================================================
                 LEFT SIDE
             ================================================== */}
-            <View style={styles.leftPanel}>
+                <View style={styles.leftPanel}>
 
-                <Image
-                    source={require("../assets/fingerprint-bg.png")}
-                    style={styles.fingerprintBackground}
-                    resizeMode="contain"
-                />
+                    <Image
+                        source={require("../assets/fingerprint-bg.png")}
+                        style={styles.fingerprintBackground}
+                        resizeMode="contain"
+                    />
 
-                <View style={styles.leftAccent} />
+                    <View style={styles.leftAccent} />
 
-                <Text style={styles.heroTitle}>
-                    Biometric Attendance
-                </Text>
+                    <Text style={styles.heroTitle}>
+                        Biometric Attendance
+                    </Text>
 
-                <Text style={styles.heroSubtitle}>
-                    Manage your classroom attendance with
-                    secure, location-based check-ins.
-                </Text>
+                    <Text style={styles.heroSubtitle}>
+                        Manage your classroom attendance with
+                        secure, location-based check-ins.
+                    </Text>
 
 
-                {/* Feature Row */}
-                <View style={styles.featureRow}>
+                    {/* Feature Row */}
+                    <View style={styles.featureRow}>
 
-                    <View style={styles.featureItem}>
+                        <View style={styles.featureItem}>
 
-                        <View style={styles.featureIconCircle}>
-                            <MaterialCommunityIcons
-                                name="map-marker-radius-outline"
-                                size={36}
-                                color={Colors.primary}
-                            />
+                            <View style={styles.featureIconCircle}>
+                                <MaterialCommunityIcons
+                                    name="map-marker-radius-outline"
+                                    size={36}
+                                    color={Colors.primary}
+                                />
+                            </View>
+
+                            <Text style={styles.featureTitle}>
+                                Location Verified
+                            </Text>
+
+                            <Text style={styles.featureText}>
+                                Ensure in-class attendance.
+                            </Text>
+
                         </View>
 
-                        <Text style={styles.featureTitle}>
-                            Location Verified
-                        </Text>
 
-                        <Text style={styles.featureText}>
-                            Ensure in-class attendance.
-                        </Text>
+                        <View style={styles.featureItem}>
 
-                    </View>
+                            <View style={styles.featureIconCircle}>
+                                <MaterialCommunityIcons
+                                    name="shield-check-outline"
+                                    size={36}
+                                    color={Colors.primary}
+                                />
+                            </View>
 
+                            <Text style={styles.featureTitle}>
+                                Secure & Reliable
+                            </Text>
 
-                    <View style={styles.featureItem}>
+                            <Text style={styles.featureText}>
+                                Biometric verification for accuracy.
+                            </Text>
 
-                        <View style={styles.featureIconCircle}>
-                            <MaterialCommunityIcons
-                                name="shield-check-outline"
-                                size={36}
-                                color={Colors.primary}
-                            />
                         </View>
 
-                        <Text style={styles.featureTitle}>
-                            Secure & Reliable
-                        </Text>
 
-                        <Text style={styles.featureText}>
-                            Biometric verification for accuracy.
-                        </Text>
+                        <View style={styles.featureItem}>
 
-                    </View>
+                            <View style={styles.featureIconCircle}>
+                                <MaterialCommunityIcons
+                                    name="account-group-outline"
+                                    size={36}
+                                    color={Colors.primary}
+                                />
+                            </View>
 
+                            <Text style={styles.featureTitle}>
+                                Built for Faculty
+                            </Text>
 
-                    <View style={styles.featureItem}>
+                            <Text style={styles.featureText}>
+                                Simple tools to manage your classes.
+                            </Text>
 
-                        <View style={styles.featureIconCircle}>
-                            <MaterialCommunityIcons
-                                name="account-group-outline"
-                                size={36}
-                                color={Colors.primary}
-                            />
                         </View>
-
-                        <Text style={styles.featureTitle}>
-                            Built for Faculty
-                        </Text>
-
-                        <Text style={styles.featureText}>
-                            Simple tools to manage your classes.
-                        </Text>
 
                     </View>
 
                 </View>
 
-            </View>
 
-
-            {/* =================================================
+                {/* =================================================
                 LOGIN CARD
             ================================================== */}
-            <View style={[styles.loginCard, shortViewport && styles.loginCardShort]}>
+                <View style={[styles.loginCard, shortViewport && styles.loginCardShort]}>
 
-                <Text style={styles.loginTitle}>
-                    Instructor Sign In
-                </Text>
+                    <Text style={styles.loginTitle}>
+                        Instructor Sign In
+                    </Text>
 
-                <Text style={styles.loginSubtitle}>
-                    Faculty access to the Biometric Attendance dashboard.
-                </Text>
-
-
-                {/* Email */}
-                <Text style={styles.inputLabel}>
-                    Email
-                </Text>
-
-                <View style={styles.inputWrapper}>
-
-                    <Ionicons
-                        name="mail-outline"
-                        size={22}
-                        color={Colors.textSecondary}
-                    />
-
-                    <TextInput
-                        style={styles.input}
-                        placeholder="name@unt.edu"
-                        value={email}
-                        onChangeText={setEmail}
-                        autoCapitalize="none"
-                        keyboardType="email-address"
-                        placeholderTextColor={Colors.disabled}
-                    />
-
-                </View>
+                    <Text style={styles.loginSubtitle}>
+                        Faculty access to the Biometric Attendance dashboard.
+                    </Text>
 
 
-                {/* Password */}
-                <Text style={styles.inputLabel}>
-                    Password
-                </Text>
+                    {/* Email */}
+                    <Text style={styles.inputLabel}>
+                        Email
+                    </Text>
 
-                <View style={styles.inputWrapper}>
+                    <View style={styles.inputWrapper}>
 
-                    <Ionicons
-                        name="lock-closed-outline"
-                        size={22}
-                        color={Colors.textSecondary}
-                    />
-
-                    <TextInput
-                        style={styles.input}
-                        placeholder="Enter your password"
-                        value={password}
-                        onChangeText={setPassword}
-                        secureTextEntry={!showPassword}
-                        placeholderTextColor={Colors.disabled}
-                    />
-
-                    <Pressable
-                        onPress={() => setShowPassword((visible) => !visible)}
-                        accessibilityRole="button"
-                        accessibilityLabel={showPassword ? "Hide password" : "Show password"}
-                        hitSlop={8}
-                    >
                         <Ionicons
-                            name={showPassword ? "eye-off-outline" : "eye-outline"}
+                            name="mail-outline"
                             size={22}
                             color={Colors.textSecondary}
                         />
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="name@unt.edu"
+                            value={email}
+                            onChangeText={setEmail}
+                            autoCapitalize="none"
+                            keyboardType="email-address"
+                            placeholderTextColor={Colors.disabled}
+                        />
+
+                    </View>
+
+
+                    {/* Password */}
+                    <Text style={styles.inputLabel}>
+                        Password
+                    </Text>
+
+                    <View style={styles.inputWrapper}>
+
+                        <Ionicons
+                            name="lock-closed-outline"
+                            size={22}
+                            color={Colors.textSecondary}
+                        />
+
+                        <TextInput
+                            style={styles.input}
+                            placeholder="Enter your password"
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry={!showPassword}
+                            placeholderTextColor={Colors.disabled}
+                        />
+
+                        <Pressable
+                            onPress={() => setShowPassword((visible) => !visible)}
+                            accessibilityRole="button"
+                            accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                            hitSlop={8}
+                        >
+                            <Ionicons
+                                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                                size={22}
+                                color={Colors.textSecondary}
+                            />
+                        </Pressable>
+
+                    </View>
+
+
+                    {/* Forgot password */}
+                    <Pressable>
+                        <Text style={styles.forgotPassword}>
+                            Forgot password?
+                        </Text>
+                    </Pressable>
+
+
+                    {/* Error */}
+                    {error ? (
+                        <Text style={styles.errorText}>
+                            {error}
+                        </Text>
+                    ) : null}
+
+
+                    {/* Sign In */}
+                    <Pressable
+                        style={[
+                            styles.loginButton,
+                            isLoggingIn && styles.loginButtonDisabled
+                        ]}
+                        onPress={handleLogin}
+                        disabled={isLoggingIn}
+                    >
+                        <Text style={styles.loginButtonText}>
+                            {isLoggingIn ? "Signing In..." : "Sign in"}
+                        </Text>
+                    </Pressable>
+
+
+                    {/* Divider */}
+                    <View style={styles.orRow}>
+
+                        <View style={styles.orLine} />
+
+                        <Text style={styles.orText}>
+                            or
+                        </Text>
+
+                        <View style={styles.orLine} />
+
+                    </View>
+
+
+                    <Text style={styles.facultyOnlyText}>
+                        This system is for UNT faculty and instructors only.
+                    </Text>
+
+
+                    {/* Admin Sign In */}
+                    <Pressable
+                        style={styles.adminLinkRow}
+                        onPress={() => router.push("/adminlogin")}
+                    >
+
+                        <Ionicons
+                            name="shield-checkmark-outline"
+                            size={20}
+                            color={Colors.primary}
+                        />
+
+                        <Text style={styles.adminLinkText}>
+                            Administrator? Sign in here
+                        </Text>
+
                     </Pressable>
 
                 </View>
 
+            </ScrollView>
 
-                {/* Forgot password */}
-                <Pressable>
-                    <Text style={styles.forgotPassword}>
-                        Forgot password?
-                    </Text>
-                </Pressable>
-
-
-                {/* Error */}
-                {error ? (
-                    <Text style={styles.errorText}>
-                        {error}
-                    </Text>
-                ) : null}
-
-
-                {/* Sign In */}
-                <Pressable
-                    style={[
-                        styles.loginButton,
-                        isLoggingIn && styles.loginButtonDisabled
-                    ]}
-                    onPress={handleLogin}
-                    disabled={isLoggingIn}
-                >
-                    <Text style={styles.loginButtonText}>
-                        {isLoggingIn ? "Signing In..." : "Sign in"}
-                    </Text>
-                </Pressable>
-
-
-                {/* Divider */}
-                <View style={styles.orRow}>
-
-                    <View style={styles.orLine} />
-
-                    <Text style={styles.orText}>
-                        or
-                    </Text>
-
-                    <View style={styles.orLine} />
-
-                </View>
-
-
-                <Text style={styles.facultyOnlyText}>
-                    This system is for UNT faculty and instructors only.
-                </Text>
-
-
-                {/* Admin Sign In */}
-                <Pressable
-                    style={styles.adminLinkRow}
-                    onPress={() => router.push("/adminlogin")}
-                >
-
-                    <Ionicons
-                        name="shield-checkmark-outline"
-                        size={20}
-                        color={Colors.primary}
-                    />
-
-                    <Text style={styles.adminLinkText}>
-                        Administrator? Sign in here
-                    </Text>
-
-                </Pressable>
-
-            </View>
-
-        </ScrollView>
-
-    </View>
-);
+        </View>
+    );
 }
 
 const styles = StyleSheet.create({

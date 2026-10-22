@@ -1,10 +1,10 @@
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  Pressable,
-  ScrollView,
+    View,
+    Text,
+    StyleSheet,
+    Image,
+    Pressable,
+    ScrollView,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import * as SecureStore from "expo-secure-store";
@@ -18,1282 +18,1310 @@ import { API_BASE } from "@/constants/api";
 // ============================================================
 
 function AttendanceRing({
-  percentage,
+    percentage,
 }: {
-  percentage: number;
+    percentage: number;
 }) {
-  const size = 92;
-  const safePercentage =
-    Math.min(
-      Math.max(percentage, 0),
-      100
+    const size = 92;
+    const safePercentage =
+        Math.min(
+            Math.max(percentage, 0),
+            100
+        );
+
+    const dotCount = 36;
+    const dotRadius = 36;
+    const activeDotCount = Math.round(
+        (safePercentage / 100) * dotCount
     );
 
-  const dotCount = 36;
-  const dotRadius = 36;
-  const activeDotCount = Math.round(
-    (safePercentage / 100) * dotCount
-  );
-
-  return (
-    <View
-      style={[
-        styles.percentageRingContainer,
-        {
-          width: size,
-          height: size,
-        },
-      ]}
-    >
-      {Array.from({ length: dotCount }, (_, index) => {
-        const angle =
-          (index / dotCount) * 2 * Math.PI - Math.PI / 2;
-        const x =
-          size / 2 + dotRadius * Math.cos(angle) - 2;
-        const y =
-          size / 2 + dotRadius * Math.sin(angle) - 2;
-
-        return (
-          <View
-            key={index}
-            style={{
-              position: "absolute",
-              left: x,
-              top: y,
-              width: 4,
-              height: 4,
-              borderRadius: 2,
-              backgroundColor:
-                index < activeDotCount
-                  ? Colors.primary
-                  : Colors.borderLight,
-            }}
-          />
-        );
-      })}
-
-      <View
-        style={
-          styles.percentageRingText
-        }
-      >
-        <Text
-          style={
-            styles.percentageValue
-          }
+    return (
+        <View
+            style={[
+                styles.percentageRingContainer,
+                {
+                    width: size,
+                    height: size,
+                },
+            ]}
         >
-          {safePercentage}%
-        </Text>
-      </View>
-    </View>
-  );
+            {Array.from({ length: dotCount }, (_, index) => {
+                const angle =
+                    (index / dotCount) * 2 * Math.PI - Math.PI / 2;
+                const x =
+                    size / 2 + dotRadius * Math.cos(angle) - 2;
+                const y =
+                    size / 2 + dotRadius * Math.sin(angle) - 2;
+
+                return (
+                    <View
+                        key={index}
+                        style={{
+                            position: "absolute",
+                            left: x,
+                            top: y,
+                            width: 4,
+                            height: 4,
+                            borderRadius: 2,
+                            backgroundColor:
+                                index < activeDotCount
+                                    ? Colors.primary
+                                    : Colors.borderLight,
+                        }}
+                    />
+                );
+            })}
+
+            <View
+                style={
+                    styles.percentageRingText
+                }
+            >
+                <Text
+                    style={
+                        styles.percentageValue
+                    }
+                >
+                    {safePercentage}%
+                </Text>
+            </View>
+        </View>
+    );
 }
 
 export default function DashboardScreen() {
-  const router = useRouter();
+    const router = useRouter();
 
-  const { userId } = useLocalSearchParams();
+    const { userId } = useLocalSearchParams();
 
-  // ============================================================
-  // DASHBOARD STATE
-  // ============================================================
+    // ============================================================
+    // DASHBOARD STATE
+    // ============================================================
 
-  const [courses, setCourses] = useState<any[]>([]);
-  const [activeSession, setActiveSession] = useState<any | null>(null);
-  const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
-  const [studentName, setStudentName] = useState("Student");
+    const [courses, setCourses] = useState<any[]>([]);
+    const [activeSession, setActiveSession] = useState<any | null>(null);
+    const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
+    const [studentName, setStudentName] = useState("Student");
 
-  // ============================================================
-  // LOAD STUDENT INFO
-  // ============================================================
+    // ============================================================
+    // LOAD STUDENT INFO
+    // ============================================================
 
-  useEffect(() => {
-    loadStudent();
-  }, []);
+    useEffect(() => {
+        loadStudent();
+    }, []);
 
-  async function loadStudent() {
-    const storedUser =
-      await SecureStore.getItemAsync("user");
+    async function loadStudent() {
+        const storedUser =
+            await SecureStore.getItemAsync("user");
 
-    if (!storedUser) {
-      return;
-    }
-
-    const user = JSON.parse(storedUser);
-
-    setStudentName(
-      user.name || "Student"
-    );
-  }
-
-  // ============================================================
-  // LOAD / REFRESH STUDENT COURSES
-  // ============================================================
-
-  useEffect(() => {
-    loadClasses();
-
-    const interval = setInterval(() => {
-      loadClasses();
-    }, 5000);
-
-    return () =>
-      clearInterval(interval);
-  }, []);
-
-  async function loadClasses() {
-    const token =
-      await SecureStore.getItemAsync(
-        "access_token"
-      );
-
-    if (!token) {
-      return;
-    }
-
-    const res = await fetch(
-      `${API_BASE}/courses/student`,
-      {
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      }
-    );
-
-    if (!res.ok) {
-      return;
-    }
-
-    const data = await res.json();
-
-    setCourses(
-      data.courses || []
-    );
-
-    setActiveSession(
-      data.active_session || null
-    );
-
-    setSelectedCourseId(
-      (currentId) => {
-        if (currentId !== null) {
-          return currentId;
+        if (!storedUser) {
+            return;
         }
 
-        if (data.active_session) {
-          return (
-            data.active_session.course_id
-          );
+        const user = JSON.parse(storedUser);
+
+        setStudentName(
+            user.name || "Student"
+        );
+    }
+
+    // ============================================================
+    // LOAD / REFRESH STUDENT COURSES
+    // ============================================================
+
+    useEffect(() => {
+        loadClasses();
+
+        const interval = setInterval(() => {
+            loadClasses();
+        }, 5000);
+
+        return () =>
+            clearInterval(interval);
+    }, []);
+
+    async function loadClasses() {
+        const token =
+            await SecureStore.getItemAsync(
+                "access_token"
+            );
+
+        if (!token) {
+            return;
         }
 
-        if (
-          data.courses?.length > 0
-        ) {
-          return (
-            data.courses[0].course_id
-          );
+        const res = await fetch(
+            `${API_BASE}/courses/student`,
+            {
+                headers: {
+                    Authorization:
+                        `Bearer ${token}`,
+                },
+            }
+        );
+
+        if (!res.ok) {
+            return;
         }
 
-        return null;
-      }
-    );
-  }
+        const data = await res.json();
 
-  // ============================================================
-  // SELECTED COURSE
-  // ============================================================
+        setCourses(
+            data.courses || []
+        );
 
-  const selectedCourse =
-    courses.find(
-      (course) =>
-        course.course_id ===
-        selectedCourseId
-    ) || null;
+        setActiveSession(
+            data.active_session || null
+        );
 
-  const selectedCourseIsActive =
-    activeSession?.course_id ===
-    selectedCourseId;
+        setSelectedCourseId(
+            (currentId) => {
+                if (currentId !== null) {
+                    return currentId;
+                }
 
-  // ============================================================
-  // COURSE DATA AND PERCENTAGE
-  // ============================================================
-  const [attendanceSummary, setAttendanceSummary] = useState({
-    present: 0,
-    late: 0,
-    absent: 0,
-    percentage: 0,
-  });
+                if (data.active_session) {
+                    return (
+                        data.active_session.course_id
+                    );
+                }
 
-  useEffect(() => {
-    if (selectedCourse === null) {
-      return;
+                if (
+                    data.courses?.length > 0
+                ) {
+                    return (
+                        data.courses[0].course_id
+                    );
+                }
+
+                return null;
+            }
+        );
     }
 
-    loadAttendanceSummary();
-  }, [selectedCourseId]);
+    // ============================================================
+    // SELECTED COURSE
+    // ============================================================
 
-  async function loadAttendanceSummary() {
-    const token = 
-      await SecureStore.getItemAsync("access_token");
+    const selectedCourse =
+        courses.find(
+            (course) =>
+                course.course_id ===
+                selectedCourseId
+        ) || null;
 
-    if(!token || selectedCourseId === null) {
-      return;
-    }
+    const selectedCourseIsActive =
+        activeSession?.course_id ===
+        selectedCourseId;
 
-    const res = await fetch(`${API_BASE}/courses/student/${selectedCourseId}/attendance-summary`,
-      {
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-    }
-  );
-
-  if (!res.ok) {
-    return;
-  }
-
-  const data = await res.json();
-
-  setAttendanceSummary({
-    present: data.present || 0,
-    late: data.late || 0,
-    absent: data.absent || 0,
-    percentage: data.percentage || 0,
-  });  
-  }
-
-  // ============================================================
-  // NAVIGATION
-  // ============================================================
-
-  function openCheckIn() {
-    router.push({
-      pathname: "/checkIn",
-
-      params: {
-        userId:
-          userId?.toString(),
-      },
+    // ============================================================
+    // COURSE DATA AND PERCENTAGE
+    // ============================================================
+    const [attendanceSummary, setAttendanceSummary] = useState({
+        present: 0,
+        late: 0,
+        absent: 0,
+        percentage: 0,
     });
-  }
 
-  function openAttendanceHistory() {
-    router.push(
-      "/attendanceHistory"
-    );
-  }
+    useEffect(() => {
+        if (selectedCourse === null) {
+            return;
+        }
 
-  return (
-    <View style={styles.container}>
+        loadAttendanceSummary();
+    }, [selectedCourseId]);
 
-      {/* =====================================================
+    async function loadAttendanceSummary() {
+        const token =
+            await SecureStore.getItemAsync("access_token");
+
+        if (!token || selectedCourseId === null) {
+            return;
+        }
+
+        const res = await fetch(`${API_BASE}/courses/student/${selectedCourseId}/attendance-summary`,
+            {
+                headers: {
+                    Authorization:
+                        `Bearer ${token}`,
+                },
+            }
+        );
+
+        if (!res.ok) {
+            return;
+        }
+
+        const data = await res.json();
+
+        setAttendanceSummary({
+            present: data.present || 0,
+            late: data.late || 0,
+            absent: data.absent || 0,
+            percentage: data.percentage || 0,
+        });
+    }
+
+    // ============================================================
+    // NAVIGATION
+    // ============================================================
+
+    function openCheckIn() {
+        router.push({
+            pathname: "/checkIn",
+
+            params: {
+                userId:
+                    userId?.toString(),
+            },
+        });
+    }
+
+    function openFaceEnrollment() {
+        router.push({
+            pathname: "/firstTimeEnroll",
+            params: {
+                userId: userId?.toString() ?? "",
+            },
+        });
+    }
+
+    function openAttendanceHistory() {
+
+        router.push(
+            "/attendanceHistory"
+        );
+    }
+
+    return (
+        <View style={styles.container}>
+
+
+
+            {/* =====================================================
           HEADER
       ====================================================== */}
 
-      <View style={styles.header}>
-        <Pressable
-          onPress={() =>
-            router.back()
-          }
-          style={styles.headerSide}
-        >
-          <Ionicons
-            name="chevron-back"
-            size={30}
-            color={Colors.surface}
-          />
-        </Pressable>
+            <View style={styles.header}>
+                <Pressable
+                    onPress={() =>
+                        router.back()
+                    }
+                    style={styles.headerSide}
+                >
+                    <Ionicons
+                        name="chevron-back"
+                        size={30}
+                        color={Colors.surface}
+                    />
+                </Pressable>
 
-        <Text
-          style={styles.headerTitle}
-        >
-          Student Dashboard
-        </Text>
+                <Text
+                    style={styles.headerTitle}
+                >
+                    Student Dashboard
+                </Text>
 
-        <View
-          style={styles.headerSide}
-        >
-          <Image
-            source={require(
-              "../assets/logo.png"
-            )}
-            style={styles.headerLogo}
-            resizeMode="contain"
-          />
-        </View>
-      </View>
+                <View
+                    style={styles.headerSide}
+                >
+                    <Image
+                        source={require(
+                            "../assets/logo.png"
+                        )}
+                        style={styles.headerLogo}
+                        resizeMode="contain"
+                    />
+                </View>
+            </View>
 
-      {/* =====================================================
+            {/* =====================================================
           DASHBOARD CONTENT
       ====================================================== */}
 
-      <ScrollView
-        contentContainerStyle={
-          styles.content
-        }
-        showsVerticalScrollIndicator={
-          false
-        }
-      >
+            <ScrollView
+                contentContainerStyle={
+                    styles.content
+                }
+                showsVerticalScrollIndicator={
+                    false
+                }
+            >
 
-        {/* =====================================================
+                <Pressable
+                    onPress={openFaceEnrollment}
+                    style={{
+                        backgroundColor: "#007BFF",
+                        padding: 14,
+                        borderRadius: 8,
+                        margin: 15,
+                        alignItems: "center",
+                    }}
+                >
+                    <Text style={{ color: "white", fontWeight: "bold" }}>
+                        Enroll Face
+                    </Text>
+                </Pressable>
+
+
+                {/* =====================================================
             STUDENT INFO
         ====================================================== */}
 
-        <View style={styles.card}>
-          <View
-            style={
-              styles.studentInfoLayout
-            }
-          >
+                <View style={styles.card}>
+                    <View
+                        style={
+                            styles.studentInfoLayout
+                        }
+                    >
 
-            <View
-              style={
-                styles.studentInfoSection
-              }
-            >
+                        <View
+                            style={
+                                styles.studentInfoSection
+                            }
+                        >
 
-              <Text
-                style={
-                  styles.cardTitle
-                }
-              >
-                Student Info
-              </Text>
+                            <Text
+                                style={
+                                    styles.cardTitle
+                                }
+                            >
+                                Student Info
+                            </Text>
 
-              {/* Name */}
+                            {/* Name */}
 
-              <View
-                style={
-                  styles.studentInfoRow
-                }
-              >
-                <Ionicons
-                  name="person-outline"
-                  size={26}
-                  color={
-                    Colors.textPrimary
-                  }
-                />
+                            <View
+                                style={
+                                    styles.studentInfoRow
+                                }
+                            >
+                                <Ionicons
+                                    name="person-outline"
+                                    size={26}
+                                    color={
+                                        Colors.textPrimary
+                                    }
+                                />
 
-                <View
-                  style={
-                    styles.studentInfoTextLine
-                  }
-                >
-                  <Text
-                    style={
-                      styles.studentInfoLabel
-                    }
-                  >
-                    Name:
-                  </Text>
+                                <View
+                                    style={
+                                        styles.studentInfoTextLine
+                                    }
+                                >
+                                    <Text
+                                        style={
+                                            styles.studentInfoLabel
+                                        }
+                                    >
+                                        Name:
+                                    </Text>
 
-                  <Text
-                    style={
-                      styles.studentInfoValue
-                    }
-                    numberOfLines={2}
-                    adjustsFontSizeToFit
-                    minimumFontScale={
-                      0.82
-                    }
-                  >
-                    {studentName}
-                  </Text>
+                                    <Text
+                                        style={
+                                            styles.studentInfoValue
+                                        }
+                                        numberOfLines={2}
+                                        adjustsFontSizeToFit
+                                        minimumFontScale={
+                                            0.82
+                                        }
+                                    >
+                                        {studentName}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            {/* Status */}
+
+                            <View
+                                style={
+                                    styles.studentInfoRow
+                                }
+                            >
+                                <Ionicons
+                                    name="shield-checkmark-outline"
+                                    size={27}
+                                    color={
+                                        Colors.primary
+                                    }
+                                />
+
+                                <View
+                                    style={
+                                        styles.studentInfoTextLine
+                                    }
+                                >
+                                    <Text
+                                        style={
+                                            styles.studentInfoLabel
+                                        }
+                                    >
+                                        Status:
+                                    </Text>
+
+                                    <Text
+                                        style={
+                                            styles.activeText
+                                        }
+                                    >
+                                        Active
+                                    </Text>
+                                </View>
+                            </View>
+                        </View>
+
+                        {/* Divider */}
+
+                        <View
+                            style={
+                                styles.studentInfoDivider
+                            }
+                        />
+
+                        {/* Check In Button */}
+
+                        <View
+                            style={
+                                styles.checkInSection
+                            }
+                        >
+                            <Pressable
+                                style={
+                                    styles.checkInButton
+                                }
+                                onPress={openCheckIn}
+                            >
+                                <Ionicons
+                                    name="camera-outline"
+                                    size={23}
+                                    color={
+                                        Colors.surface
+                                    }
+                                />
+
+                                <Text
+                                    style={
+                                        styles.checkInButtonText
+                                    }
+                                >
+                                    Check In
+                                </Text>
+                            </Pressable>
+                        </View>
+
+                    </View>
                 </View>
-              </View>
 
-              {/* Status */}
-
-              <View
-                style={
-                  styles.studentInfoRow
-                }
-              >
-                <Ionicons
-                  name="shield-checkmark-outline"
-                  size={27}
-                  color={
-                    Colors.primary
-                  }
-                />
-
-                <View
-                  style={
-                    styles.studentInfoTextLine
-                  }
-                >
-                  <Text
-                    style={
-                      styles.studentInfoLabel
-                    }
-                  >
-                    Status:
-                  </Text>
-
-                  <Text
-                    style={
-                      styles.activeText
-                    }
-                  >
-                    Active
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Divider */}
-
-            <View
-              style={
-                styles.studentInfoDivider
-              }
-            />
-
-            {/* Check In Button */}
-
-            <View
-              style={
-                styles.checkInSection
-              }
-            >
-              <Pressable
-                style={
-                  styles.checkInButton
-                }
-                onPress={openCheckIn}
-              >
-                <Ionicons
-                  name="camera-outline"
-                  size={23}
-                  color={
-                    Colors.surface
-                  }
-                />
-
-                <Text
-                  style={
-                    styles.checkInButtonText
-                  }
-                >
-                  Check In
-                </Text>
-              </Pressable>
-            </View>
-
-          </View>
-        </View>
-
-        {/* =====================================================
+                {/* =====================================================
             CURRENT / UPCOMING CLASS
         ====================================================== */}
 
-        <View style={styles.card}>
+                <View style={styles.card}>
 
-          <Text
-            style={styles.cardTitle}
-          >
-            Current / Upcoming Class
-          </Text>
+                    <Text
+                        style={styles.cardTitle}
+                    >
+                        Current / Upcoming Class
+                    </Text>
 
-          {/* Selected Course */}
+                    {/* Selected Course */}
 
-          <View
-            style={
-              styles.classHeaderRow
-            }
-          >
-            <Text
-              style={styles.className}
-            >
-              {selectedCourse
-                ? `${selectedCourse.course_code} - ${selectedCourse.course_name}`
-                : "No course selected"}
-            </Text>
+                    <View
+                        style={
+                            styles.classHeaderRow
+                        }
+                    >
+                        <Text
+                            style={styles.className}
+                        >
+                            {selectedCourse
+                                ? `${selectedCourse.course_code} - ${selectedCourse.course_name}`
+                                : "No course selected"}
+                        </Text>
 
-            <View
-              style={
-                styles.upcomingBadge
-              }
-            >
-              <Ionicons
-                name="calendar-outline"
-                size={20}
-                color={Colors.primary}
-              />
+                        <View
+                            style={
+                                styles.upcomingBadge
+                            }
+                        >
+                            <Ionicons
+                                name="calendar-outline"
+                                size={20}
+                                color={Colors.primary}
+                            />
 
-              <Text
-                style={
-                  styles.upcomingBadgeText
-                }
-              >
-                {selectedCourseIsActive
-                  ? "Active"
-                  : "Upcoming"}
-              </Text>
-            </View>
-          </View>
+                            <Text
+                                style={
+                                    styles.upcomingBadgeText
+                                }
+                            >
+                                {selectedCourseIsActive
+                                    ? "Active"
+                                    : "Upcoming"}
+                            </Text>
+                        </View>
+                    </View>
 
-          {/* Room */}
+                    {/* Room */}
 
-          <View
-            style={
-              styles.classInfoRow
-            }
-          >
-            <Ionicons
-              name="location-outline"
-              size={24}
-              color={
-                Colors.textPrimary
-              }
-            />
+                    <View
+                        style={
+                            styles.classInfoRow
+                        }
+                    >
+                        <Ionicons
+                            name="location-outline"
+                            size={24}
+                            color={
+                                Colors.textPrimary
+                            }
+                        />
 
-            <Text
-              style={
-                styles.classInfoText
-              }
-            >
-              Room 266
-            </Text>
-          </View>
+                        <Text
+                            style={
+                                styles.classInfoText
+                            }
+                        >
+                            Room 266
+                        </Text>
+                    </View>
 
-          {/* Session Time */}
+                    {/* Session Time */}
 
-          <View
-            style={
-              styles.classInfoRow
-            }
-          >
-            <Ionicons
-              name="time-outline"
-              size={24}
-              color={
-                Colors.textPrimary
-              }
-            />
+                    <View
+                        style={
+                            styles.classInfoRow
+                        }
+                    >
+                        <Ionicons
+                            name="time-outline"
+                            size={24}
+                            color={
+                                Colors.textPrimary
+                            }
+                        />
 
-            <Text
-              style={
-                styles.classInfoText
-              }
-            >
-              Today • 6:30 PM - 9:20 PM
-            </Text>
-          </View>
+                        <Text
+                            style={
+                                styles.classInfoText
+                            }
+                        >
+                            Today • 6:30 PM - 9:20 PM
+                        </Text>
+                    </View>
 
-          <View
-            style={
-              styles.classDivider
-            }
-          />
+                    <View
+                        style={
+                            styles.classDivider
+                        }
+                    />
 
-          {/* =====================================================
+                    {/* =====================================================
               COURSE TABS
           ====================================================== */}
 
-          <View
-            style={
-              styles.courseTabs
-            }
-          >
-            {courses.map(
-              (course) => (
-                <Pressable
-                  key={
-                    course.course_id
-                  }
-                  onPress={() =>
-                    setSelectedCourseId(
-                      course.course_id
-                    )
-                  }
-                  style={
-                    selectedCourseId ===
-                    course.course_id
-                      ? styles.courseTabActive
-                      : styles.courseTab
-                  }
-                >
-                  <Text
-                    style={
-                      selectedCourseId ===
-                      course.course_id
-                        ? styles.courseTabActiveText
-                        : styles.courseTabText
-                    }
-                  >
-                    {
-                      course.course_code
-                    }
-                  </Text>
-                </Pressable>
-              )
-            )}
-          </View>
-        </View>
+                    <View
+                        style={
+                            styles.courseTabs
+                        }
+                    >
+                        {courses.map(
+                            (course) => (
+                                <Pressable
+                                    key={
+                                        course.course_id
+                                    }
+                                    onPress={() =>
+                                        setSelectedCourseId(
+                                            course.course_id
+                                        )
+                                    }
+                                    style={
+                                        selectedCourseId ===
+                                            course.course_id
+                                            ? styles.courseTabActive
+                                            : styles.courseTab
+                                    }
+                                >
+                                    <Text
+                                        style={
+                                            selectedCourseId ===
+                                                course.course_id
+                                                ? styles.courseTabActiveText
+                                                : styles.courseTabText
+                                        }
+                                    >
+                                        {
+                                            course.course_code
+                                        }
+                                    </Text>
+                                </Pressable>
+                            )
+                        )}
+                    </View>
+                </View>
 
-        {/* =====================================================
+                {/* =====================================================
             ATTENDANCE SUMMARY
         ====================================================== */}
 
-        <View style={styles.card}>
+                <View style={styles.card}>
 
-          <Text
-            style={styles.cardTitle}
-          >
-            Attendance Summary
-          </Text>
+                    <Text
+                        style={styles.cardTitle}
+                    >
+                        Attendance Summary
+                    </Text>
 
-          <Text
-            style={
-              styles.cardSubtitle
-            }
-          >
-            This semester
-          </Text>
+                    <Text
+                        style={
+                            styles.cardSubtitle
+                        }
+                    >
+                        This semester
+                    </Text>
 
-          <View
-            style={
-              styles.summaryLayout
-            }
-          >
+                    <View
+                        style={
+                            styles.summaryLayout
+                        }
+                    >
 
-            {/* Summary Stats */}
+                        {/* Summary Stats */}
 
-            <View
-              style={
-                styles.summaryStats
-              }
-            >
+                        <View
+                            style={
+                                styles.summaryStats
+                            }
+                        >
 
-              {/* Present */}
+                            {/* Present */}
 
-              <View
-                style={
-                  styles.summaryItem
-                }
-              >
-                <View
-                  style={[
-                    styles.summaryIconBox,
-                    styles.presentIconBox,
-                  ]}
-                >
-                  <Ionicons
-                    name="checkmark"
-                    size={27}
-                    color={
-                      Colors.success
-                    }
-                  />
+                            <View
+                                style={
+                                    styles.summaryItem
+                                }
+                            >
+                                <View
+                                    style={[
+                                        styles.summaryIconBox,
+                                        styles.presentIconBox,
+                                    ]}
+                                >
+                                    <Ionicons
+                                        name="checkmark"
+                                        size={27}
+                                        color={
+                                            Colors.success
+                                        }
+                                    />
+                                </View>
+
+                                <Text
+                                    style={
+                                        styles.summaryNumber
+                                    }
+                                >
+                                    {attendanceSummary.present}
+                                </Text>
+
+                                <Text
+                                    style={
+                                        styles.summaryLabel
+                                    }
+                                >
+                                    Present
+                                </Text>
+                            </View>
+
+                            {/* Late */}
+
+                            <View
+                                style={
+                                    styles.summaryItem
+                                }
+                            >
+                                <View
+                                    style={[
+                                        styles.summaryIconBox,
+                                        styles.lateIconBox,
+                                    ]}
+                                >
+                                    <Ionicons
+                                        name="time-outline"
+                                        size={27}
+                                        color={
+                                            Colors.warning
+                                        }
+                                    />
+                                </View>
+
+                                <Text
+                                    style={
+                                        styles.summaryNumber
+                                    }
+                                >
+                                    {attendanceSummary.late}
+                                </Text>
+
+                                <Text
+                                    style={
+                                        styles.summaryLabel
+                                    }
+                                >
+                                    Late
+                                </Text>
+                            </View>
+
+                            {/* Absent */}
+
+                            <View
+                                style={
+                                    styles.summaryItem
+                                }
+                            >
+                                <View
+                                    style={[
+                                        styles.summaryIconBox,
+                                        styles.absentIconBox,
+                                    ]}
+                                >
+                                    <Ionicons
+                                        name="close"
+                                        size={27}
+                                        color={
+                                            Colors.danger
+                                        }
+                                    />
+                                </View>
+
+                                <Text
+                                    style={
+                                        styles.summaryNumber
+                                    }
+                                >
+                                    {attendanceSummary.absent}
+                                </Text>
+
+                                <Text
+                                    style={
+                                        styles.summaryLabel
+                                    }
+                                >
+                                    Absent
+                                </Text>
+                            </View>
+                        </View>
+
+                        {/* Divider */}
+
+                        <View
+                            style={
+                                styles.summaryDivider
+                            }
+                        />
+
+                        {/* Attendance Percentage */}
+
+                        <View
+                            style={
+                                styles.percentageSection
+                            }
+                        >
+                            <AttendanceRing
+                                percentage={
+                                    attendanceSummary.percentage
+                                }
+                            />
+
+                            <Text
+                                style={
+                                    styles.percentageLabel
+                                }
+                            >
+                                Attendance
+                            </Text>
+                        </View>
+                    </View>
                 </View>
 
-                <Text
-                  style={
-                    styles.summaryNumber
-                  }
-                >
-                  {attendanceSummary.present}
-                </Text>
-
-                <Text
-                  style={
-                    styles.summaryLabel
-                  }
-                >
-                  Present
-                </Text>
-              </View>
-
-              {/* Late */}
-
-              <View
-                style={
-                  styles.summaryItem
-                }
-              >
-                <View
-                  style={[
-                    styles.summaryIconBox,
-                    styles.lateIconBox,
-                  ]}
-                >
-                  <Ionicons
-                    name="time-outline"
-                    size={27}
-                    color={
-                      Colors.warning
-                    }
-                  />
-                </View>
-
-                <Text
-                  style={
-                    styles.summaryNumber
-                  }
-                >
-                  {attendanceSummary.late}
-                </Text>
-
-                <Text
-                  style={
-                    styles.summaryLabel
-                  }
-                >
-                  Late
-                </Text>
-              </View>
-
-              {/* Absent */}
-
-              <View
-                style={
-                  styles.summaryItem
-                }
-              >
-                <View
-                  style={[
-                    styles.summaryIconBox,
-                    styles.absentIconBox,
-                  ]}
-                >
-                  <Ionicons
-                    name="close"
-                    size={27}
-                    color={
-                      Colors.danger
-                    }
-                  />
-                </View>
-
-                <Text
-                  style={
-                    styles.summaryNumber
-                  }
-                >
-                  {attendanceSummary.absent}
-                </Text>
-
-                <Text
-                  style={
-                    styles.summaryLabel
-                  }
-                >
-                  Absent
-                </Text>
-              </View>
-            </View>
-
-            {/* Divider */}
-
-            <View
-              style={
-                styles.summaryDivider
-              }
-            />
-
-            {/* Attendance Percentage */}
-
-            <View
-              style={
-                styles.percentageSection
-              }
-            >
-              <AttendanceRing
-                percentage={
-                  attendanceSummary.percentage
-                }
-              />
-
-              <Text
-                style={
-                  styles.percentageLabel
-                }
-              >
-                Attendance
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* =====================================================
+                {/* =====================================================
             ATTENDANCE HISTORY
         ====================================================== */}
 
-        <Pressable
-          style={
-            styles.historyCard
-          }
-          onPress={
-            openAttendanceHistory
-          }
-        >
-          <View
-            style={
-              styles.historyIconCircle
-            }
-          >
-            <Ionicons
-              name="time-outline"
-              size={29}
-              color={
-                Colors.primary
-              }
-            />
-          </View>
+                <Pressable
+                    style={
+                        styles.historyCard
+                    }
+                    onPress={
+                        openAttendanceHistory
+                    }
+                >
+                    <View
+                        style={
+                            styles.historyIconCircle
+                        }
+                    >
+                        <Ionicons
+                            name="time-outline"
+                            size={29}
+                            color={
+                                Colors.primary
+                            }
+                        />
+                    </View>
 
-          <Text
-            style={
-              styles.historyText
-            }
-          >
-            Attendance History
-          </Text>
+                    <Text
+                        style={
+                            styles.historyText
+                        }
+                    >
+                        Attendance History
+                    </Text>
 
-          <Ionicons
-            name="chevron-forward"
-            size={28}
-            color={
-              Colors.textSecondary
-            }
-          />
-        </Pressable>
+                    <Ionicons
+                        name="chevron-forward"
+                        size={28}
+                        color={
+                            Colors.textSecondary
+                        }
+                    />
+                </Pressable>
 
-      </ScrollView>
-    </View>
-  );
+            </ScrollView>
+        </View>
+    );
 }
 
 const styles = StyleSheet.create({
 
-  // ============================================================
-  // PAGE
-  // ============================================================
+    // ============================================================
+    // PAGE
+    // ============================================================
 
-  container: {
-    flex: 1,
-    backgroundColor:
-      Colors.background,
-  },
+    container: {
+        flex: 1,
+        backgroundColor:
+            Colors.background,
+    },
 
-  content: {
-    paddingHorizontal: 18,
-    paddingTop: 18,
-    paddingBottom: Spacing.lg,
-    gap: 14,
-  },
+    content: {
+        paddingHorizontal: 18,
+        paddingTop: 18,
+        paddingBottom: Spacing.lg,
+        gap: 14,
+    },
 
-  // ============================================================
-  // HEADER
-  // ============================================================
+    // ============================================================
+    // HEADER
+    // ============================================================
 
-  header: {
-    minHeight: 108,
-    backgroundColor:
-      Colors.primary,
-    paddingHorizontal: 14,
-    paddingTop: 30,
-    flexDirection: "row",
-    alignItems: "center",
-  },
+    header: {
+        minHeight: 108,
+        backgroundColor:
+            Colors.primary,
+        paddingHorizontal: 14,
+        paddingTop: 30,
+        flexDirection: "row",
+        alignItems: "center",
+    },
 
-  headerSide: {
-    width: 62,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    headerSide: {
+        width: 62,
+        alignItems: "center",
+        justifyContent: "center",
+    },
 
-  headerTitle: {
-    flex: 1,
-    color: Colors.surface,
-    fontSize: 24,
-    fontWeight: "800",
-    textAlign: "center",
-  },
+    headerTitle: {
+        flex: 1,
+        color: Colors.surface,
+        fontSize: 24,
+        fontWeight: "800",
+        textAlign: "center",
+    },
 
-  headerLogo: {
-    width: 58,
-    height: 58,
-  },
+    headerLogo: {
+        width: 58,
+        height: 58,
+    },
 
-  // ============================================================
-  // SHARED CARD
-  // ============================================================
+    // ============================================================
+    // SHARED CARD
+    // ============================================================
 
-  card: {
-    width: "100%",
-    backgroundColor:
-      Colors.surface,
-    borderWidth: 1,
-    borderColor:
-      Colors.borderLight,
-    borderRadius:
-      Radius.lg,
-    paddingHorizontal: 18,
-    paddingVertical: 18,
-  },
+    card: {
+        width: "100%",
+        backgroundColor:
+            Colors.surface,
+        borderWidth: 1,
+        borderColor:
+            Colors.borderLight,
+        borderRadius:
+            Radius.lg,
+        paddingHorizontal: 18,
+        paddingVertical: 18,
+    },
 
-  cardTitle: {
-    color:
-      Colors.textPrimary,
-    fontSize: 22,
-    fontWeight: "800",
-  },
+    cardTitle: {
+        color:
+            Colors.textPrimary,
+        fontSize: 22,
+        fontWeight: "800",
+    },
 
-  cardSubtitle: {
-    color:
-      Colors.textSecondary,
-    fontSize: 15,
-    marginTop: 3,
-    marginBottom: 16,
-  },
+    cardSubtitle: {
+        color:
+            Colors.textSecondary,
+        fontSize: 15,
+        marginTop: 3,
+        marginBottom: 16,
+    },
 
-  // ============================================================
-  // STUDENT INFO
-  // ============================================================
+    // ============================================================
+    // STUDENT INFO
+    // ============================================================
 
-  studentInfoLayout: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent:
-      "space-between",
-  },
+    studentInfoLayout: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent:
+            "space-between",
+    },
 
-  studentInfoSection: {
-    flex: 1,
-    minWidth: 0,
-  },
+    studentInfoSection: {
+        flex: 1,
+        minWidth: 0,
+    },
 
-  studentInfoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    marginTop: 12,
-  },
+    studentInfoRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 9,
+        marginTop: 12,
+    },
 
-  studentInfoTextLine: {
-    flex: 1,
-    minWidth: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-  },
+    studentInfoTextLine: {
+        flex: 1,
+        minWidth: 0,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 7,
+    },
 
-  studentInfoLabel: {
-    color:
-      Colors.textPrimary,
-    fontSize: 16,
-    fontWeight: "700",
-    flexShrink: 0,
-  },
+    studentInfoLabel: {
+        color:
+            Colors.textPrimary,
+        fontSize: 16,
+        fontWeight: "700",
+        flexShrink: 0,
+    },
 
-  studentInfoValue: {
-    color:
-      Colors.textPrimary,
-    fontSize: 16,
-    flex: 1,
-    flexShrink: 1,
-  },
+    studentInfoValue: {
+        color:
+            Colors.textPrimary,
+        fontSize: 16,
+        flex: 1,
+        flexShrink: 1,
+    },
 
-  activeText: {
-    color:
-      Colors.primary,
-    fontSize: 16,
-    fontWeight: "800",
-  },
+    activeText: {
+        color:
+            Colors.primary,
+        fontSize: 16,
+        fontWeight: "800",
+    },
 
-  studentInfoDivider: {
-    width: 1,
-    alignSelf: "stretch",
-    backgroundColor:
-      Colors.borderLight,
-    marginLeft: 18,
-    marginRight: 20,
-  },
+    studentInfoDivider: {
+        width: 1,
+        alignSelf: "stretch",
+        backgroundColor:
+            Colors.borderLight,
+        marginLeft: 18,
+        marginRight: 20,
+    },
 
-  checkInSection: {
-    width: 124,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    checkInSection: {
+        width: 124,
+        alignItems: "center",
+        justifyContent: "center",
+    },
 
-  checkInButton: {
-    width: "100%",
-    minHeight: 46,
-    backgroundColor:
-      Colors.primary,
-    borderRadius:
-      Radius.md,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    paddingHorizontal: 10,
-  },
+    checkInButton: {
+        width: "100%",
+        minHeight: 46,
+        backgroundColor:
+            Colors.primary,
+        borderRadius:
+            Radius.md,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 7,
+        paddingHorizontal: 10,
+    },
 
-  checkInButtonText: {
-    color:
-      Colors.surface,
-    fontSize: 16,
-    fontWeight: "800",
-  },
+    checkInButtonText: {
+        color:
+            Colors.surface,
+        fontSize: 16,
+        fontWeight: "800",
+    },
 
-  // ============================================================
-  // CURRENT / UPCOMING CLASS
-  // ============================================================
+    // ============================================================
+    // CURRENT / UPCOMING CLASS
+    // ============================================================
 
-  classHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent:
-      "space-between",
-    gap: 12,
-    marginTop: 16,
-    marginBottom: 14,
-  },
+    classHeaderRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent:
+            "space-between",
+        gap: 12,
+        marginTop: 16,
+        marginBottom: 14,
+    },
 
-  className: {
-    flex: 1,
-    color:
-      Colors.textPrimary,
-    fontSize: 20,
-    fontWeight: "800",
-  },
+    className: {
+        flex: 1,
+        color:
+            Colors.textPrimary,
+        fontSize: 20,
+        fontWeight: "800",
+    },
 
-  upcomingBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
-    backgroundColor:
-      Colors.successSoft,
-    borderRadius:
-      Radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
+    upcomingBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 7,
+        backgroundColor:
+            Colors.successSoft,
+        borderRadius:
+            Radius.md,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
 
-  upcomingBadgeText: {
-    color:
-      Colors.success,
-    fontSize: 14,
-    fontWeight: "700",
-  },
+    upcomingBadgeText: {
+        color:
+            Colors.success,
+        fontSize: 14,
+        fontWeight: "700",
+    },
 
-  classInfoRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 11,
-    marginBottom: 10,
-  },
+    classInfoRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 11,
+        marginBottom: 10,
+    },
 
-  classInfoText: {
-    color:
-      Colors.textPrimary,
-    fontSize: 16,
-  },
+    classInfoText: {
+        color:
+            Colors.textPrimary,
+        fontSize: 16,
+    },
 
-  classDivider: {
-    height: 1,
-    backgroundColor:
-      Colors.borderLight,
-    marginTop: 6,
-    marginBottom: 14,
-  },
+    classDivider: {
+        height: 1,
+        backgroundColor:
+            Colors.borderLight,
+        marginTop: 6,
+        marginBottom: 14,
+    },
 
-  courseTabs: {
-    flexDirection: "row",
-    gap: 10,
-  },
+    courseTabs: {
+        flexDirection: "row",
+        gap: 10,
+    },
 
-  courseTabActive: {
-    flex: 1,
-    minHeight: 46,
-    borderWidth: 1.5,
-    borderColor:
-      Colors.primary,
-    borderRadius:
-      Radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor:
-      Colors.surface,
-  },
+    courseTabActive: {
+        flex: 1,
+        minHeight: 46,
+        borderWidth: 1.5,
+        borderColor:
+            Colors.primary,
+        borderRadius:
+            Radius.md,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor:
+            Colors.surface,
+    },
 
-  courseTabActiveText: {
-    color:
-      Colors.primary,
-    fontSize: 15,
-    fontWeight: "800",
-  },
+    courseTabActiveText: {
+        color:
+            Colors.primary,
+        fontSize: 15,
+        fontWeight: "800",
+    },
 
-  courseTab: {
-    flex: 1,
-    minHeight: 46,
-    borderRadius:
-      Radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor:
-      Colors.background,
-  },
+    courseTab: {
+        flex: 1,
+        minHeight: 46,
+        borderRadius:
+            Radius.md,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor:
+            Colors.background,
+    },
 
-  courseTabText: {
-    color:
-      Colors.textPrimary,
-    fontSize: 15,
-    fontWeight: "500",
-  },
+    courseTabText: {
+        color:
+            Colors.textPrimary,
+        fontSize: 15,
+        fontWeight: "500",
+    },
 
-  // ============================================================
-  // ATTENDANCE SUMMARY
-  // ============================================================
+    // ============================================================
+    // ATTENDANCE SUMMARY
+    // ============================================================
 
-  summaryLayout: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+    summaryLayout: {
+        flexDirection: "row",
+        alignItems: "center",
+    },
 
-  summaryStats: {
-    flex: 1,
-    flexDirection: "row",
-    justifyContent:
-      "space-between",
-    gap: 12,
-  },
+    summaryStats: {
+        flex: 1,
+        flexDirection: "row",
+        justifyContent:
+            "space-between",
+        gap: 12,
+    },
 
-  summaryItem: {
-    alignItems: "center",
-    flex: 1,
-    minWidth: 0,
-  },
+    summaryItem: {
+        alignItems: "center",
+        flex: 1,
+        minWidth: 0,
+    },
 
-  summaryIconBox: {
-    width: 58,
-    height: 50,
-    borderRadius:
-      Radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 7,
-  },
+    summaryIconBox: {
+        width: 58,
+        height: 50,
+        borderRadius:
+            Radius.md,
+        alignItems: "center",
+        justifyContent: "center",
+        marginBottom: 7,
+    },
 
-  presentIconBox: {
-    backgroundColor:
-      Colors.successSoft,
-  },
+    presentIconBox: {
+        backgroundColor:
+            Colors.successSoft,
+    },
 
-  lateIconBox: {
-    backgroundColor:
-      Colors.warningSoft,
-  },
+    lateIconBox: {
+        backgroundColor:
+            Colors.warningSoft,
+    },
 
-  absentIconBox: {
-    backgroundColor:
-      Colors.dangerSoft,
-  },
+    absentIconBox: {
+        backgroundColor:
+            Colors.dangerSoft,
+    },
 
-  summaryNumber: {
-    color:
-      Colors.textPrimary,
-    fontSize: 21,
-    fontWeight: "800",
-  },
+    summaryNumber: {
+        color:
+            Colors.textPrimary,
+        fontSize: 21,
+        fontWeight: "800",
+    },
 
-  summaryLabel: {
-    color:
-      Colors.textSecondary,
-    fontSize: 14,
-    marginTop: 2,
-  },
+    summaryLabel: {
+        color:
+            Colors.textSecondary,
+        fontSize: 14,
+        marginTop: 2,
+    },
 
-  summaryDivider: {
-    width: 1,
-    height: 108,
-    backgroundColor:
-      Colors.borderLight,
-    marginLeft: 18,
-    marginRight: 16,
-  },
+    summaryDivider: {
+        width: 1,
+        height: 108,
+        backgroundColor:
+            Colors.borderLight,
+        marginLeft: 18,
+        marginRight: 16,
+    },
 
-  // ============================================================
-  // ATTENDANCE PERCENTAGE
-  // ============================================================
+    // ============================================================
+    // ATTENDANCE PERCENTAGE
+    // ============================================================
 
-  percentageSection: {
-    width: 100,
-    alignItems: "center",
-  },
+    percentageSection: {
+        width: 100,
+        alignItems: "center",
+    },
 
-  percentageRingContainer: {
-    position: "relative",
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    percentageRingContainer: {
+        position: "relative",
+        alignItems: "center",
+        justifyContent: "center",
+    },
 
-  percentageRingText: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    percentageRingText: {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        alignItems: "center",
+        justifyContent: "center",
+    },
 
-  percentageValue: {
-    color:
-      Colors.textPrimary,
-    fontSize: 23,
-    fontWeight: "800",
-  },
+    percentageValue: {
+        color:
+            Colors.textPrimary,
+        fontSize: 23,
+        fontWeight: "800",
+    },
 
-  percentageLabel: {
-    color:
-      Colors.textSecondary,
-    fontSize: 14,
-    marginTop: 6,
-  },
+    percentageLabel: {
+        color:
+            Colors.textSecondary,
+        fontSize: 14,
+        marginTop: 6,
+    },
 
-  // ============================================================
-  // ATTENDANCE HISTORY
-  // ============================================================
+    // ============================================================
+    // ATTENDANCE HISTORY
+    // ============================================================
 
-  historyCard: {
-    minHeight: 78,
-    backgroundColor:
-      Colors.surface,
-    borderWidth: 1,
-    borderColor:
-      Colors.borderLight,
-    borderRadius:
-      Radius.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 18,
-  },
+    historyCard: {
+        minHeight: 78,
+        backgroundColor:
+            Colors.surface,
+        borderWidth: 1,
+        borderColor:
+            Colors.borderLight,
+        borderRadius:
+            Radius.lg,
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 18,
+    },
 
-  historyIconCircle: {
-    width: 46,
-    height: 46,
-    borderRadius:
-      Radius.pill,
-    borderWidth: 2,
-    borderColor:
-      Colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+    historyIconCircle: {
+        width: 46,
+        height: 46,
+        borderRadius:
+            Radius.pill,
+        borderWidth: 2,
+        borderColor:
+            Colors.primary,
+        alignItems: "center",
+        justifyContent: "center",
+    },
 
-  historyText: {
-    flex: 1,
-    color:
-      Colors.textPrimary,
-    fontSize: 19,
-    fontWeight: "600",
-    marginLeft: 14,
-  },
+    historyText: {
+        flex: 1,
+        color:
+            Colors.textPrimary,
+        fontSize: 19,
+        fontWeight: "600",
+        marginLeft: 14,
+    },
 });

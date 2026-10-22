@@ -560,7 +560,7 @@ def get_attendance_override_details(
             cursor.execute(
                 """
                 SELECT event_type, event_time
-                FROM geofence_status change
+                FROM geofence_status_changes
                 WHERE attendance_id = ?
                 ORDER BY event_time ASC
                 """,
@@ -762,7 +762,7 @@ def save_attendance_override(data: dict, current_user=Depends(require_instructor
                 INSERT INTO attendance_records (
                     session_id,
                     student_id,
-                    cheeck_in_time,
+                    check_in_time,
                     face_verified,
                     location_verified,
                     status

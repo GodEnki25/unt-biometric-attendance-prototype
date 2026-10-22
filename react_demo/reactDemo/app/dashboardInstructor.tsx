@@ -40,6 +40,7 @@ type CheckinRecord = {
 };
 
 type StudentRow = {
+    student_id: number;
     name: string;
     firstentrytime: string; // 9/15/26 changes here
     entrytime: string;
@@ -287,6 +288,7 @@ export default function InstructorDashboard() {
                 Array.from(
                     latestByStudent.values()
                 ).map((record) => ({
+                    student_id: record.student_id,
                     name:
                         record.student_name ??
                         `Student ${record.student_id}`,
@@ -1289,7 +1291,8 @@ export default function InstructorDashboard() {
                                                         : "",
                                                     room: selectedItem2,
                                                     date: selectedItem3,
-                                                    student: student.name
+                                                    student: student.name,
+                                                    student_id: String(student.student_id)
                                                 }
                                             })
                                         }
