@@ -1,5 +1,5 @@
 
-import { View, Text, TextInput, StyleSheet, Image, Pressable, useWindowDimensions } from "react-native";
+import { View, Text, TextInput, StyleSheet, Image, Pressable, ScrollView, useWindowDimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 import { API_BASE } from "@/constants/api";
@@ -17,6 +17,7 @@ export default function LoginScreen()
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState("");
     const [isLoggingIn, setIsLoggingIn] = useState(false);
 
@@ -107,7 +108,11 @@ export default function LoginScreen()
         {/* =====================================================
             MAIN CONTENT
         ====================================================== */}
-        <View style={styles.content}>
+        <ScrollView
+            style={styles.contentScroll}
+            contentContainerStyle={styles.content}
+            showsVerticalScrollIndicator={false}
+        >
 
             {/* =================================================
                 LEFT SIDE
@@ -260,15 +265,22 @@ export default function LoginScreen()
                         placeholder="Enter your password"
                         value={password}
                         onChangeText={setPassword}
-                        secureTextEntry={true}
+                        secureTextEntry={!showPassword}
                         placeholderTextColor={Colors.disabled}
                     />
 
-                    <Ionicons
-                        name="eye-off-outline"
-                        size={22}
-                        color={Colors.textSecondary}
-                    />
+                    <Pressable
+                        onPress={() => setShowPassword((visible) => !visible)}
+                        accessibilityRole="button"
+                        accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                        hitSlop={8}
+                    >
+                        <Ionicons
+                            name={showPassword ? "eye-off-outline" : "eye-outline"}
+                            size={22}
+                            color={Colors.textSecondary}
+                        />
+                    </Pressable>
 
                 </View>
 
@@ -343,7 +355,7 @@ export default function LoginScreen()
 
             </View>
 
-        </View>
+        </ScrollView>
 
     </View>
 );
@@ -409,8 +421,12 @@ const styles = StyleSheet.create({
     // MAIN CONTENT
     // ============================================================
 
+    contentScroll: {
+        flex: 1
+    },
+
     content: {
-        flex: 1,
+        flexGrow: 1,
 
         flexDirection: "row",
         alignItems: "center",
@@ -420,7 +436,8 @@ const styles = StyleSheet.create({
         paddingTop: 10,
         paddingBottom: 60,
 
-        gap: 70
+        gap: 70,
+        overflow: "hidden"
     },
 
 
