@@ -5,15 +5,21 @@ import {
     StyleSheet,
     Image,
     Pressable,
-    Alert
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    ScrollView
 } from "react-native";
 
 import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 
+import { Ionicons } from "@expo/vector-icons";
+
 
 import { API_BASE } from "../constants/api";
+import { Colors, Radius, Spacing } from "../constants/theme";
 
 
 export default function EnrollSignup() {
@@ -26,6 +32,8 @@ export default function EnrollSignup() {
     const [password, setPassword] = useState("");
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const [showPassword, setShowPassword] = useState(false);
 
 
     async function handleSignup() {
@@ -161,95 +169,201 @@ export default function EnrollSignup() {
 
     return (
 
-        <View style={styles.container}>
+    <KeyboardAvoidingView
+        style={styles.container}
+        behavior={
+            Platform.OS === "ios"
+                ? "padding"
+                : undefined
+        }
+    >
 
-            <View style={styles.header}>
+        <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+        >
 
-                <Text style={styles.headerTitle}>
-                    UNT Student Signup
+
+            {/* =====================================================
+                BRANDING
+            ====================================================== */}
+
+            <View style={styles.brandSection}>
+
+                <Image
+                    source={require("../assets/logo.png")}
+                    style={styles.logo}
+                    resizeMode="contain"
+                />
+
+
+                <Text style={styles.title}>
+                    Student Sign Up
+                </Text>
+
+
+                <Text style={styles.subtitle}>
+                    Create your student account to continue
+                    to biometric enrollment.
                 </Text>
 
             </View>
 
 
-            <View style={styles.content}>
+            {/* =====================================================
+                SIGNUP FORM
+            ====================================================== */}
 
-                <Image
-                    source={require("../assets/logo.png")}
-                    style={styles.logo}
-                />
-
-
-                <TextInput
-                    style={styles.input}
-                    placeholder="Full Name"
-                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
-                    value={fullName}
-                    onChangeText={setFullName}
-                    autoCapitalize="words"
-                />
+            <View style={styles.form}>
 
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Student ID"
-                    value={studentId}
-                    onChangeText={setStudentId}
-                    autoCapitalize="none"
-                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
-                />
+                {/* Full Name */}
+
+                <View style={styles.inputWrapper}>
+
+                    <Ionicons
+                        name="person-outline"
+                        size={28}
+                        color={Colors.textSecondary}
+                    />
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Full Name"
+                        placeholderTextColor={Colors.textSecondary}
+                        value={fullName}
+                        onChangeText={setFullName}
+                        autoCapitalize="words"
+                    />
+
+                </View>
 
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="UNT Email"
-                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
-                    value={email}
-                    onChangeText={setEmail}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                />
+                {/* Student ID */}
+
+                <View style={styles.inputWrapper}>
+
+                    <Ionicons
+                        name="card-outline"
+                        size={28}
+                        color={Colors.textSecondary}
+                    />
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Student ID"
+                        placeholderTextColor={Colors.textSecondary}
+                        value={studentId}
+                        onChangeText={setStudentId}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
+
+                </View>
 
 
-                <TextInput
-                    style={styles.input}
-                    placeholder="Password"
-                    placeholderTextColor="rgba(0, 0, 0, 0.65)"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={true}
-                />
+                {/* UNT Email */}
 
+                <View style={styles.inputWrapper}>
+
+                    <Ionicons
+                        name="mail-outline"
+                        size={28}
+                        color={Colors.textSecondary}
+                    />
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="UNT Email"
+                        placeholderTextColor={Colors.textSecondary}
+                        value={email}
+                        onChangeText={setEmail}
+                        autoCapitalize="none"
+                        keyboardType="email-address"
+                        autoCorrect={false}
+                    />
+
+                </View>
+
+
+                {/* Password */}
+
+                <View style={styles.inputWrapper}>
+
+                    <Ionicons
+                        name="lock-closed-outline"
+                        size={28}
+                        color={Colors.textSecondary}
+                    />
+
+                    <TextInput
+                        style={styles.input}
+                        placeholder="Password"
+                        placeholderTextColor={Colors.textSecondary}
+                        value={password}
+                        onChangeText={setPassword}
+                        secureTextEntry={!showPassword}
+                    />
+
+
+                    {/* Show / Hide Password */}
+
+                    <Pressable
+                        onPress={() =>
+                            setShowPassword(!showPassword)
+                        }
+                        hitSlop={10}
+                    >
+
+                        <Ionicons
+                            name={
+                                showPassword
+                                    ? "eye-outline"
+                                    : "eye-off-outline"
+                            }
+                            size={28}
+                            color={Colors.textSecondary}
+                        />
+
+                    </Pressable>
+
+                </View>
+
+
+                {/* Sign Up Button */}
 
                 <Pressable
                     style={[
-                        styles.loginButton,
-                        isSubmitting && styles.disabledButton
+                        styles.signupButton,
+                        isSubmitting &&
+                        styles.disabledButton
                     ]}
                     onPress={handleSignup}
                     disabled={isSubmitting}
                 >
 
-                    <Text style={styles.loginButtonText}>
-
+                    <Text style={styles.signupButtonText}>
                         {
                             isSubmitting
                                 ? "Creating Account..."
-                                : "Signup"
+                                : "Sign Up"
                         }
-
                     </Text>
 
                 </Pressable>
 
 
+                {/* Back to Login */}
+
                 <Pressable
+                    style={styles.backButton}
                     onPress={() =>
                         router.push("/login")
                     }
                 >
 
-                    <Text style={styles.enrollLink}>
+                    <Text style={styles.backLink}>
                         Back to login
                     </Text>
 
@@ -257,79 +371,156 @@ export default function EnrollSignup() {
 
             </View>
 
-        </View>
-    );
+        </ScrollView>
+
+    </KeyboardAvoidingView>
+);
 }
 
 
 const styles = StyleSheet.create({
 
+
+    // ============================================================
+    // PAGE
+    // ============================================================
+
     container: {
         flex: 1,
-        backgroundColor: "#e7ffe7"
+        backgroundColor: Colors.background
+    },
+
+    scrollContent: {
+        flexGrow: 1,
+
+        paddingHorizontal: 32,
+        paddingTop: 42,
+        paddingBottom: 30,
+
+        alignItems: "center"
     },
 
 
-    header: {
-        height: 90,
-        backgroundColor: "#0f5c00",
-        paddingHorizontal: 20,
-        paddingTop: 50,
-        alignItems: "center",
-        borderBottomWidth: 1,
-        borderBottomColor: "#ddd"
-    },
+    // ============================================================
+    // BRANDING
+    // ============================================================
 
-
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: "bold",
-        textAlign: "center",
-        color: "white"
-    },
-
-
-    content: {
-        flex: 1,
-        justifyContent: "center",
-        padding: 20
+    brandSection: {
+        width: "100%",
+        alignItems: "center"
     },
 
 
     logo: {
-        width: 150,
-        height: 150,
-        alignSelf: "center",
-        marginBottom: 20,
-        borderRadius: 10
+        width: 220,
+        height: 220,
+
+        marginTop: 50,
+        marginBottom: 45,
+
+        zIndex: 1
     },
 
 
     title: {
-        fontSize: 28,
-        fontWeight: "bold",
-        marginBottom: 20,
+        color: Colors.textPrimary,
+
+        fontSize: 32,
+        fontWeight: "800",
+
         textAlign: "center"
     },
 
 
-    input: {
-        borderWidth: 1,
-        borderColor: "green",
-        padding: 10,
-        marginBottom: 15,
-        borderRadius: 5,
-        backgroundColor: "white"
+    subtitle: {
+        color: Colors.textSecondary,
+
+        fontSize: 18,
+        lineHeight: 24,
+
+        textAlign: "center",
+
+        maxWidth: 330,
+
+        marginTop: 10,
+        marginBottom: 28
     },
 
 
-    loginButton: {
-        backgroundColor: "#00853E",
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        borderRadius: 5,
+    // ============================================================
+    // FORM
+    // ============================================================
+
+    form: {
+        width: "100%",
+        maxWidth: 370
+    },
+
+
+    inputWrapper: {
+        minHeight: 64,
+
+        flexDirection: "row",
         alignItems: "center",
-        marginBottom: 15
+
+        gap: Spacing.md,
+
+        backgroundColor: Colors.surface,
+
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
+        borderRadius: Radius.lg,
+
+        paddingHorizontal: 18,
+
+        marginBottom: 14,
+
+        shadowColor: Colors.textPrimary,
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
+        shadowOffset: {
+            width: 0,
+            height: 4
+        },
+
+        elevation: 2
+    },
+
+
+    input: {
+        flex: 1,
+
+        color: Colors.textPrimary,
+
+        fontSize: 18,
+
+        outlineStyle: "none"
+    } as any,
+
+
+    // ============================================================
+    // SIGN UP BUTTON
+    // ============================================================
+
+    signupButton: {
+        minHeight: 62,
+
+        backgroundColor: Colors.primary,
+
+        borderRadius: Radius.lg,
+
+        alignItems: "center",
+        justifyContent: "center",
+
+        marginTop: 4
+    },
+
+
+    signupButtonText: {
+        color: Colors.surface,
+
+        fontSize: 20,
+        fontWeight: "800"
     },
 
 
@@ -338,18 +529,24 @@ const styles = StyleSheet.create({
     },
 
 
-    loginButtonText: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "bold"
+    // ============================================================
+    // BACK TO LOGIN
+    // ============================================================
+
+    backButton: {
+        alignSelf: "center",
+
+        marginTop: 22
     },
 
 
-    enrollLink: {
-        marginTop: 15,
-        textAlign: "center",
-        color: "green",
-        textDecorationLine: "underline",
-        fontSize: 16
+    backLink: {
+        color: Colors.primary,
+
+        fontSize: 18,
+        fontWeight: "700",
+
+        textDecorationLine: "underline"
     }
+
 });
