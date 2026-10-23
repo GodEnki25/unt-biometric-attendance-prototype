@@ -1,6 +1,23 @@
 import { Platform } from 'react-native';
 
 export const Colors = {
+    light: {
+    text: "#1F2937",
+    background: "#F7F7F7",
+    tint: "#00853E",
+    icon: "#6B7280",
+    tabIconDefault: "#6B7280",
+    tabIconSelected: "#00853E",
+  },
+
+  dark: {
+    text: "#FFFFFF",
+    background: "#151718",
+    tint: "#00853E",
+    icon: "#9CA3AF",
+    tabIconDefault: "#9CA3AF",
+    tabIconSelected: "#00853E",
+  },
   primary: "#00853E", //UNT-style green - main buttons, accents, icons
   primaryDark: "#006B32", //Darker gren - pressed/hover states, stronger accents
  

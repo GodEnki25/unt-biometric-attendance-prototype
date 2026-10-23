@@ -9,8 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
-      },
+      "supportsTablet": true,
       "bundleIdentifier": "com.shayank.reactDemo"
     },
     "android": {
@@ -22,6 +21,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
+
       "package": "com.shayank.reactDemo"
     },
     "web": {
@@ -58,5 +58,5 @@
         "projectId": "228ac050-ad73-408b-a96a-3cc9bd1f5ef6"
       }
     }
- }
-
+  }
+}

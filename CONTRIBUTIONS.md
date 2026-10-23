@@ -1,4 +1,4 @@
-# Team Contributions 
+# Team Contributions
 
 This document tracks the contributions made by each team member throughout the development of the UNT Biometric Attendance.
 
@@ -27,6 +27,19 @@ This document tracks the contributions made by each team member throughout the d
 - Began integrating the instructor dashboard with live backend attendance data instead of hard-coded student records.
 - Updated frontend API configuration for local/mobile backend connectivity and tested Expo tunnel access.
 - Verified session-specific attendance results using session 34.
+
+### October 23, 2026 – Sorel Agbogla
+
+- Developed backend attendance duration calculations using geofence `ENTER`, `EXIT`, and `REENTER` events.
+- Implemented tracking of first entry, latest entry, latest exit, and cumulative time spent inside the classroom.
+- Updated the `/checkins` API to return attendance timestamps and total classroom duration for each student.
+- Implemented live attendance duration updates during active sessions and ensured calculations stop when sessions end.
+- Integrated backend attendance timestamps and duration data into the instructor dashboard.
+- Updated the instructor dashboard to display First Entry Time, Latest Entry Time, Latest Exit Time, and Total Time in Class.
+- Updated CSV attendance export to include all attendance timestamp and duration fields.
+- Tested attendance tracking using Session 48, verifying that duration increased during the active session and stopped after the session ended.
+- Restored existing student check-in status and instructor attendance override endpoints while preserving the new attendance calculations.
+- Removed hardcoded course filtering to support attendance retrieval for different courses.
 
 ---
 
@@ -72,7 +85,7 @@ This document tracks the contributions made by each team member throughout the d
 ### Capstone II
 
 
-- 
+-
 
 [Add contributions throughout the semester.]
 

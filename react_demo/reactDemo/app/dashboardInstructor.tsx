@@ -19,20 +19,25 @@ import { API_BASE } from "../constants/api";
 import { Colors, Spacing, Radius } from "../constants/theme";
 
 // 9/15/26
-// Andrew added First Entry Time as the first time they 
+// Andrew added First Entry Time as the first time they
 // entered class so that the attendance status can be done
 // Andrew thinks you might need to make some adjustments to the table later
 // also added the time total for total time in class
-// basically needs an equation that takes 
+// basically needs an equation that takes
 // (first entry time - first exit time) + if there is (entry time if there is one - next exit time or whenever the session ends) however many times they have changes
-// Sorry for the inconvenience 
+// Sorry for the inconvenience
+
+// 10/23/26 Sorel Agbogla connected instructor attendance fields to backend geofence events
+// Displaying the first entry time, latest entry time, latest exit time, and total time in class for each student in the instructor dashboard.
 type CheckinRecord = {
     attendance_id: number;
     session_id: number;
     student_id: number;
     student_name: string;
-    first_check_in_time: string; // 9/15/26 changes here
-    total_time: string; // 9/15/26 changes here
+    first_check_in_time: string | null;
+    latest_entry_time: string | null;
+    latest_exit_time: string | null;
+    total_time: string | null;
     check_in_time: string;
     face_verified: number;
     location_verified: number;
@@ -42,7 +47,7 @@ type CheckinRecord = {
 type StudentRow = {
     student_id: number;
     name: string;
-    firstentrytime: string; // 9/15/26 changes here
+    firstentrytime: string | null; // 9/15/26 changes here
     entrytime: string;
     exittime: string;
     totaltime: string; // 9/15/26 changes here
@@ -66,7 +71,10 @@ export default function InstructorDashboard() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
 
-    const storedUser = Platform.OS === "web" ? localStorage.getItem("user") : null;
+    const storedUser =
+        Platform.OS === "web" && typeof window !== "undefined"
+            ? window.localStorage.getItem("user")
+            : null;
     const currentUser = storedUser ? JSON.parse(storedUser) : null;
 
     const [students, setStudents] = useState<StudentRow[]>([]);
@@ -154,7 +162,7 @@ export default function InstructorDashboard() {
     };
 
 
-    const formatTime = (dateTime: string) => {
+    const formatTime = (dateTime: string | null) => {
         if (!dateTime) {
             return EMPTY_CELL;
         }
@@ -230,7 +238,7 @@ export default function InstructorDashboard() {
 
     const loadCheckins = async (showLoading = true) => {
         try {
-            if(showLoading){
+            if (showLoading) {
                 setLoading(true);
             }
 
@@ -298,12 +306,14 @@ export default function InstructorDashboard() {
                     ),
 
                     entrytime: formatTime(
-                        record.check_in_time
+                        record.latest_entry_time ?? record.check_in_time
                     ),
 
-                    exittime: EMPTY_CELL,
-                    totaltime: EMPTY_CELL, // 9/15/26 changes here
-                    status: formatStatus(
+                    exittime: formatTime(
+                        record.latest_exit_time
+                    ),
+
+                    totaltime: record.total_time ?? EMPTY_CELL, status: formatStatus(
                         record.status
                     )
                 }));
@@ -323,7 +333,7 @@ export default function InstructorDashboard() {
             );
 
         } finally {
-            if(showLoading){
+            if (showLoading) {
                 setLoading(false);
             }
         }
@@ -393,9 +403,9 @@ export default function InstructorDashboard() {
         }
     };
 
-    /* 
+    /*
     Acquire the instructor device location for the geofence
-    Browswer-reported accuracy is displayed so the instructor can 
+    Browswer-reported accuracy is displayed so the instructor can
     account for poor GPS/location conditions before starting a session.
     */
     const getInstructorLocation = () => {
@@ -562,12 +572,15 @@ export default function InstructorDashboard() {
             );
             return;
         }
-        // Andrew added First Entry Time as the first time they 
+        // Andrew added First Entry Time as the first time they
         // entered class so that the attendance status can be done
         // Andrew thinks you might need to make some adjustments to the table later
-        // Sorry for the inconvenience 
+        // Sorry for the inconvenience
+        // 10/23/26 Sorel Agbogla
+        // Integrated backend attendance timestamps into the instructor dashboard CSV export.
+        //Displaying the first entry time, latest entry time, latest exit time, and total time in class for each student in the exported CSV file.
         const header =
-            "Student,First Entry Time, Latest Entry Time,Latest Exit Time,Status\n";
+            "Student,First Entry Time, Latest Entry Time,Latest Exit Time,Total Time in Class,Status\n";
 
         const rows = students
             .map(
@@ -604,355 +617,319 @@ export default function InstructorDashboard() {
 
         URL.revokeObjectURL(url);
     };
-    
-    
-    return (
-    <View
-        style={[
-            styles.safe,
-            {
-                paddingTop: insets.top,
-                paddingBottom: insets.bottom
-            }
-        ]}
-    >
-        <View style={styles.container}>
 
-            {/* =====================================================
+
+    return (
+        <View
+            style={[
+                styles.safe,
+                {
+                    paddingTop: insets.top,
+                    paddingBottom: insets.bottom
+                }
+            ]}
+        >
+            <View style={styles.container}>
+
+                {/* =====================================================
                 TOP HEADER
             ====================================================== */}
-            <View style={styles.topHeader}>
+                <View style={styles.topHeader}>
 
-                <View style={styles.brandBox}>
+                    <View style={styles.brandBox}>
 
-                    <Image
-                        source={require("../assets/logo.png")}
-                        style={styles.logoBox}
-                        resizeMode="contain"
-                    />
+                        <Image
+                            source={require("../assets/logo.png")}
+                            style={styles.logoBox}
+                            resizeMode="contain"
+                        />
 
-                    <View style={styles.brandDivider} />
+                        <View style={styles.brandDivider} />
 
-                    <Text style={styles.brandText}>
-                        Attendance
-                    </Text>
-
-                </View>
-
-
-                <View style={styles.profileBox}>
-
-                    <Text style={styles.profileText}>
-                        {currentUser?.name || "Instructor"}
-                    </Text>
-
-                    <View style={styles.profileDivider} />
-
-                    <Ionicons
-                        name="person-outline"
-                        size={23}
-                        color={Colors.textSecondary}
-                    />
-
-                    <TouchableOpacity
-                        onPress={() => {
-                            localStorage.removeItem("access_token");
-                            localStorage.removeItem("user");
-                            router.replace("/loginInstructor");
-                        }}
-                    >
-                        <Text style={styles.logoutText}>
-                            Logout
+                        <Text style={styles.brandText}>
+                            Attendance
                         </Text>
-                    </TouchableOpacity>
+
+                    </View>
+
+
+                    <View style={styles.profileBox}>
+
+                        <Text style={styles.profileText}>
+                            {currentUser?.name || "Instructor"}
+                        </Text>
+
+                        <View style={styles.profileDivider} />
+
+                        <Ionicons
+                            name="person-outline"
+                            size={23}
+                            color={Colors.textSecondary}
+                        />
+
+                        <TouchableOpacity
+                            onPress={() => {
+                                localStorage.removeItem("access_token");
+                                localStorage.removeItem("user");
+                                router.replace("/loginInstructor");
+                            }}
+                        >
+                            <Text style={styles.logoutText}>
+                                Logout
+                            </Text>
+                        </TouchableOpacity>
+
+                    </View>
 
                 </View>
 
-            </View>
 
+                <ScrollView
+                    contentContainerStyle={styles.pageContent}
+                >
 
-            <ScrollView
-                contentContainerStyle={styles.pageContent}
-            >
-
-                {/* =================================================
+                    {/* =================================================
                     PAGE HEADING
                 ================================================== */}
-                <View style={styles.pageHeading}>
+                    <View style={styles.pageHeading}>
 
-                    <Text style={styles.dashboardTitle}>
-                        Instructor Dashboard
-                    </Text>
+                        <Text style={styles.dashboardTitle}>
+                            Instructor Dashboard
+                        </Text>
 
-                    <Text style={styles.dashboardSubtitle}>
-                        Manage your class attendance.
-                    </Text>
-
-                </View>
-
-
-                {/* =================================================
-                    SESSION SETUP
-                ================================================== */}
-                <View style={styles.sessionSetupCard}>
-
-                    <Text style={styles.sectionTitle}>
-                        Session setup
-                    </Text>
-
-
-                    {/* Course / Room / Date / Radius */}
-                    <View style={styles.setupFieldsRow}>
-
-                        {/* Course */}
-                        <View style={styles.infoSection}>
-
-                            <Text style={styles.infoLabel}>
-                                Course
-                            </Text>
-
-                            <TouchableOpacity
-                                style={styles.dropdownButton}
-                                onPress={() => toggleDropdown(1)}
-                            >
-                                <Text
-                                    style={styles.buttonText}
-                                    numberOfLines={1}
-                                >
-                                    {selectedCourse
-                                        ? `${selectedCourse.course_code} - ${selectedCourse.course_name}`
-                                        : "Choose Course"}
-                                </Text>
-
-                                <Ionicons
-                                    name="chevron-down"
-                                    size={17}
-                                    color={Colors.textSecondary}
-                                />
-                            </TouchableOpacity>
-
-                            {openDropdown === 1 && (
-                                <View style={styles.dropdownMenu}>
-
-                                    {courses.length === 0 ? (
-
-                                        <View style={styles.dropdownItem}>
-                                            <Text style={styles.itemText}>
-                                                No courses available
-                                            </Text>
-                                        </View>
-
-                                    ) : (
-
-                                        courses.map((course) => (
-
-                                            <TouchableOpacity
-                                                key={course.course_id}
-                                                style={styles.dropdownItem}
-                                                onPress={() => {
-                                                    setSelectedCourse(course);
-                                                    setOpenDropdown(null);
-                                                }}
-                                            >
-                                                <Text style={styles.itemText}>
-                                                    {course.course_code} - {course.course_name}
-                                                </Text>
-                                            </TouchableOpacity>
-
-                                        ))
-
-                                    )}
-
-                                </View>
-                            )}
-
-                        </View>
-
-
-                        {/* Room */}
-                        <View style={styles.infoSection}>
-
-                            <Text style={styles.infoLabel}>
-                                Room
-                            </Text>
-
-                            <TouchableOpacity
-                                style={styles.dropdownButton}
-                                onPress={() => toggleDropdown(2)}
-                            >
-                                <Text
-                                    style={styles.buttonText}
-                                    numberOfLines={1}
-                                >
-                                    {selectedItem2}
-                                </Text>
-
-                                <Ionicons
-                                    name="chevron-down"
-                                    size={17}
-                                    color={Colors.textSecondary}
-                                />
-                            </TouchableOpacity>
-
-                            {openDropdown === 2 && (
-                                <View style={styles.dropdownMenu}>
-
-                                    {allowed_rooms.map((item) => (
-
-                                        <TouchableOpacity
-                                            key={item}
-                                            style={styles.dropdownItem}
-                                            onPress={() => {
-                                                setSelectedItem2(item);
-                                                setOpenDropdown(null);
-                                            }}
-                                        >
-                                            <Text style={styles.itemText}>
-                                                {item}
-                                            </Text>
-                                        </TouchableOpacity>
-
-                                    ))}
-
-                                </View>
-                            )}
-
-                        </View>
-
-
-                        {/* Date */}
-                        <View style={styles.infoSection}>
-
-                            <Text style={styles.infoLabel}>
-                                Date
-                            </Text>
-
-                            <TouchableOpacity
-                                style={styles.dropdownButton}
-                                onPress={() => toggleDropdown(3)}
-                            >
-                                <Text
-                                    style={styles.buttonText}
-                                    numberOfLines={1}
-                                >
-                                    {selectedItem3}
-                                </Text>
-
-                                <Ionicons
-                                    name="calendar-outline"
-                                    size={19}
-                                    color={Colors.textSecondary}
-                                />
-                            </TouchableOpacity>
-
-                            {openDropdown === 3 && (
-                                <View style={styles.dropdownMenu}>
-
-                                    {allowed_dates.map((item) => (
-
-                                        <TouchableOpacity
-                                            key={item}
-                                            style={styles.dropdownItem}
-                                            onPress={() => {
-                                                setSelectedItem3(item);
-                                                setOpenDropdown(null);
-                                            }}
-                                        >
-                                            <Text style={styles.itemText}>
-                                                {item}
-                                            </Text>
-                                        </TouchableOpacity>
-
-                                    ))}
-
-                                </View>
-                            )}
-
-                        </View>
-
-
-                        {/* Radius */}
-                        <View style={styles.infoSection}>
-
-                            <Text style={styles.infoLabel}>
-                                Radius
-                            </Text>
-
-                            <TouchableOpacity
-                                style={styles.dropdownButton}
-                                onPress={() => toggleDropdown(5)}
-                            >
-                                <Text
-                                    style={styles.buttonText}
-                                    numberOfLines={1}
-                                >
-                                    {radiusM} m / {Math.round(radiusM * 3.28084)} ft
-                                </Text>
-
-                                <Ionicons
-                                    name="chevron-down"
-                                    size={17}
-                                    color={Colors.textSecondary}
-                                />
-                            </TouchableOpacity>
-
-                            {openDropdown === 5 && (
-                                <View style={styles.dropdownMenu}>
-
-                                    {allowed_radii.map((radius) => (
-
-                                        <TouchableOpacity
-                                            key={radius}
-                                            style={styles.dropdownItem}
-                                            onPress={() => {
-                                                setRadiusM(radius);
-                                                setOpenDropdown(null);
-                                            }}
-                                        >
-                                            <Text style={styles.itemText}>
-                                                {radius} m / {Math.round(radius * 3.28084)} ft
-                                            </Text>
-                                        </TouchableOpacity>
-
-                                    ))}
-
-                                </View>
-                            )}
-
-                        </View>
+                        <Text style={styles.dashboardSubtitle}>
+                            Manage your class attendance.
+                        </Text>
 
                     </View>
 
 
                     {/* =================================================
-                        LOCATION
-                    ================================================== */}
-                    <View style={styles.locationRow}>
+                    SESSION SETUP
+                ================================================== */}
+                    <View style={styles.sessionSetupCard}>
 
-                        <View style={styles.locationInfoGroup}>
+                        <Text style={styles.sectionTitle}>
+                            Session setup
+                        </Text>
 
-                            <Ionicons
-                                name="location-outline"
-                                size={30}
-                                color={Colors.primary}
-                            />
 
-                            <View style={styles.locationDetails}>
+                        {/* Course / Room / Date / Radius */}
+                        <View style={styles.setupFieldsRow}>
 
-                                <Text style={styles.locationTitle}>
-                                    {selectedGeofence
-                                        ? "Location acquired"
-                                        : locationStatus}
+                            {/* Course */}
+                            <View style={styles.infoSection}>
+
+                                <Text style={styles.infoLabel}>
+                                    Course
                                 </Text>
 
-                                {selectedGeofence && (
-                                    <Text style={styles.locationMeta}>
-                                        Lat: {selectedGeofence.lat.toFixed(6)},{" "}
-                                        {selectedGeofence.lon.toFixed(6)}
-                                        {locationAccuracy !== null
-                                            ? `  |  Accuracy ±${Math.round(locationAccuracy)} m`
-                                            : ""}
+                                <TouchableOpacity
+                                    style={styles.dropdownButton}
+                                    onPress={() => toggleDropdown(1)}
+                                >
+                                    <Text
+                                        style={styles.buttonText}
+                                        numberOfLines={1}
+                                    >
+                                        {selectedCourse
+                                            ? `${selectedCourse.course_code} - ${selectedCourse.course_name}`
+                                            : "Choose Course"}
                                     </Text>
+
+                                    <Ionicons
+                                        name="chevron-down"
+                                        size={17}
+                                        color={Colors.textSecondary}
+                                    />
+                                </TouchableOpacity>
+
+                                {openDropdown === 1 && (
+                                    <View style={styles.dropdownMenu}>
+
+                                        {courses.length === 0 ? (
+
+                                            <View style={styles.dropdownItem}>
+                                                <Text style={styles.itemText}>
+                                                    No courses available
+                                                </Text>
+                                            </View>
+
+                                        ) : (
+
+                                            courses.map((course) => (
+
+                                                <TouchableOpacity
+                                                    key={course.course_id}
+                                                    style={styles.dropdownItem}
+                                                    onPress={() => {
+                                                        setSelectedCourse(course);
+                                                        setOpenDropdown(null);
+                                                    }}
+                                                >
+                                                    <Text style={styles.itemText}>
+                                                        {course.course_code} - {course.course_name}
+                                                    </Text>
+                                                </TouchableOpacity>
+
+                                            ))
+
+                                        )}
+
+                                    </View>
+                                )}
+
+                            </View>
+
+
+                            {/* Room */}
+                            <View style={styles.infoSection}>
+
+                                <Text style={styles.infoLabel}>
+                                    Room
+                                </Text>
+
+                                <TouchableOpacity
+                                    style={styles.dropdownButton}
+                                    onPress={() => toggleDropdown(2)}
+                                >
+                                    <Text
+                                        style={styles.buttonText}
+                                        numberOfLines={1}
+                                    >
+                                        {selectedItem2}
+                                    </Text>
+
+                                    <Ionicons
+                                        name="chevron-down"
+                                        size={17}
+                                        color={Colors.textSecondary}
+                                    />
+                                </TouchableOpacity>
+
+                                {openDropdown === 2 && (
+                                    <View style={styles.dropdownMenu}>
+
+                                        {allowed_rooms.map((item) => (
+
+                                            <TouchableOpacity
+                                                key={item}
+                                                style={styles.dropdownItem}
+                                                onPress={() => {
+                                                    setSelectedItem2(item);
+                                                    setOpenDropdown(null);
+                                                }}
+                                            >
+                                                <Text style={styles.itemText}>
+                                                    {item}
+                                                </Text>
+                                            </TouchableOpacity>
+
+                                        ))}
+
+                                    </View>
+                                )}
+
+                            </View>
+
+
+                            {/* Date */}
+                            <View style={styles.infoSection}>
+
+                                <Text style={styles.infoLabel}>
+                                    Date
+                                </Text>
+
+                                <TouchableOpacity
+                                    style={styles.dropdownButton}
+                                    onPress={() => toggleDropdown(3)}
+                                >
+                                    <Text
+                                        style={styles.buttonText}
+                                        numberOfLines={1}
+                                    >
+                                        {selectedItem3}
+                                    </Text>
+
+                                    <Ionicons
+                                        name="calendar-outline"
+                                        size={19}
+                                        color={Colors.textSecondary}
+                                    />
+                                </TouchableOpacity>
+
+                                {openDropdown === 3 && (
+                                    <View style={styles.dropdownMenu}>
+
+                                        {allowed_dates.map((item) => (
+
+                                            <TouchableOpacity
+                                                key={item}
+                                                style={styles.dropdownItem}
+                                                onPress={() => {
+                                                    setSelectedItem3(item);
+                                                    setOpenDropdown(null);
+                                                }}
+                                            >
+                                                <Text style={styles.itemText}>
+                                                    {item}
+                                                </Text>
+                                            </TouchableOpacity>
+
+                                        ))}
+
+                                    </View>
+                                )}
+
+                            </View>
+
+
+                            {/* Radius */}
+                            <View style={styles.infoSection}>
+
+                                <Text style={styles.infoLabel}>
+                                    Radius
+                                </Text>
+
+                                <TouchableOpacity
+                                    style={styles.dropdownButton}
+                                    onPress={() => toggleDropdown(5)}
+                                >
+                                    <Text
+                                        style={styles.buttonText}
+                                        numberOfLines={1}
+                                    >
+                                        {radiusM} m / {Math.round(radiusM * 3.28084)} ft
+                                    </Text>
+
+                                    <Ionicons
+                                        name="chevron-down"
+                                        size={17}
+                                        color={Colors.textSecondary}
+                                    />
+                                </TouchableOpacity>
+
+                                {openDropdown === 5 && (
+                                    <View style={styles.dropdownMenu}>
+
+                                        {allowed_radii.map((radius) => (
+
+                                            <TouchableOpacity
+                                                key={radius}
+                                                style={styles.dropdownItem}
+                                                onPress={() => {
+                                                    setRadiusM(radius);
+                                                    setOpenDropdown(null);
+                                                }}
+                                            >
+                                                <Text style={styles.itemText}>
+                                                    {radius} m / {Math.round(radius * 3.28084)} ft
+                                                </Text>
+                                            </TouchableOpacity>
+
+                                        ))}
+
+                                    </View>
                                 )}
 
                             </View>
@@ -960,383 +937,419 @@ export default function InstructorDashboard() {
                         </View>
 
 
-                        <TouchableOpacity
-                            style={styles.locationButton}
-                            onPress={getInstructorLocation}
-                            disabled={sessionActive}
-                        >
-                            <Text style={styles.locationButtonText}>
-                                Use current location
-                            </Text>
-                        </TouchableOpacity>
-
-
-                        <View style={styles.locationDivider} />
-
-
-                        <Text style={styles.geofenceDisclaimer}>
-                            Adjust the radius to fit your classroom.
-                        </Text>
-
-                    </View>
-
-
-                    {/* =================================================
-                        SESSION CONTROLS
+                        {/* =================================================
+                        LOCATION
                     ================================================== */}
-                    <View style={styles.sessionControlsRow}>
+                        <View style={styles.locationRow}>
 
-                        <TouchableOpacity
-                            style={[
-                                styles.startButton,
-                                (
-                                    sessionActive ||
-                                    !selectedGeofence ||
-                                    !selectedCourse
-                                ) &&
-                                styles.disabledButton
-                            ]}
-                            onPress={startSession}
-                            disabled={
-                                sessionActive ||
-                                !selectedGeofence ||
-                                !selectedCourse
-                            }
-                        >
-                            <Text style={styles.sessionButtonText}>
-                                Start session
-                            </Text>
-                        </TouchableOpacity>
+                            <View style={styles.locationInfoGroup}>
 
+                                <Ionicons
+                                    name="location-outline"
+                                    size={30}
+                                    color={Colors.primary}
+                                />
 
-                        <TouchableOpacity
-                            style={[
-                                styles.endButton,
-                                !sessionActive &&
-                                styles.disabledButton
-                            ]}
-                            onPress={endSession}
-                            disabled={!sessionActive}
-                        >
-                            <Text style={styles.endSessionButtonText}>
-                                End session
-                            </Text>
-                        </TouchableOpacity>
+                                <View style={styles.locationDetails}>
 
+                                    <Text style={styles.locationTitle}>
+                                        {selectedGeofence
+                                            ? "Location acquired"
+                                            : locationStatus}
+                                    </Text>
 
-                        <View style={styles.sessionStatusBox}>
-
-                            <View
-                                style={[
-                                    styles.sessionStatusDot,
-                                    sessionActive &&
-                                    styles.sessionStatusDotActive
-                                ]}
-                            />
-
-                            <Text style={styles.sessionStatusText}>
-                                {sessionStatus}
-                            </Text>
-
-                        </View>
-
-                    </View>
-
-                </View>
-
-
-                {/* =================================================
-                    ATTENDANCE
-                ================================================== */}
-                <View style={styles.attendanceHeader}>
-
-                    <View>
-                        <Text style={styles.attendanceTitle}>
-                            Attendance
-                        </Text>
-
-                        <Text style={styles.attendanceCount}>
-                            {students.length}{" "}
-                            {students.length === 1
-                                ? "student"
-                                : "students"}
-                        </Text>
-                    </View>
-
-
-                    <View style={styles.attendanceActions}>
-
-                        <TouchableOpacity
-                            style={styles.smallButton}
-                            onPress={() => loadCheckins(true)}
-                        >
-                            <Feather
-                                name="refresh-ccw"
-                                size={19}
-                                color={Colors.primary}
-                            />
-
-                            <Text style={styles.smallButtonText}>
-                                Refresh
-                            </Text>
-                        </TouchableOpacity>
-
-
-                        <TouchableOpacity
-                            style={styles.smallButton}
-                            onPress={downloadCSVFile}
-                        >
-                            <Ionicons
-                                name="download-outline"
-                                size={19}
-                                color={Colors.primary}
-                            />
-
-                            <Text style={styles.smallButtonText}>
-                                Export CSV
-                            </Text>
-                        </TouchableOpacity>
-
-                    </View>
-
-                </View>
-
-
-                {/* =================================================
-                    TABLE
-                ================================================== */}
-                <View style={styles.tableContainer}>
-
-                    <View style={styles.tableHeaderRow}>
-
-                        <Text
-                            style={[
-                                styles.tableHeaderText,
-                                styles.colStudent
-                            ]}
-                        >
-                            STUDENT
-                        </Text>
-
-                        <Text
-                            style={[
-                                styles.tableHeaderText,
-                                styles.colTime
-                            ]}
-                        >
-                            FIRST ENTRY TIME
-                        </Text>
-
-                        <Text
-                            style={[
-                                styles.tableHeaderText,
-                                styles.colTime
-                            ]}
-                        >
-                            LATEST ENTRY TIME
-                        </Text>
-
-                        <Text
-                            style={[
-                                styles.tableHeaderText,
-                                styles.colTime
-                            ]}
-                        >
-                            LATEST EXIT TIME
-                        </Text>
-
-                        <Text
-                            style={[
-                                styles.tableHeaderText,
-                                styles.colTime
-                            ]}
-                        >
-                            TOTAL TIME IN CLASS
-                        </Text>
-
-                        <Text
-                            style={[
-                                styles.tableHeaderText,
-                                styles.colStatus
-                            ]}
-                        >
-                            STATUS
-                        </Text>
-
-                        <Text
-                            style={[
-                                styles.tableHeaderText,
-                                styles.colAction
-                            ]}
-                        >
-                            ACTION
-                        </Text>
-
-                    </View>
-
-
-                    {loading ? (
-
-                        <Text style={styles.loadingText}>
-                            Loading attendance...
-                        </Text>
-
-                    ) : students.length === 0 ? (
-
-                        <Text style={styles.loadingText}>
-                            No attendance records found.
-                        </Text>
-
-                    ) : (
-
-                        students.map((student, index) => (
-
-                            <View
-                                key={index}
-                                style={styles.tableRow}
-                            >
-
-                                <Text
-                                    style={[
-                                        styles.tableCellText,
-                                        styles.colStudent,
-                                        student.name === EMPTY_CELL &&
-                                        styles.studentNameText
-                                    ]}
-                                >
-                                    {student.name}
-                                </Text>
-
-                                <Text
-                                    style={[
-                                        styles.tableCellText,
-                                        styles.colTime,
-                                        student.firstentrytime === EMPTY_CELL && 
-                                        styles.placeholderText
-                                    ]}
-                                >
-                                    {student.firstentrytime}
-                                </Text>
-
-                                <Text
-                                    style={[
-                                        styles.tableCellText,
-                                        styles.colTime,
-                                        student.entrytime === EMPTY_CELL && 
-                                        styles.placeholderText
-                                    ]}
-                                >
-                                    {student.entrytime}
-                                </Text>
-
-                                <Text
-                                    style={[
-                                        styles.tableCellText,
-                                        styles.colTime,
-                                        student.exittime === EMPTY_CELL && 
-                                        styles.placeholderText
-                                    ]}
-                                >
-                                    {student.exittime}
-                                </Text>
-
-                                <Text
-                                    style={[
-                                        styles.tableCellText,
-                                        styles.colTime,
-                                        student.totaltime === EMPTY_CELL &&
-                                        styles.placeholderText
-                                    ]}
-                                >
-                                    {student.totaltime}
-                                </Text>
-
-                                <View style={styles.colStatus}>
-
-                                    <View
-                                        style={[
-                                            styles.statusBadge,
-                                            student.status === "Present" &&
-                                            styles.presentBadge,
-
-                                            student.status === "Absent" &&
-                                            styles.absentBadge,
-
-                                            student.status === "Late" &&
-                                            styles.lateBadge
-                                        ]}
-                                    >
-                                        <Text
-                                            style={[
-                                                styles.statusBadgeText,
-                                                getStatusStyle(student.status)
-                                            ]}
-                                        >
-                                            {student.status}
+                                    {selectedGeofence && (
+                                        <Text style={styles.locationMeta}>
+                                            Lat: {selectedGeofence.lat.toFixed(6)},{" "}
+                                            {selectedGeofence.lon.toFixed(6)}
+                                            {locationAccuracy !== null
+                                                ? `  |  Accuracy ±${Math.round(locationAccuracy)} m`
+                                                : ""}
                                         </Text>
-                                    </View>
-
-                                </View>
-
-
-                                <View style={styles.colAction}>
-
-                                    <TouchableOpacity
-                                        onPress={() =>
-                                            router.push({
-                                                pathname: "/overrideInstructor",
-                                                params: {
-                                                    course: selectedCourse
-                                                        ? selectedCourse.course_code
-                                                        : "",
-                                                    room: selectedItem2,
-                                                    date: selectedItem3,
-                                                    student: student.name,
-                                                    student_id: String(student.student_id)
-                                                }
-                                            })
-                                        }
-                                    >
-                                        <Text style={styles.overrideLink}>
-                                            Override
-                                        </Text>
-                                    </TouchableOpacity>
+                                    )}
 
                                 </View>
 
                             </View>
 
-                        ))
 
-                    )}
+                            <TouchableOpacity
+                                style={styles.locationButton}
+                                onPress={getInstructorLocation}
+                                disabled={sessionActive}
+                            >
+                                <Text style={styles.locationButtonText}>
+                                    Use current location
+                                </Text>
+                            </TouchableOpacity>
 
-                </View>
+
+                            <View style={styles.locationDivider} />
 
 
-                {/* =================================================
+                            <Text style={styles.geofenceDisclaimer}>
+                                Adjust the radius to fit your classroom.
+                            </Text>
+
+                        </View>
+
+
+                        {/* =================================================
+                        SESSION CONTROLS
+                    ================================================== */}
+                        <View style={styles.sessionControlsRow}>
+
+                            <TouchableOpacity
+                                style={[
+                                    styles.startButton,
+                                    (
+                                        sessionActive ||
+                                        !selectedGeofence ||
+                                        !selectedCourse
+                                    ) &&
+                                    styles.disabledButton
+                                ]}
+                                onPress={startSession}
+                                disabled={
+                                    sessionActive ||
+                                    !selectedGeofence ||
+                                    !selectedCourse
+                                }
+                            >
+                                <Text style={styles.sessionButtonText}>
+                                    Start session
+                                </Text>
+                            </TouchableOpacity>
+
+
+                            <TouchableOpacity
+                                style={[
+                                    styles.endButton,
+                                    !sessionActive &&
+                                    styles.disabledButton
+                                ]}
+                                onPress={endSession}
+                                disabled={!sessionActive}
+                            >
+                                <Text style={styles.endSessionButtonText}>
+                                    End session
+                                </Text>
+                            </TouchableOpacity>
+
+
+                            <View style={styles.sessionStatusBox}>
+
+                                <View
+                                    style={[
+                                        styles.sessionStatusDot,
+                                        sessionActive &&
+                                        styles.sessionStatusDotActive
+                                    ]}
+                                />
+
+                                <Text style={styles.sessionStatusText}>
+                                    {sessionStatus}
+                                </Text>
+
+                            </View>
+
+                        </View>
+
+                    </View>
+
+
+                    {/* =================================================
+                    ATTENDANCE
+                ================================================== */}
+                    <View style={styles.attendanceHeader}>
+
+                        <View>
+                            <Text style={styles.attendanceTitle}>
+                                Attendance
+                            </Text>
+
+                            <Text style={styles.attendanceCount}>
+                                {students.length}{" "}
+                                {students.length === 1
+                                    ? "student"
+                                    : "students"}
+                            </Text>
+                        </View>
+
+
+                        <View style={styles.attendanceActions}>
+
+                            <TouchableOpacity
+                                style={styles.smallButton}
+                                onPress={() => loadCheckins(true)}
+                            >
+                                <Feather
+                                    name="refresh-ccw"
+                                    size={19}
+                                    color={Colors.primary}
+                                />
+
+                                <Text style={styles.smallButtonText}>
+                                    Refresh
+                                </Text>
+                            </TouchableOpacity>
+
+
+                            <TouchableOpacity
+                                style={styles.smallButton}
+                                onPress={downloadCSVFile}
+                            >
+                                <Ionicons
+                                    name="download-outline"
+                                    size={19}
+                                    color={Colors.primary}
+                                />
+
+                                <Text style={styles.smallButtonText}>
+                                    Export CSV
+                                </Text>
+                            </TouchableOpacity>
+
+                        </View>
+
+                    </View>
+
+
+                    {/* =================================================
+                    TABLE
+                ================================================== */}
+                    <View style={styles.tableContainer}>
+
+                        <View style={styles.tableHeaderRow}>
+
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colStudent
+                                ]}
+                            >
+                                STUDENT
+                            </Text>
+
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                                FIRST ENTRY TIME
+                            </Text>
+
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                                LATEST ENTRY TIME
+                            </Text>
+
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                                LATEST EXIT TIME
+                            </Text>
+
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colTime
+                                ]}
+                            >
+                                TOTAL TIME IN CLASS
+                            </Text>
+
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colStatus
+                                ]}
+                            >
+                                STATUS
+                            </Text>
+
+                            <Text
+                                style={[
+                                    styles.tableHeaderText,
+                                    styles.colAction
+                                ]}
+                            >
+                                ACTION
+                            </Text>
+
+                        </View>
+
+
+                        {loading ? (
+
+                            <Text style={styles.loadingText}>
+                                Loading attendance...
+                            </Text>
+
+                        ) : students.length === 0 ? (
+
+                            <Text style={styles.loadingText}>
+                                No attendance records found.
+                            </Text>
+
+                        ) : (
+
+                            students.map((student, index) => (
+
+                                <View
+                                    key={index}
+                                    style={styles.tableRow}
+                                >
+
+                                    <Text
+                                        style={[
+                                            styles.tableCellText,
+                                            styles.colStudent,
+                                            student.name === EMPTY_CELL &&
+                                            styles.studentNameText
+                                        ]}
+                                    >
+                                        {student.name}
+                                    </Text>
+
+                                    <Text
+                                        style={[
+                                            styles.tableCellText,
+                                            styles.colTime,
+                                            student.firstentrytime === EMPTY_CELL &&
+                                            styles.placeholderText
+                                        ]}
+                                    >
+                                        {student.firstentrytime}
+                                    </Text>
+
+                                    <Text
+                                        style={[
+                                            styles.tableCellText,
+                                            styles.colTime,
+                                            student.entrytime === EMPTY_CELL &&
+                                            styles.placeholderText
+                                        ]}
+                                    >
+                                        {student.entrytime}
+                                    </Text>
+
+                                    <Text
+                                        style={[
+                                            styles.tableCellText,
+                                            styles.colTime,
+                                            student.exittime === EMPTY_CELL &&
+                                            styles.placeholderText
+                                        ]}
+                                    >
+                                        {student.exittime}
+                                    </Text>
+
+                                    <Text
+                                        style={[
+                                            styles.tableCellText,
+                                            styles.colTime,
+                                            student.totaltime === EMPTY_CELL &&
+                                            styles.placeholderText
+                                        ]}
+                                    >
+                                        {student.totaltime}
+                                    </Text>
+
+                                    <View style={styles.colStatus}>
+
+                                        <View
+                                            style={[
+                                                styles.statusBadge,
+                                                student.status === "Present" &&
+                                                styles.presentBadge,
+
+                                                student.status === "Absent" &&
+                                                styles.absentBadge,
+
+                                                student.status === "Late" &&
+                                                styles.lateBadge
+                                            ]}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.statusBadgeText,
+                                                    getStatusStyle(student.status)
+                                                ]}
+                                            >
+                                                {student.status}
+                                            </Text>
+                                        </View>
+
+                                    </View>
+
+
+                                    <View style={styles.colAction}>
+
+                                        <TouchableOpacity
+                                            onPress={() =>
+                                                router.push({
+                                                    pathname: "/overrideInstructor",
+                                                    params: {
+                                                        course: selectedCourse
+                                                            ? selectedCourse.course_code
+                                                            : "",
+                                                        room: selectedItem2,
+                                                        date: selectedItem3,
+                                                        student: student.name,
+                                                        student_id: String(student.student_id)
+                                                    }
+                                                })
+                                            }
+                                        >
+                                            <Text style={styles.overrideLink}>
+                                                Override
+                                            </Text>
+                                        </TouchableOpacity>
+
+                                    </View>
+
+                                </View>
+
+                            ))
+
+                        )}
+
+                    </View>
+
+
+                    {/* =================================================
                     FOOTER
                 ================================================== */}
-                <View style={styles.footer}>
+                    <View style={styles.footer}>
 
-                    <Text style={styles.footerText}>
-                        University of North Texas
-                    </Text>
+                        <Text style={styles.footerText}>
+                            University of North Texas
+                        </Text>
 
-                    <Text style={styles.footerDot}>
-                        •
-                    </Text>
+                        <Text style={styles.footerDot}>
+                            •
+                        </Text>
 
-                    <Text style={styles.footerText}>
-                        Biometric Attendance
-                    </Text>
+                        <Text style={styles.footerText}>
+                            Biometric Attendance
+                        </Text>
 
-                </View>
+                    </View>
 
-            </ScrollView>
+                </ScrollView>
 
+            </View>
         </View>
-    </View>
-);
+    );
 }
 
 
@@ -1598,7 +1611,7 @@ const styles = StyleSheet.create({
         alignItems: "center",
 
         gap: 14
-        
+
     },
 
     locationDetails: {
@@ -1821,7 +1834,7 @@ const styles = StyleSheet.create({
         color: Colors.textSecondary,
         fontSize: 12,
         fontWeight: "800",
-        
+
         paddingHorizontal: 20,
 
         display: "flex",
@@ -1837,7 +1850,7 @@ const styles = StyleSheet.create({
         backgroundColor: Colors.surface
     },
 
-    tableCellText:{
+    tableCellText: {
         color: Colors.textPrimary,
         fontSize: 14,
 
@@ -1865,14 +1878,14 @@ const styles = StyleSheet.create({
         borderRightColor: Colors.tableBorder
     },
 
-    colTime:{
+    colTime: {
         flex: 1.1,
 
         borderRightWidth: 1,
         borderRightColor: Colors.tableBorder
     },
 
-    colStatus:{
+    colStatus: {
         flex: 0.85,
 
         justifyContent: "center",

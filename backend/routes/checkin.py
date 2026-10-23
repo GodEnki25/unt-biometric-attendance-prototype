@@ -13,6 +13,71 @@ from backend.services.token_service import get_current_user, require_instructor
 
 router = APIRouter()
 
+def calculate_attendance_times(cursor, attendance_id, session_end=None):
+    if attendance_id is None:
+        return {
+            "first_check_in_time": None,
+            "latest_entry_time": None,
+            "latest_exit_time": None,
+            "total_time": None,
+        }
+
+    cursor.execute(
+        """
+        SELECT event_type, event_time
+        FROM geofence_status_changes
+        WHERE attendance_id = ?
+        ORDER BY event_time ASC, status_change_id ASC
+        """,
+        (attendance_id,),
+    )
+
+    events = cursor.fetchall()
+
+    first_entry = None
+    latest_entry = None
+    latest_exit = None
+    inside_since = None
+    total_seconds = 0
+
+    for event in events:
+        event_type = event["event_type"]
+        event_time = datetime.strptime(
+            event["event_time"], "%Y-%m-%d %H:%M:%S"
+        )
+
+        if event_type in ("ENTER", "REENTER"):
+            if first_entry is None:
+                first_entry = event["event_time"]
+
+            if inside_since is None:
+                inside_since = event_time
+
+            latest_entry = event["event_time"]
+
+        elif event_type == "EXIT":
+            if inside_since is not None:
+                total_seconds += max(
+                    0, (event_time - inside_since).total_seconds()
+                )
+                inside_since = None
+
+            latest_exit = event["event_time"]
+
+    if inside_since is not None:
+        end = session_end or datetime.now(CENTRAL_TZ).replace(tzinfo=None)
+        total_seconds += max(0, (end - inside_since).total_seconds())
+
+    total_seconds = int(total_seconds)
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+
+    return {
+        "first_check_in_time": first_entry,
+        "latest_entry_time": latest_entry,
+        "latest_exit_time": latest_exit,
+        "total_time": f"{hours:02d}:{minutes:02d}:{seconds:02d}",
+    }
 
 # =========================
 # CREATE SESSION
@@ -275,8 +340,6 @@ async def checkin(
             "status": status,
             "face_verified": True,
             "location_verified": True,
-            #"confidence": confidence,
-            #"faces_detected": faces_detected,
             "radius_m": ACTIVE_SESSION["radius_m"],
             "accuracy_buffer_m": accuracy_buffer_m,
             "allowed_radius_m": allowed_radius_m,
@@ -343,9 +406,11 @@ def get_checkins(
         session_course = cursor.fetchone()
 
         if not session_course:
-            return[]
+            return []
 
         course_id = session_course["course_id"]
+
+
 
         # Get every enrolled student and their attendance
         # record for this specific session only.
@@ -376,12 +441,43 @@ def get_checkins(
                 AND u.role = 'student'
             ORDER BY u.full_name
             """,
-            (session_id, course_id,),
+            (session_id, course_id),
         )
 
         records = cursor.fetchall()
 
-        return [dict(row) for row in records]
+        cursor.execute(
+            """
+            SELECT session_date, end_time
+            FROM attendance_sessions
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        session = cursor.fetchone()
+
+        session_end = None
+        if session and session["end_time"]:
+            session_end = datetime.strptime(
+                f'{session["session_date"]} {session["end_time"]}',
+                "%Y-%m-%d %H:%M:%S",
+            )
+
+        results = []
+
+        for row in records:
+            record = dict(row)
+
+            times = calculate_attendance_times(
+                cursor,
+                record["attendance_id"],
+                session_end,
+            )
+
+            record.update(times)
+            results.append(record)
+
+        return results
 
     finally:
         conn.close()
