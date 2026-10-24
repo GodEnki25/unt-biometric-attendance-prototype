@@ -1,271 +1,302 @@
 
-import random
-import time
-
-import cv2
 import numpy as np
-import mediapipe as mp
+
+from biometrics.backend.detection.detection_layer import detect_faces
+from biometrics.backend.enrollment.enrollment_layer import extract_periocular_embedding
+from biometrics.backend.liveness.liveness_layer import LivenessSession
 
 
-CHALLENGE_SECONDS = 12.0
-CHALLENGE_COUNT = 2
-
-BLINK_CLOSED = 0.18
-BLINK_OPEN = 0.23
-
-MOUTH_CLOSED = 0.10
-MOUTH_OPEN = 0.28
-
-TURN_DELTA = 0.10
-
-LEFT_EYE = (33, 160, 158, 133, 153, 144)
-RIGHT_EYE = (362, 385, 387, 263, 373, 380)
+EMBEDDING_DIM = 512
+MIN_NORM = 1e-8
 
 
-def distance(a, b):
-    return float(
-        np.hypot(
-            a.x - b.x,
-            a.y - b.y
-        )
-    )
-
-
-def eye_ratio(landmarks, indices):
-    p = [landmarks[i] for i in indices]
-
-    width = distance(p[0], p[3])
-
-    if width < 1e-6:
-        return 0.0
-
-    return (
-        distance(p[1], p[5]) +
-        distance(p[2], p[4])
-    ) / (2 * width)
-
-
-def facial_metrics(landmarks):
-    eyes = (
-        eye_ratio(landmarks, LEFT_EYE) +
-        eye_ratio(landmarks, RIGHT_EYE)
-    ) / 2
-
-    mouth_width = distance(
-        landmarks[61],
-        landmarks[291]
-    )
-
-    mouth = distance(
-        landmarks[13],
-        landmarks[14]
-    ) / max(mouth_width, 1e-6)
-
-    eye_a = landmarks[33]
-    eye_b = landmarks[263]
-    nose = landmarks[1]
-
-    center = (
-        eye_a.x + eye_b.x
-    ) / 2
-
-    yaw = (
-        nose.x - center
-    ) / max(
-        abs(eye_b.x - eye_a.x),
-        1e-6
-    )
-
-    return eyes, mouth, yaw
-
-
-class LivenessSession:
+class Verifier:
 
     def __init__(
         self,
-        duration=CHALLENGE_SECONDS
+        stored_embedding,
+        threshold=0.75,
+        stored_periocular_embedding=None
     ):
-        self.duration = duration
 
-        self.actions = random.SystemRandom().sample(
-            [
-                "blink",
-                "open_mouth",
-                "turn_head"
-            ],
-            CHALLENGE_COUNT
+        self.stored_embeddings = self.normalize_embeddings(
+            stored_embedding,
+            dimension=EMBEDDING_DIM
         )
 
-        self.started = time.monotonic()
+        if self.stored_embeddings.shape[0] not in (1, 3):
+            raise ValueError(
+                "Expected one or three full-face embeddings."
+            )
 
-        self.index = 0
+        self.stored_periocular_embeddings = None
 
-        self.neutral_yaw = None
+        if stored_periocular_embedding is not None:
+            self.stored_periocular_embeddings = (
+                self.normalize_embeddings(
+                    stored_periocular_embedding
+                )
+            )
 
-        self.eye_open_seen = False
-        self.eye_closed_seen = False
+            if self.stored_periocular_embeddings.shape[0] != 3:
+                raise ValueError(
+                    "Expected three periocular embeddings."
+                )
 
-        self.mouth_closed_seen = False
+        self.threshold = threshold
+        self.counter = 0
+        self.required_matches = 3
 
-        self.confirmation = 0
+        self.liveness = None
+        self.liveness_passed = False
+        self.finished = False
 
-        self.mesh = mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=2,
-            refine_landmarks=True,
-            min_detection_confidence=0.5
+    @staticmethod
+    def normalize_embeddings(embeddings, dimension=None):
+
+        vectors = np.asarray(
+            embeddings,
+            dtype=np.float32
         )
+
+        if vectors.ndim == 1:
+            vectors = vectors.reshape(1, -1)
+
+        if vectors.ndim != 2:
+            raise ValueError(
+                "Invalid embedding dimensions."
+            )
+
+        if (
+            dimension is not None
+            and vectors.shape[1] != dimension
+        ):
+            raise ValueError(
+                "Incorrect embedding dimension."
+            )
+
+        if vectors.shape[1] == 0:
+            raise ValueError(
+                "Empty embedding."
+            )
+
+        if not np.isfinite(vectors).all():
+            raise ValueError(
+                "Embedding contains invalid values."
+            )
+
+        norms = np.linalg.norm(
+            vectors,
+            axis=1
+        )
+
+        if np.any(norms <= MIN_NORM):
+            raise ValueError(
+                "Invalid embedding norm."
+            )
+
+        return np.ascontiguousarray(
+            vectors / norms[:, None],
+            dtype=np.float32
+        )
+
+    @staticmethod
+    def compare_embeddings(stored, live):
+
+        if stored.shape[1] != live.shape[0]:
+            raise ValueError(
+                "Embedding dimensions do not match."
+            )
+
+        return float(
+            np.max(stored @ live)
+        )
+
+    def cosine_similarity(self, live_embedding):
+
+        live = self.normalize_embeddings(
+            live_embedding,
+            dimension=EMBEDDING_DIM
+        )[0]
+
+        return self.compare_embeddings(
+            self.stored_embeddings,
+            live
+        )
+
+    def periocular_similarity(self, frame, face):
+
+        if self.stored_periocular_embeddings is None:
+            return None
+
+        live_embedding = extract_periocular_embedding(
+            frame,
+            face
+        )
+
+        if live_embedding is None:
+            return None
+
+        try:
+            live = self.normalize_embeddings(
+                live_embedding
+            )[0]
+
+            return self.compare_embeddings(
+                self.stored_periocular_embeddings,
+                live
+            )
+
+        except ValueError:
+            return None
 
     def close(self):
-        self.mesh.close()
 
-    def current_action(self):
-        if self.index < len(self.actions):
-            return self.actions[self.index]
-
-        return None
-
-    def progress(self):
-        remaining = max(
-            0,
-            self.duration - (
-                time.monotonic() - self.started
-            )
-        )
-
-        return {
-            "status": "liveness_pending",
-            "action": self.current_action(),
-            "step": self.index + 1,
-            "total_steps": len(self.actions),
-            "seconds_remaining": round(
-                remaining,
-                1
-            )
-        }
+        if self.liveness is not None:
+            self.liveness.close()
+            self.liveness = None
 
     def process(self, frame):
 
-        if (
-            time.monotonic() - self.started
-            > self.duration
-        ):
+        if self.finished:
             return {
                 "status": "liveness_failed",
-                "reason": "timeout"
+                "reason": "session_finished"
             }
 
-        if (
-            frame is None
-            or not isinstance(frame, np.ndarray)
-            or frame.ndim != 3
-            or frame.shape[2] != 3
-        ):
+        if frame is None or frame.size == 0:
+            self.counter = 0
+
             return {
-                **self.progress(),
-                "reason": "invalid_frame"
+                "status": "no_face_detected"
             }
 
-        rgb = cv2.cvtColor(
-            frame,
-            cv2.COLOR_BGR2RGB
-        )
-
-        result = self.mesh.process(rgb)
-
-        faces = result.multi_face_landmarks or []
+        faces = detect_faces(frame)
 
         if len(faces) != 1:
+            self.counter = 0
+
             return {
-                **self.progress(),
-                "reason": "one_face_required"
+                "status": "no_face_detected"
             }
 
-        eyes, mouth, yaw = facial_metrics(
-            faces[0].landmark
+        face = faces[0]
+
+        live_embedding = getattr(
+            face,
+            "normed_embedding",
+            None
         )
 
-        if not np.isfinite(
-            [eyes, mouth, yaw]
-        ).all():
+        if live_embedding is None:
+            self.counter = 0
+
             return {
-                **self.progress(),
-                "reason": "landmark_error"
+                "status": "face_not_matched",
+                "confidence": 0.0
             }
 
-        action = self.current_action()
-        completed = False
+        try:
+            face_score = self.cosine_similarity(
+                live_embedding
+            )
 
-        if action == "blink":
+        except ValueError:
+            self.counter = 0
 
-            if eyes >= BLINK_OPEN:
+            return {
+                "status": "face_not_matched",
+                "confidence": 0.0
+            }
 
-                self.eye_open_seen = True
+        eye_score = self.periocular_similarity(
+            frame,
+            face
+        )
 
-                if self.eye_closed_seen:
-                    completed = True
+        scores = {
+            "confidence": face_score,
+            "periocular_confidence": eye_score
+        }
 
-            elif (
-                eyes <= BLINK_CLOSED
-                and self.eye_open_seen
-            ):
-                self.eye_closed_seen = True
+        if face_score < self.threshold:
+            self.counter = 0
 
-        elif action == "open_mouth":
+            return {
+                "status": "face_not_matched",
+                **scores
+            }
 
-            if mouth <= MOUTH_CLOSED:
-                self.mouth_closed_seen = True
+        self.counter += 1
 
-            if (
-                self.mouth_closed_seen
-                and mouth >= MOUTH_OPEN
-            ):
-                self.confirmation += 1
+        if self.liveness_passed:
+            if self.counter >= self.required_matches:
+                self.finished = True
 
-                completed = (
-                    self.confirmation >= 2
-                )
-
-            elif mouth < MOUTH_OPEN:
-                self.confirmation = 0
-
-        elif action == "turn_head":
-
-            if self.neutral_yaw is None:
-                self.neutral_yaw = yaw
-
-            elif (
-                abs(
-                    yaw - self.neutral_yaw
-                ) >= TURN_DELTA
-            ):
-                self.confirmation += 1
-
-                completed = (
-                    self.confirmation >= 2
-                )
-
-            else:
-                self.confirmation = 0
-
-        if completed:
-
-            self.index += 1
-
-            self.neutral_yaw = None
-
-            self.eye_open_seen = False
-            self.eye_closed_seen = False
-
-            self.mouth_closed_seen = False
-
-            self.confirmation = 0
-
-            if self.index == len(
-                self.actions
-            ):
                 return {
-                    "status": "liveness_passed"
+                    "status": "verified",
+                    **scores
                 }
 
-        return self.progress()
+            return {
+                "status": "scanning",
+                **scores,
+                "matches": self.counter,
+                "required": self.required_matches
+            }
+
+        if self.liveness is None:
+            self.liveness = LivenessSession()
+
+        try:
+            liveness_result = self.liveness.process(
+                frame
+            )
+
+        except Exception:
+            self.counter = 0
+            self.finished = True
+            self.close()
+            raise
+
+        liveness_status = liveness_result.get(
+            "status"
+        )
+
+        if liveness_status == "liveness_failed":
+            self.counter = 0
+            self.finished = True
+            self.close()
+
+            return {
+                **liveness_result,
+                **scores
+            }
+
+        if liveness_status == "liveness_passed":
+            self.liveness_passed = True
+            self.close()
+
+            if self.counter >= self.required_matches:
+                self.finished = True
+
+                return {
+                    "status": "verified",
+                    **scores,
+                    "liveness": "passed"
+                }
+
+            return {
+                "status": "scanning",
+                **scores,
+                "matches": self.counter,
+                "required": self.required_matches,
+                "liveness": "passed"
+            }
+
+        return {
+            **liveness_result,
+            **scores,
+            "matches": self.counter,
+            "required": self.required_matches
+        }

@@ -6,7 +6,10 @@ import cv2
 import numpy as np
 from fastapi import APIRouter, Depends, File, UploadFile
 
-from backend.database.biometric_db import get_face_embedding
+from backend.database.biometric_db import (
+    get_face_embedding,
+    get_periocular_embedding
+)
 from backend.services.token_service import get_current_user
 from biometrics.backend.enrollment.enrollment_layer import EnrollmentManager
 from biometrics.backend.verification.verification_layer import Verifier
@@ -29,17 +32,26 @@ MIN_SHARPNESS = 30.0
 _enrollment_lock = RLock()
 _enrollment_started = {}
 
+_verification_lock = RLock()
+
 
 async def get_frame(file: UploadFile):
-    image_bytes = await file.read()
+    try:
+        image_bytes = await file.read(MAX_IMAGE_BYTES + 1)
 
-    if not image_bytes:
-        return None
+        if (
+            not image_bytes
+            or len(image_bytes) > MAX_IMAGE_BYTES
+        ):
+            return None
 
-    return cv2.imdecode(
-        np.frombuffer(image_bytes, dtype=np.uint8),
-        cv2.IMREAD_COLOR
-    )
+        return cv2.imdecode(
+            np.frombuffer(image_bytes, dtype=np.uint8),
+            cv2.IMREAD_COLOR
+        )
+
+    finally:
+        await file.close()
 
 
 def frame_quality_ok(frame):
@@ -90,11 +102,21 @@ def clear_enrollment(user_id):
     _enrollment_started.pop(user_id, None)
 
 
+def clear_verification(user_id):
+    verifier = verification_sessions.pop(
+        user_id,
+        None
+    )
+
+    if verifier is not None:
+        verifier.close()
+
+
 @router.get("/biometric-test")
 def biometric_test():
     return {
         "status": "working",
-        "version": "LIVE_FRAME_ENROLLMENT_V1"
+        "version": "DUAL_BIOMETRIC_LIVENESS_V1"
     }
 
 
@@ -238,24 +260,56 @@ async def verify_face(
             "status": "invalid_frame"
         }
 
-    if user_id not in verification_sessions:
-        stored_embedding = get_face_embedding(user_id)
+    with _verification_lock:
 
-        if stored_embedding is None:
-            return {
-                "status": "face_not_enrolled"
-            }
+        if user_id not in verification_sessions:
 
-        verification_sessions[user_id] = Verifier(
-            stored_embedding
-        )
+            stored_embedding = get_face_embedding(
+                user_id
+            )
 
-    verifier = verification_sessions[user_id]
+            if stored_embedding is None:
+                return {
+                    "status": "face_not_enrolled"
+                }
 
-    result = verifier.process(frame)
+            stored_periocular = get_periocular_embedding(
+                user_id
+            )
 
-    if result["status"] == "verified":
-        verified_users.add(user_id)
-        del verification_sessions[user_id]
+            verification_sessions[user_id] = Verifier(
+                stored_embedding=stored_embedding,
+                stored_periocular_embedding=stored_periocular
+            )
 
-    return result
+        verifier = verification_sessions[user_id]
+
+        try:
+            result = verifier.process(frame)
+
+        except Exception:
+            clear_verification(user_id)
+            raise
+
+        if result["status"] == "verified":
+            verified_users.add(user_id)
+            clear_verification(user_id)
+
+        elif result["status"] == "liveness_failed":
+            clear_verification(user_id)
+
+        return result
+
+
+@router.post("/verify/cancel")
+def cancel_verification(
+    current_user=Depends(get_current_user)
+):
+    user_id = current_user["user_id"]
+
+    with _verification_lock:
+        clear_verification(user_id)
+
+    return {
+        "status": "cancelled"
+    }

@@ -1,5 +1,5 @@
 
-import { View, Text, StyleSheet, Pressable, Image } from "react-native";
+import { View, Text, StyleSheet, Pressable, Image, ActivityIndicator } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -8,7 +8,6 @@ import { fetch as expoFetch } from "expo/fetch";
 import * as SecureStore from "expo-secure-store";
 import { API_BASE } from "../constants/api";
 
-const REQUIRED = 7;
 const MAX_ATTEMPTS = 35;
 
 export default function FaceEnrollScreen() {
@@ -18,7 +17,6 @@ export default function FaceEnrollScreen() {
 
     const [permission, requestPermission] = useCameraPermissions();
     const [cameraReady, setCameraReady] = useState(false);
-    const [captureCount, setCaptureCount] = useState(0);
     const [statusMessage, setStatusMessage] = useState(
         "Position your face inside the frame"
     );
@@ -49,7 +47,6 @@ export default function FaceEnrollScreen() {
         let token: string | null = null;
 
         try {
-            setCaptureCount(0);
             setStatusMessage("Preparing face scan...");
 
             token = await SecureStore.getItemAsync("access_token");
@@ -112,7 +109,8 @@ export default function FaceEnrollScreen() {
                     const photo =
                         await cameraRef.current.takePictureAsync({
                             quality: 0.55,
-                            skipProcessing: false
+                            skipProcessing: false,
+                            shutterSound: false
                         });
 
                     if (!photo?.uri) continue;
@@ -151,18 +149,10 @@ export default function FaceEnrollScreen() {
 
                     if (stopScanning.current) break;
 
-                    if (typeof result.captures === "number") {
-                        setCaptureCount(result.captures);
-                    }
-
                     switch (result.status) {
                         case "enrolled":
                             completed = true;
                             stopScanning.current = true;
-
-                            setCaptureCount(
-                                result.captures ?? REQUIRED
-                            );
 
                             setStatusMessage(
                                 "Enrollment complete"
@@ -173,7 +163,7 @@ export default function FaceEnrollScreen() {
 
                         case "collecting":
                             setStatusMessage(
-                                `Scanning face... ${result.captures ?? 0}/${REQUIRED}`
+                                "Scanning face..."
                             );
                             break;
 
@@ -204,6 +194,7 @@ export default function FaceEnrollScreen() {
                             );
                             break;
 
+                        case "inconsistent_embeddings":
                         case "session_not_started":
                         case "session_expired":
                         case "enrollment_error":
@@ -371,6 +362,7 @@ export default function FaceEnrollScreen() {
                         style={styles.cameraPreview}
                         facing="front"
                         mode="picture"
+                        animateShutter={false}
                         onCameraReady={() => {
                             console.log("Camera ready");
                             setCameraReady(true);
@@ -396,9 +388,12 @@ export default function FaceEnrollScreen() {
                     {statusMessage}
                 </Text>
 
-                <Text style={styles.capturedImageCount}>
-                    Scanning Face: {captureCount} / {REQUIRED}
-                </Text>
+                <View style={styles.scanIndicator}>
+                    <ActivityIndicator size="small" color="#0a3a00" />
+                    <Text style={styles.scanLabel}>
+                        Secure face scan
+                    </Text>
+                </View>
             </View>
         </View>
     );
@@ -497,11 +492,18 @@ const styles = StyleSheet.create({
         textAlign: "center"
     },
 
-    capturedImageCount: {
+    scanIndicator: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        minHeight: 40
+    },
+
+    scanLabel: {
         color: "#0a3a00",
-        fontSize: 32,
-        fontWeight: "bold",
-        textAlign: "center"
+        fontSize: 18,
+        fontWeight: "600"
     },
 
     permissionContainer: {

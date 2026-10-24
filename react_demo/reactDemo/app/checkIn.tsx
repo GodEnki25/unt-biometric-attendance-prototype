@@ -1,3 +1,4 @@
+
 import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, Platform, Alert, ScrollView } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useState, useMemo, useRef } from "react";
@@ -10,8 +11,6 @@ import { fetch as expoFetch } from "expo/fetch";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-//API address is now stored in constants/api.ts so the frontend
-//does not need a hardcoded backend IP in each screen.
 import { API_BASE } from "../constants/api";
 import { Colors, Radius, Spacing } from "../constants/theme";
 
@@ -40,11 +39,11 @@ type CheckInResult = {
   server_time?: string;
 };
 
-// UPDATED FOR NEW BIOMETRIC API
 type FaceCheckResult = {
   status?: string;
   user?: string;
   confidence?: number;
+  periocular_confidence?: number | null;
   matches?: number;
   required?: number;
   action?: string;
@@ -76,7 +75,6 @@ export default function CheckInScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  // Get the userId that was passed from dashboard.tsx
   const { userId } = useLocalSearchParams();
 
   const cameraRef = useRef<CameraView | null>(null);
@@ -118,12 +116,12 @@ export default function CheckInScreen() {
       "LOCATION WATCH EFFECT:",
       permisssionStatus
     );
-    
+
     if (permisssionStatus !== "granted") {
       return;
     }
 
-    const interval = setInterval(async() => {
+    const interval = setInterval(async () => {
       await fetchSession();
       await getUserLocation(true);
     }, 10000);
@@ -145,18 +143,14 @@ export default function CheckInScreen() {
       await getUserLocation();
       await fetchCheckInStatus();
 
-
-    }
-    catch (err: any) {
+    } catch (err: any) {
       setStatus("Error: " + err.message);
-    }
-    finally {
+    } finally {
       setIsBootLoading(false);
     }
   }
 
   async function requestLocationPermission() {
-
     try {
       setStatus("Requesting location permission...");
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -169,9 +163,7 @@ export default function CheckInScreen() {
 
       setPermissionStatus("granted");
       return true;
-    }
-
-    catch (err: any) {
+    } catch (err: any) {
       setPermissionStatus("denied");
       setStatus(`Permission error: ${err.message}`);
       return false;
@@ -179,7 +171,6 @@ export default function CheckInScreen() {
   }
 
   async function fetchSession() {
-
     setStatus("Fetching session...");
     const token = await SecureStore.getItemAsync("access_token");
 
@@ -243,26 +234,20 @@ export default function CheckInScreen() {
       setStatus(data.inside ? "Inside geofence" : "Outside geofence");
 
       return data.inside === true;
-    }
-
-    catch (err: any) {
+    } catch (err: any) {
       setInside(false);
       setGeofenceResult(null);
       setStatus(`Geofence error: ${err.message}`);
       return false;
     }
-
   }
 
   async function getUserLocation(refresh = false) {
-
     try {
       if (refresh) {
         setIsRefreshingLocation(true);
         setStatus("Refreshing location...");
-      }
-
-      else {
+      } else {
         setStatus("Getting location...");
       }
 
@@ -277,18 +262,13 @@ export default function CheckInScreen() {
       };
 
       setLoc(currentLoc);
-
       await verifyGeofence(currentLoc);
-    }
 
-    catch (err: any) {
+    } catch (err: any) {
       setStatus(`Location error: ${err.message}`);
-    }
-
-    finally {
+    } finally {
       setIsRefreshingLocation(false);
     }
-
   }
 
   async function refreshLocation() {
@@ -304,18 +284,15 @@ export default function CheckInScreen() {
   async function fetchCheckInStatus() {
     const token = await SecureStore.getItemAsync("access_token");
 
-    if(!token) {
+    if (!token) {
       return;
     }
 
-    const res = await fetch(`${API_BASE}/checkin/status`,
-      {
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      }
-    );
+    const res = await fetch(`${API_BASE}/checkin/status`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
 
     if (!res.ok) {
       return;
@@ -323,39 +300,48 @@ export default function CheckInScreen() {
 
     const data = await res.json();
 
-    if(data.checked_in) {
+    if (data.checked_in) {
       setAlreadyCheckedIn(true);
 
-      if(data.check_in_time) {
+      if (data.check_in_time) {
         setCheckInTime(new Date(data.check_in_time));
       }
     }
   }
 
-  // ------------------------------------------------
-  // BIOMETRIC VERIFICATION API
-  // ------------------------------------------------
-
   async function sendToFaceAPI(photoUri: string): Promise<FaceCheckResult> {
     const token = await SecureStore.getItemAsync("access_token");
-    if (!token) throw new Error("Authentication token not found. Please log in again.");
+
+    if (!token) {
+      throw new Error("Authentication token not found. Please log in again.");
+    }
+
     const formData = new FormData();
     formData.append("file", new File(photoUri));
+
     const res = await expoFetch(`${API_BASE}/verify`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,
     });
+
     const data = await res.json();
+
     if (!res.ok) {
-      throw new Error(typeof data?.detail === "string" ? data.detail : "Face verification failed");
+      throw new Error(
+        typeof data?.detail === "string"
+          ? data.detail
+          : "Face verification failed"
+      );
     }
+
     return data;
   }
 
   async function cancelFaceVerification() {
     try {
       const token = await SecureStore.getItemAsync("access_token");
+
       if (token) {
         await expoFetch(`${API_BASE}/verify/cancel`, {
           method: "POST",
@@ -369,9 +355,13 @@ export default function CheckInScreen() {
 
   function deleteTemporaryPhoto(uri: string | undefined) {
     if (!uri) return;
+
     try {
       const file = new File(uri);
-      if (file.exists) file.delete();
+
+      if (file.exists) {
+        file.delete();
+      }
     } catch (error) {
       console.log("Temporary photo cleanup error:", error);
     }
@@ -379,10 +369,14 @@ export default function CheckInScreen() {
 
   function labelForAction(action?: string) {
     switch (action) {
-      case "blink": return "Blink once: open, close, then open your eyes";
-      case "open_mouth": return "Close your mouth, then open it";
-      case "turn_head": return "Look forward, then gently turn your head";
-      default: return "Keep your face in view";
+      case "blink":
+        return "Blink once: open, close, then open your eyes";
+      case "open_mouth":
+        return "Close your mouth, then open it";
+      case "turn_head":
+        return "Look forward, then gently turn your head";
+      default:
+        return "Keep your face in view";
     }
   }
 
@@ -458,7 +452,8 @@ export default function CheckInScreen() {
     }
 
     if (!cameraPermission.granted) {
-      setStatus("Requesting camera permission...")
+      setStatus("Requesting camera permission...");
+
       const response = await requestCameraPermission();
 
       if (!response.granted) {
@@ -471,83 +466,150 @@ export default function CheckInScreen() {
     setStatus("Position your face in the camera");
   }
 
-
-  // ------------------------------------------------
-  // BIOMETRIC CAPTURE + VERIFICATION
-  // ------------------------------------------------
-
   async function captureFaceAndCheckIn() {
-    if (!cameraRef.current || !cameraReady || !loc || !inside || !session?.is_open || scanningRef.current) return;
+    if (
+      !cameraRef.current ||
+      !cameraReady ||
+      !loc ||
+      !inside ||
+      !session?.is_open ||
+      scanningRef.current
+    ) {
+      return;
+    }
+
     scanningRef.current = true;
     scanStopped.current = false;
+
     let verified = false;
+
     try {
       setIsCheckingIn(true);
       setIsuploadingFace(true);
       setResult(null);
       setFaceResult(null);
       setChallengeText("");
+
       const startedAt = Date.now();
       const maxScanMs = 27000;
-            for (let attempt = 0; attempt < 55 && Date.now() - startedAt < maxScanMs; attempt++) {
-        if (scanStopped.current || !cameraRef.current) break;
+
+      for (
+        let attempt = 0;
+        attempt < 55 && Date.now() - startedAt < maxScanMs;
+        attempt++
+      ) {
+        if (scanStopped.current || !cameraRef.current) {
+          break;
+        }
+
         let photoUri: string | undefined;
+
         try {
           const photo = await cameraRef.current.takePictureAsync({
             quality: 0.55,
             skipProcessing: false,
+            shutterSound: false,
           });
+
           photoUri = photo?.uri;
-          if (!photoUri || scanStopped.current) break;
+
+          if (!photoUri || scanStopped.current) {
+            break;
+          }
+
           setStatus("Checking identity and liveness...");
+
           const data = await sendToFaceAPI(photoUri);
-          if (scanStopped.current) break;
+
+          if (scanStopped.current) {
+            break;
+          }
+
           setFaceResult(data);
+
           if (data.status === "liveness_pending") {
             const action = labelForAction(data.action);
-            setChallengeText(`${action} · Step ${data.step ?? 1}/${data.total_steps ?? 2} · ${Math.ceil(data.seconds_remaining ?? 0)}s`);
+
+            setChallengeText(
+              `${action} · Step ${data.step ?? 1}/${data.total_steps ?? 2} · ${Math.ceil(data.seconds_remaining ?? 0)}s`
+            );
+
             setStatus("Complete the liveness challenge");
             continue;
           }
+
           if (data.status === "scanning") {
-            setStatus(`Matching face... ${data.matches ?? 0}/${data.required ?? 3}`);
+            setChallengeText("");
+
+            setStatus(
+              `Matching face... ${data.matches ?? 0}/${data.required ?? 3}`
+            );
+
             continue;
           }
-          if (data.status === "no_face_detected" || data.status === "invalid_frame") {
+
+          if (
+            data.status === "no_face_detected" ||
+            data.status === "invalid_frame"
+          ) {
             setStatus("Keep one face centered in the frame");
             continue;
           }
+
           if (data.status === "verified") {
             verified = true;
+
             setChallengeText("Liveness and identity verified");
             setStatus("Face verified. Submitting check-in...");
-            // Preserve the existing attendance endpoint, payload and geofence values.
+
             await submitAttendanceCheckIn(photoUri);
+
             setShowCamera(false);
             return;
           }
-          if (data.status === "face_not_matched" || data.status === "face_not_enrolled" || data.status === "liveness_failed") {
-            throw new Error(data.status === "liveness_failed"
-              ? "Liveness challenge failed or expired. Please retry."
-              : data.status === "face_not_enrolled"
-                ? "No enrolled face profile was found."
-                : "Face does not match the enrolled student.");
+
+          if (
+            data.status === "face_not_matched" ||
+            data.status === "face_not_enrolled" ||
+            data.status === "liveness_failed"
+          ) {
+            throw new Error(
+              data.status === "liveness_failed"
+                ? "Liveness challenge failed or expired. Please retry."
+                : data.status === "face_not_enrolled"
+                  ? "No enrolled face profile was found."
+                  : "Face does not match the enrolled student."
+            );
           }
-          throw new Error(`Unexpected verification status: ${data.status ?? "unknown"}`);
+
+          throw new Error(
+            `Unexpected verification status: ${data.status ?? "unknown"}`
+          );
+
         } finally {
           deleteTemporaryPhoto(photoUri);
         }
       }
+
       if (!scanStopped.current) {
         throw new Error("Verification timed out. Please try again.");
       }
+
     } catch (err: any) {
       if (!scanStopped.current) {
-        setResult({ ok: false, reason: err?.message || "Face verification failed" });
+        setResult({
+          ok: false,
+          reason: err?.message || "Face verification failed",
+        });
+
         setStatus("Check-in failed");
       }
+
     } finally {
-      if (!verified) await cancelFaceVerification();
+      if (!verified) {
+        await cancelFaceVerification();
+      }
+
       scanningRef.current = false;
       setIsuploadingFace(false);
       setIsCheckingIn(false);
@@ -555,15 +617,15 @@ export default function CheckInScreen() {
   }
 
   function formatSessionDate(date?: string) {
-    if(!date) return "Current session";
+    if (!date) return "Current session";
 
     const [year, month, day] = date.split("-").map(Number);
 
-    return new Date (
+    return new Date(
       year,
       month - 1,
       day
-    ).toLocaleDateString("en-US" ,{
+    ).toLocaleDateString("en-US", {
       month: "short",
       day: "numeric",
       year: "numeric",
@@ -571,7 +633,7 @@ export default function CheckInScreen() {
   }
 
   function formatSessionTime(time?: string) {
-    if(!time) return "";
+    if (!time) return "";
 
     const [hours, minutes] = time.split(":").map(Number);
 
@@ -597,10 +659,6 @@ export default function CheckInScreen() {
       minute: "2-digit",
     });
   }
-
-  // ============================================================
-  // PAGE CONTENT
-  // ============================================================
 
   const renderContent = () => {
     if (isBootLoading) {
@@ -665,25 +723,19 @@ export default function CheckInScreen() {
       );
     }
 
-    // ============================================================
-    // SUCCESS STATE
-    // ============================================================
-
     if (result?.ok === true || alreadyCheckedIn) {
       return (
         <ScrollView
-          contentContainerStyle={
-            styles.successContent
-          }
+          contentContainerStyle={styles.successContent}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.successIconOuter}>
             <View style={styles.successIconInner}>
-            <Ionicons
-              name="checkmark"
-              size={44}
-              color={Colors.success}
-            />
+              <Ionicons
+                name="checkmark"
+                size={44}
+                color={Colors.success}
+              />
             </View>
           </View>
 
@@ -695,9 +747,6 @@ export default function CheckInScreen() {
             Your attendance has been recorded.
           </Text>
 
-          {/* =====================================================
-              SESSION DETAILS
-          ====================================================== */}
           <View style={styles.infoCard}>
             <Text style={styles.cardTitle}>
               Session details
@@ -709,11 +758,9 @@ export default function CheckInScreen() {
                 size={23}
                 color={Colors.textSecondary}
               />
-
-                <Text style={styles.detailLabel}>
-                  COURSE
-                </Text>
-             
+              <Text style={styles.detailLabel}>
+                COURSE
+              </Text>
               <Text style={styles.detailValue}>
                 CSCE 4901 - Capstone
               </Text>
@@ -727,11 +774,9 @@ export default function CheckInScreen() {
                 size={23}
                 color={Colors.textSecondary}
               />
-             
-                <Text style={styles.detailLabel}>
-                  ROOM
-                </Text>
-             
+              <Text style={styles.detailLabel}>
+                ROOM
+              </Text>
               <Text style={styles.detailValue}>
                 Classroom 266
               </Text>
@@ -745,14 +790,12 @@ export default function CheckInScreen() {
                 size={23}
                 color={Colors.textSecondary}
               />
-              
-                <Text style={styles.detailLabel}>
-                  CHECK-IN TIME
-                </Text>
-
-                <Text style={styles.detailValue}>
-                  {formatCheckInTime(checkInTime)}
-                </Text>
+              <Text style={styles.detailLabel}>
+                CHECK-IN TIME
+              </Text>
+              <Text style={styles.detailValue}>
+                {formatCheckInTime(checkInTime)}
+              </Text>
             </View>
 
             <View style={styles.rowDivider} />
@@ -763,11 +806,9 @@ export default function CheckInScreen() {
                 size={23}
                 color={Colors.textSecondary}
               />
-
-                <Text style={styles.detailLabel}>
-                  STATUS
-                </Text>
-             
+              <Text style={styles.detailLabel}>
+                STATUS
+              </Text>
               <View style={styles.successBadge}>
                 <Text style={styles.successBadgeText}>
                   Present
@@ -776,9 +817,6 @@ export default function CheckInScreen() {
             </View>
           </View>
 
-          {/* =====================================================
-              VERIFICATION STATUS
-          ====================================================== */}
           <View style={styles.infoCard}>
             <Text style={styles.cardTitle}>
               Verification status
@@ -793,19 +831,12 @@ export default function CheckInScreen() {
                 />
               </View>
 
-              <View
-                style={styles.verifyTextWrap}
-              >
+              <View style={styles.verifyTextWrap}>
                 <Text style={styles.detailLabel}>
                   GEOFENCE STATUS
                 </Text>
-
-                <Text
-                  style={styles.verifyValue}
-                >
-                  {inside
-                    ? "Inside boundary"
-                    : "Outside boundary"}
+                <Text style={styles.verifyValue}>
+                  {inside ? "Inside boundary" : "Outside boundary"}
                 </Text>
               </View>
 
@@ -827,16 +858,11 @@ export default function CheckInScreen() {
                 />
               </View>
 
-              <View
-                style={styles.verifyTextWrap}
-              >
+              <View style={styles.verifyTextWrap}>
                 <Text style={styles.detailLabel}>
                   FACE VERIFICATION
                 </Text>
-
-                <Text
-                  style={styles.verifyValue}
-                >
+                <Text style={styles.verifyValue}>
                   Complete
                 </Text>
               </View>
@@ -849,9 +875,6 @@ export default function CheckInScreen() {
             </View>
           </View>
 
-          {/* =====================================================
-              ACTIONS
-          ====================================================== */}
           <Pressable
             style={styles.sessionDetailsButton}
             onPress={() => {}}
@@ -873,18 +896,11 @@ export default function CheckInScreen() {
       );
     }
 
-    // ============================================================
-    // NORMAL CHECK-IN STATE
-    // ============================================================
-
     return (
       <ScrollView
         contentContainerStyle={styles.preCheckInContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* =====================================================
-            PAGE INTRO
-        ====================================================== */}
         <View style={styles.pageIntro}>
           <Text style={styles.pageTitle}>Check In</Text>
           <Text style={styles.pageSubtitle}>
@@ -892,9 +908,6 @@ export default function CheckInScreen() {
           </Text>
         </View>
 
-        {/* =====================================================
-            CURRENT CLASS
-        ====================================================== */}
         <View style={styles.infoCard}>
           <Text style={styles.cardTitle}>Current Class</Text>
           <Text style={styles.courseHero}>
@@ -902,38 +915,68 @@ export default function CheckInScreen() {
           </Text>
 
           <View style={styles.currentClassRow}>
-            <Ionicons name="book-outline" size={27} color={Colors.textSecondary} />
-            <Text style={styles.currentClassLabel}>Course</Text>
-            <Text style={styles.currentClassValue}>CSCE 4901 - Capstone</Text>
+            <Ionicons
+              name="book-outline"
+              size={27}
+              color={Colors.textSecondary}
+            />
+            <Text style={styles.currentClassLabel}>
+              Course
+            </Text>
+            <Text style={styles.currentClassValue}>
+              CSCE 4901 - Capstone
+            </Text>
           </View>
 
           <View style={styles.currentClassRow}>
-            <Ionicons name="location-outline" size={27} color={Colors.textSecondary} />
-            <Text style={styles.currentClassLabel}>Room</Text>
-            <Text style={styles.currentClassValue}>Classroom 266</Text>
+            <Ionicons
+              name="location-outline"
+              size={27}
+              color={Colors.textSecondary}
+            />
+            <Text style={styles.currentClassLabel}>
+              Room
+            </Text>
+            <Text style={styles.currentClassValue}>
+              Classroom 266
+            </Text>
           </View>
 
           <View style={styles.currentClassRow}>
-            <Ionicons name="time-outline" size={27} color={Colors.textSecondary} />
-            <Text style={styles.currentClassLabel}>Session Time</Text>
+            <Ionicons
+              name="time-outline"
+              size={27}
+              color={Colors.textSecondary}
+            />
+            <Text style={styles.currentClassLabel}>
+              Session Time
+            </Text>
+
             <View style={styles.sessionTimeWrap}>
-              <Text style={styles.currentClassValue}>{formatSessionDate(session.session_date)}</Text>
-              <Text style={styles.sessionSubValue}>{session.is_open ? `Started ${formatSessionTime(session.start_time)}` : `Ended ${formatSessionTime(session.end_time ?? undefined)}`}</Text>
+              <Text style={styles.currentClassValue}>
+                {formatSessionDate(session.session_date)}
+              </Text>
+              <Text style={styles.sessionSubValue}>
+                {session.is_open
+                  ? `Started ${formatSessionTime(session.start_time)}`
+                  : `Ended ${formatSessionTime(session.end_time ?? undefined)}`}
+              </Text>
             </View>
           </View>
         </View>
 
-        {/* =====================================================
-            LOCATION STATUS
-        ====================================================== */}
         <View style={styles.infoCard}>
           <Text style={styles.cardTitle}>Location Status</Text>
 
           <View style={styles.statusCardRow}>
-            <View style={[
-              styles.largeSoftIcon,
-              inside ? styles.successSoftBackground : styles.dangerSoftBackground,
-            ]}>
+            <View
+              style={[
+                styles.largeSoftIcon,
+                inside
+                  ? styles.successSoftBackground
+                  : styles.dangerSoftBackground,
+              ]}
+            >
               <Ionicons
                 name="location-outline"
                 size={46}
@@ -942,17 +985,21 @@ export default function CheckInScreen() {
             </View>
 
             <View style={styles.statusTextWrap}>
-              <Text style={[
-                styles.statusHeadline,
-                { color: inside ? Colors.success : Colors.danger },
-              ]}>
+              <Text
+                style={[
+                  styles.statusHeadline,
+                  { color: inside ? Colors.success : Colors.danger },
+                ]}
+              >
                 {inside
                   ? "You are inside the classroom boundary"
                   : "You are outside the classroom boundary"}
               </Text>
+
               <Text style={styles.statusMeta}>
                 Lat: {loc.lat.toFixed(6)}, {loc.lon.toFixed(6)}
               </Text>
+
               <Text style={styles.statusMeta}>
                 Accuracy: ±{Math.round(loc.accuracy)} m
               </Text>
@@ -960,9 +1007,6 @@ export default function CheckInScreen() {
           </View>
         </View>
 
-        {/* =====================================================
-            FACE VERIFICATION
-        ====================================================== */}
         <View style={styles.infoCard}>
           <Text style={styles.cardTitle}>Face Verification</Text>
 
@@ -977,7 +1021,10 @@ export default function CheckInScreen() {
               </View>
 
               <View style={styles.statusTextWrap}>
-                <Text style={styles.faceReadyTitle}>Ready to verify</Text>
+                <Text style={styles.faceReadyTitle}>
+                  Ready to verify
+                </Text>
+
                 <Text style={styles.faceReadyText}>
                   Your face will be matched for attendance when you start check-in.
                 </Text>
@@ -988,12 +1035,14 @@ export default function CheckInScreen() {
               <Text style={styles.cameraHelper}>
                 Keep your face centered and follow the instructions that appear below.
               </Text>
+
               <View style={styles.cameraFrame}>
                 <CameraView
                   ref={cameraRef}
                   style={styles.camera}
                   facing="front"
                   mode="picture"
+                  animateShutter={false}
                   onCameraReady={() => {
                     setCameraReady(true);
                     console.log("CAMERA READY");
@@ -1001,15 +1050,20 @@ export default function CheckInScreen() {
                   }}
                 />
               </View>
+
               {!!challengeText && (
-                <Text style={styles.cameraHelper}>{challengeText}</Text>
+                <Text style={styles.cameraHelper}>
+                  {challengeText}
+                </Text>
               )}
+
               <Pressable
                 onPress={captureFaceAndCheckIn}
                 disabled={!cameraReady || isUploadingFace || isCheckingIn}
                 style={[
                   styles.primaryButton,
-                  (isUploadingFace || isCheckingIn) && styles.disabledButton,
+                  (isUploadingFace || isCheckingIn) &&
+                    styles.disabledButton,
                 ]}
               >
                 <Text style={styles.primaryButtonText}>
@@ -1018,6 +1072,7 @@ export default function CheckInScreen() {
                     : "Verify Face & Check In"}
                 </Text>
               </Pressable>
+
               <Pressable
                 onPress={() => {
                   scanStopped.current = true;
@@ -1028,7 +1083,9 @@ export default function CheckInScreen() {
                 }}
                 style={styles.secondaryButton}
               >
-                <Text style={styles.secondaryButtonText}>Close Camera</Text>
+                <Text style={styles.secondaryButtonText}>
+                  Close Camera
+                </Text>
               </Pressable>
             </>
           )}
@@ -1043,8 +1100,14 @@ export default function CheckInScreen() {
               (!inside || isCheckingIn) && styles.startButtonDisabled,
             ]}
           >
-            <Text style={styles.startButtonText}>Start Check-In</Text>
-            <Ionicons name="arrow-forward" size={28} color={Colors.surface} />
+            <Text style={styles.startButtonText}>
+              Start Check-In
+            </Text>
+            <Ionicons
+              name="arrow-forward"
+              size={28}
+              color={Colors.surface}
+            />
           </Pressable>
         )}
 
@@ -1061,10 +1124,20 @@ export default function CheckInScreen() {
 
         {result && result.ok === false && (
           <View style={styles.errorCard}>
-            <Ionicons name="alert-circle-outline" size={24} color={Colors.danger} />
+            <Ionicons
+              name="alert-circle-outline"
+              size={24}
+              color={Colors.danger}
+            />
+
             <View style={styles.errorTextWrap}>
-              <Text style={styles.errorTitle}>Check-in unsuccessful</Text>
-              <Text style={styles.errorText}>{result.reason}</Text>
+              <Text style={styles.errorTitle}>
+                Check-in unsuccessful
+              </Text>
+
+              <Text style={styles.errorText}>
+                {result.reason}
+              </Text>
             </View>
           </View>
         )}
@@ -1074,9 +1147,6 @@ export default function CheckInScreen() {
 
   return (
     <View style={styles.container}>
-      {/* =========================================================
-          HEADER
-      ========================================================== */}
       <View
         style={[
           styles.header,
@@ -1089,9 +1159,13 @@ export default function CheckInScreen() {
             style={styles.headerLogo}
             resizeMode="contain"
           />
+
           <View style={styles.headerDivider} />
+
           <Text style={styles.headerTitle}>
-            {result?.ok === true || alreadyCheckedIn ? "Attendance Status" : "Check In"}
+            {result?.ok === true || alreadyCheckedIn
+              ? "Attendance Status"
+              : "Check In"}
           </Text>
         </View>
 
@@ -1102,9 +1176,6 @@ export default function CheckInScreen() {
         />
       </View>
 
-      {/* =========================================================
-          PAGE CONTENT
-      ========================================================== */}
       <View style={styles.content}>
         {renderContent()}
       </View>
@@ -1113,11 +1184,6 @@ export default function CheckInScreen() {
 }
 
 const styles = StyleSheet.create({
-
-  // ============================================================
-  // PAGE
-  // ============================================================
-
   container: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -1140,11 +1206,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     textAlign: "center",
   },
-
-
-  // ============================================================
-  // HEADER
-  // ============================================================
 
   header: {
     minHeight: 94,
@@ -1181,11 +1242,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-
-  // ============================================================
-  // PRE-CHECK-IN PAGE
-  // ============================================================
-
   preCheckInContent: {
     paddingHorizontal: 22,
     paddingTop: 28,
@@ -1207,11 +1263,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     marginTop: Spacing.sm,
   },
-
-
-  // ============================================================
-  // CARDS
-  // ============================================================
 
   infoCard: {
     width: "100%",
@@ -1237,11 +1288,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginBottom: 18,
   },
-
-
-  // ============================================================
-  // CURRENT CLASS
-  // ============================================================
 
   currentClassRow: {
     minHeight: 58,
@@ -1277,11 +1323,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginTop: 5,
   },
-
-
-  // ============================================================
-  // LOCATION STATUS
-  // ============================================================
 
   statusCardRow: {
     flexDirection: "row",
@@ -1323,11 +1364,6 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 
-
-  // ============================================================
-  // FACE VERIFICATION
-  // ============================================================
-
   faceReadyTitle: {
     color: Colors.primary,
     fontSize: 19,
@@ -1340,11 +1376,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
-
-
-  // ============================================================
-  // CAMERA
-  // ============================================================
 
   cameraHelper: {
     color: Colors.textSecondary,
@@ -1365,11 +1396,6 @@ const styles = StyleSheet.create({
   camera: {
     flex: 1,
   },
-
-
-  // ============================================================
-  // START CHECK-IN
-  // ============================================================
 
   startButton: {
     minHeight: 64,
@@ -1395,11 +1421,6 @@ const styles = StyleSheet.create({
     marginLeft: 28,
   },
 
-
-  // ============================================================
-  // PRIVACY NOTE
-  // ============================================================
-
   privacyRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1416,11 +1437,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: "center",
   },
-
-
-  // ============================================================
-  // SUCCESS STATE
-  // ============================================================
 
   successContent: {
     paddingHorizontal: 22,
@@ -1464,11 +1480,6 @@ const styles = StyleSheet.create({
     marginBottom: 22,
   },
 
-
-  // ============================================================
-  // SESSION DETAILS
-  // ============================================================
-
   detailRow: {
     minHeight: 58,
     flexDirection: "row",
@@ -1508,11 +1519,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
 
-
-  // ============================================================
-  // VERIFICATION STATUS
-  // ============================================================
-
   verifyRow: {
     minHeight: 76,
     flexDirection: "row",
@@ -1545,11 +1551,6 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "500",
   },
-
-
-  // ============================================================
-  // BUTTONS
-  // ============================================================
 
   primaryButton: {
     width: "100%",
@@ -1632,7 +1633,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 
-  doneButtonText:{
+  doneButtonText: {
     color: Colors.primary,
     fontSize: 17,
     fontWeight: "800",
@@ -1641,11 +1642,6 @@ const styles = StyleSheet.create({
   disabledButton: {
     opacity: 0.5,
   },
-
-
-  // ============================================================
-  // PERMISSION STATE
-  // ============================================================
 
   permissionCard: {
     flex: 1,
@@ -1670,11 +1666,6 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 22,
   },
-
-
-  // ============================================================
-  // ERROR STATE
-  // ============================================================
 
   errorCard: {
     flexDirection: "row",
@@ -1703,5 +1694,4 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: 3,
   },
-
 });
