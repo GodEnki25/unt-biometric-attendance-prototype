@@ -1,5 +1,11 @@
-
-import { View, Text, StyleSheet, Pressable, Image, ActivityIndicator } from "react-native";
+import {
+    View,
+    Text,
+    StyleSheet,
+    Pressable,
+    Image,
+    ActivityIndicator
+} from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -10,6 +16,11 @@ import { API_BASE } from "../constants/api";
 
 const MAX_ATTEMPTS = 35;
 
+type GuideState =
+    | "idle"
+    | "valid"
+    | "invalid";
+
 export default function FaceEnrollScreen() {
     const router = useRouter();
     const params = useLocalSearchParams();
@@ -17,9 +28,13 @@ export default function FaceEnrollScreen() {
 
     const [permission, requestPermission] = useCameraPermissions();
     const [cameraReady, setCameraReady] = useState(false);
+
     const [statusMessage, setStatusMessage] = useState(
         "Position your face inside the frame"
     );
+    const [guideState, setGuideState] = useState<GuideState>("idle");
+    const [isScanning, setIsScanning] = useState(false);
+    const [scanLabel, setScanLabel] = useState("Secure face scan");
 
     const cameraRef = useRef<CameraView | null>(null);
     const isCapturing = useRef(false);
@@ -36,18 +51,22 @@ export default function FaceEnrollScreen() {
         }
 
         if (!userId) {
+            setGuideState("invalid");
             setStatusMessage("User information missing");
             return;
         }
 
         isCapturing.current = true;
+        setIsScanning(true);
 
         let sessionStarted = false;
         let completed = false;
         let token: string | null = null;
 
         try {
+            setGuideState("idle");
             setStatusMessage("Preparing face scan...");
+            setScanLabel("Starting enrollment");
 
             token = await SecureStore.getItemAsync("access_token");
 
@@ -90,12 +109,9 @@ export default function FaceEnrollScreen() {
             if (stopScanning.current) return;
 
             setStatusMessage("Scanning face...");
+            setScanLabel("Collecting secure samples");
 
-            for (
-                let attempt = 0;
-                attempt < MAX_ATTEMPTS;
-                attempt++
-            ) {
+            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
                 if (
                     stopScanning.current ||
                     !cameraRef.current
@@ -120,7 +136,6 @@ export default function FaceEnrollScreen() {
                     if (stopScanning.current) break;
 
                     const formData = new FormData();
-
                     formData.append("file", photoFile);
 
                     const response = await expoFetch(
@@ -153,45 +168,43 @@ export default function FaceEnrollScreen() {
                         case "enrolled":
                             completed = true;
                             stopScanning.current = true;
-
-                            setStatusMessage(
-                                "Enrollment complete"
-                            );
-
+                            setGuideState("valid");
+                            setStatusMessage("Enrollment complete");
+                            setScanLabel("Face enrollment successful");
                             router.replace("/login");
                             return;
 
                         case "collecting":
-                            setStatusMessage(
-                                "Scanning face..."
-                            );
+                            setGuideState("valid");
+                            setStatusMessage("Scanning face...");
+                            setScanLabel("Hold steady while we scan");
                             break;
 
                         case "duplicate_frame":
-                            setStatusMessage(
-                                "Turn your head slightly"
-                            );
+                            setGuideState("invalid");
+                            setStatusMessage("Turn your head slightly");
+                            setScanLabel("Need a slightly different angle");
                             break;
 
                         case "low_quality":
-                            setStatusMessage(
-                                "Improve lighting and hold steady"
-                            );
+                            setGuideState("invalid");
+                            setStatusMessage("Improve lighting and hold steady");
+                            setScanLabel("Image quality too low");
                             break;
 
                         case "invalid_face_count":
                         case "no_face_detected":
-                            setStatusMessage(
-                                "Keep one face inside the guide"
-                            );
+                            setGuideState("invalid");
+                            setStatusMessage("Keep one face inside the guide");
+                            setScanLabel("Only one face should be visible");
                             break;
 
                         case "embedding_failed":
                         case "invalid_embedding":
                         case "invalid_frame":
-                            setStatusMessage(
-                                "Adjust your face and try again"
-                            );
+                            setGuideState("invalid");
+                            setStatusMessage("Adjust your face and try again");
+                            setScanLabel("Unable to capture a usable frame");
                             break;
 
                         case "inconsistent_embeddings":
@@ -204,11 +217,12 @@ export default function FaceEnrollScreen() {
                             );
 
                         default:
+                            setGuideState("idle");
                             setStatusMessage(
                                 result.message ?? "Scanning face..."
                             );
+                            setScanLabel("Processing enrollment");
                     }
-
                 } finally {
                     if (photoFile) {
                         try {
@@ -226,22 +240,24 @@ export default function FaceEnrollScreen() {
             }
 
             if (!stopScanning.current) {
+                setGuideState("invalid");
                 setStatusMessage(
                     "Scan incomplete. Go back and try again."
                 );
+                setScanLabel("Enrollment timed out");
             }
-
         } catch (error) {
             console.log("Enrollment scan error:", error);
 
             if (!stopScanning.current) {
+                setGuideState("invalid");
                 setStatusMessage(
                     error instanceof Error
                         ? error.message
                         : "Unable to scan face"
                 );
+                setScanLabel("Enrollment failed");
             }
-
         } finally {
             if (sessionStarted && !completed && token) {
                 try {
@@ -263,6 +279,7 @@ export default function FaceEnrollScreen() {
             }
 
             isCapturing.current = false;
+            setIsScanning(false);
         }
     }
 
@@ -289,7 +306,6 @@ export default function FaceEnrollScreen() {
         }
 
         stopScanning.current = false;
-
         void captureFaceScan();
 
         return () => {
@@ -356,42 +372,94 @@ export default function FaceEnrollScreen() {
             </View>
 
             <View style={styles.content}>
-                <View style={styles.cameraBox}>
-                    <CameraView
-                        ref={cameraRef}
-                        style={styles.cameraPreview}
-                        facing="front"
-                        mode="picture"
-                        animateShutter={false}
-                        onCameraReady={() => {
-                            console.log("Camera ready");
-                            setCameraReady(true);
-                        }}
-                        onMountError={(error) => {
-                            console.log(
-                                "Camera mount error:",
-                                error
-                            );
-                            setStatusMessage(
-                                "Camera unavailable"
-                            );
-                        }}
-                    />
-
-                    <View
-                        pointerEvents="none"
-                        style={styles.faceGuide}
-                    />
-                </View>
-
-                <Text style={styles.instructionText}>
-                    {statusMessage}
+                <Text style={styles.pageTitle}>
+                    Secure Enrollment
                 </Text>
 
-                <View style={styles.scanIndicator}>
-                    <ActivityIndicator size="small" color="#0a3a00" />
-                    <Text style={styles.scanLabel}>
-                        Secure face scan
+                <Text style={styles.pageSubtitle}>
+                    Hold your face inside the guide while we scan.
+                </Text>
+
+                <View style={styles.cameraShell}>
+                    <View style={styles.cameraBox}>
+                        <CameraView
+                            ref={cameraRef}
+                            style={styles.cameraPreview}
+                            facing="front"
+                            mode="picture"
+                            animateShutter={false}
+                            onCameraReady={() => {
+                                console.log("Camera ready");
+                                setCameraReady(true);
+                                setStatusMessage(
+                                    "Position your face inside the frame"
+                                );
+                                setScanLabel("Camera ready");
+                            }}
+                            onMountError={(error) => {
+                                console.log(
+                                    "Camera mount error:",
+                                    error
+                                );
+                                setGuideState("invalid");
+                                setStatusMessage(
+                                    "Camera unavailable"
+                                );
+                                setScanLabel("Camera error");
+                            }}
+                        />
+
+                        <View
+                            pointerEvents="none"
+                            style={[
+                                styles.faceGuide,
+                                guideState === "valid" &&
+                                    styles.faceGuideValid,
+                                guideState === "invalid" &&
+                                    styles.faceGuideInvalid
+                            ]}
+                        />
+
+                        <View style={styles.topStatusPill}>
+                            <Text style={styles.topStatusText}>
+                                Live Scan
+                            </Text>
+                        </View>
+                    </View>
+                </View>
+
+                <View style={styles.statusCard}>
+                    <Text style={styles.statusTitle}>
+                        {statusMessage}
+                    </Text>
+
+                    <Text style={styles.statusSubtext}>
+                        {scanLabel}
+                    </Text>
+
+                    <View style={styles.scanIndicator}>
+                        <ActivityIndicator
+                            size="small"
+                            color="#0a3a00"
+                        />
+                        <Text style={styles.scanLabel}>
+                            {isScanning
+                                ? "Scanning securely..."
+                                : "Waiting to scan"}
+                        </Text>
+                    </View>
+                </View>
+
+                <View style={styles.tipCard}>
+                    <Text style={styles.tipTitle}>
+                        Tips
+                    </Text>
+
+                    <Text style={styles.tipText}>
+                        • Keep only one face visible{"\n"}
+                        • Look at the camera{"\n"}
+                        • Make small head movements{"\n"}
+                        • Use good lighting
                     </Text>
                 </View>
             </View>
@@ -413,7 +481,8 @@ const styles = StyleSheet.create({
     },
 
     container: {
-        flex: 1
+        flex: 1,
+        backgroundColor: "#f6f7f9"
     },
 
     header: {
@@ -453,18 +522,40 @@ const styles = StyleSheet.create({
 
     content: {
         flex: 1,
-        justifyContent: "center",
         alignItems: "center",
-        padding: 20
+        paddingHorizontal: 20,
+        paddingTop: 28,
+        paddingBottom: 24
+    },
+
+    pageTitle: {
+        fontSize: 28,
+        fontWeight: "800",
+        color: "#0a3a00",
+        marginBottom: 8
+    },
+
+    pageSubtitle: {
+        fontSize: 15,
+        color: "#5f6d63",
+        textAlign: "center",
+        marginBottom: 22
+    },
+
+    cameraShell: {
+        width: "100%",
+        maxWidth: 390,
+        padding: 8,
+        borderRadius: 28,
+        backgroundColor: "#e9f2eb",
+        marginBottom: 18
     },
 
     cameraBox: {
         width: "100%",
-        maxWidth: 380,
-        height: 400,
-        borderRadius: 20,
+        height: 410,
+        borderRadius: 24,
         overflow: "hidden",
-        marginBottom: 30,
         backgroundColor: "#000",
         position: "relative"
     },
@@ -477,46 +568,117 @@ const styles = StyleSheet.create({
         position: "absolute",
         width: 220,
         height: 280,
-        top: 55,
+        top: 60,
         alignSelf: "center",
         borderWidth: 4,
         borderColor: "white",
-        borderRadius: 120
+        borderRadius: 120,
+        backgroundColor: "transparent"
     },
 
-    instructionText: {
+    faceGuideValid: {
+        borderColor: "#22a447"
+    },
+
+    faceGuideInvalid: {
+        borderColor: "#d83a34"
+    },
+
+    topStatusPill: {
+        position: "absolute",
+        top: 18,
+        alignSelf: "center",
+        backgroundColor: "rgba(0,0,0,0.45)",
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 999
+    },
+
+    topStatusText: {
+        color: "white",
+        fontSize: 13,
+        fontWeight: "700",
+        letterSpacing: 0.3
+    },
+
+    statusCard: {
+        width: "100%",
+        maxWidth: 390,
+        backgroundColor: "white",
+        borderRadius: 18,
+        paddingHorizontal: 18,
+        paddingVertical: 18,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: "#e4e8e4"
+    },
+
+    statusTitle: {
         color: "#0a3a00",
         fontSize: 18,
-        fontWeight: "600",
-        marginBottom: 20,
-        textAlign: "center"
+        fontWeight: "700",
+        textAlign: "center",
+        marginBottom: 6
+    },
+
+    statusSubtext: {
+        color: "#6a766d",
+        fontSize: 14,
+        textAlign: "center",
+        marginBottom: 14
     },
 
     scanIndicator: {
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
-        gap: 12,
-        minHeight: 40
+        gap: 10,
+        minHeight: 36
     },
 
     scanLabel: {
         color: "#0a3a00",
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: "600"
+    },
+
+    tipCard: {
+        width: "100%",
+        maxWidth: 390,
+        backgroundColor: "#ffffff",
+        borderRadius: 18,
+        paddingHorizontal: 18,
+        paddingVertical: 18,
+        borderWidth: 1,
+        borderColor: "#e4e8e4"
+    },
+
+    tipTitle: {
+        fontSize: 16,
+        fontWeight: "800",
+        color: "#0a3a00",
+        marginBottom: 10
+    },
+
+    tipText: {
+        color: "#5f6d63",
+        fontSize: 14,
+        lineHeight: 22
     },
 
     permissionContainer: {
         flex: 1,
         alignItems: "center",
         justifyContent: "center",
-        padding: 30
+        padding: 30,
+        backgroundColor: "#f6f7f9"
     },
 
     permissionText: {
         fontSize: 18,
         textAlign: "center",
-        marginBottom: 25
+        marginBottom: 25,
+        color: "#0a3a00"
     },
 
     permissionButton: {
