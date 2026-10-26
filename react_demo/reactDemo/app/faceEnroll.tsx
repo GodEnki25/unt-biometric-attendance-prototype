@@ -1,10 +1,12 @@
+
 import {
     View,
     Text,
     StyleSheet,
     Pressable,
     Image,
-    ActivityIndicator
+    ActivityIndicator,
+    ScrollView
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -12,17 +14,19 @@ import { useEffect, useRef, useState } from "react";
 import { File } from "expo-file-system";
 import { fetch as expoFetch } from "expo/fetch";
 import * as SecureStore from "expo-secure-store";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { API_BASE } from "../constants/api";
+import { Colors, Radius, Spacing } from "../constants/theme";
 
 const MAX_ATTEMPTS = 35;
 
-type GuideState =
-    | "idle"
-    | "valid"
-    | "invalid";
+type GuideState = "idle" | "valid" | "invalid";
 
 export default function FaceEnrollScreen() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const params = useLocalSearchParams();
     const userId = params.userId?.toString();
 
@@ -32,9 +36,12 @@ export default function FaceEnrollScreen() {
     const [statusMessage, setStatusMessage] = useState(
         "Position your face inside the frame"
     );
+
     const [guideState, setGuideState] = useState<GuideState>("idle");
     const [isScanning, setIsScanning] = useState(false);
-    const [scanLabel, setScanLabel] = useState("Secure face scan");
+    const [scanLabel, setScanLabel] = useState(
+        "Camera initializing"
+    );
 
     const cameraRef = useRef<CameraView | null>(null);
     const isCapturing = useRef(false);
@@ -53,6 +60,7 @@ export default function FaceEnrollScreen() {
         if (!userId) {
             setGuideState("invalid");
             setStatusMessage("User information missing");
+            setScanLabel("Enrollment unavailable");
             return;
         }
 
@@ -66,7 +74,7 @@ export default function FaceEnrollScreen() {
         try {
             setGuideState("idle");
             setStatusMessage("Preparing face scan...");
-            setScanLabel("Starting enrollment");
+            setScanLabel("Connecting securely");
 
             token = await SecureStore.getItemAsync("access_token");
 
@@ -100,7 +108,8 @@ export default function FaceEnrollScreen() {
 
             if (startResult.status !== "ready") {
                 throw new Error(
-                    startResult.message ?? "Enrollment could not start."
+                    startResult.message ??
+                    "Enrollment could not start."
                 );
             }
 
@@ -108,10 +117,14 @@ export default function FaceEnrollScreen() {
 
             if (stopScanning.current) return;
 
-            setStatusMessage("Scanning face...");
-            setScanLabel("Collecting secure samples");
+            setStatusMessage("Scanning your face...");
+            setScanLabel("Collecting secure face samples");
 
-            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            for (
+                let attempt = 0;
+                attempt < MAX_ATTEMPTS;
+                attempt++
+            ) {
                 if (
                     stopScanning.current ||
                     !cameraRef.current
@@ -168,43 +181,73 @@ export default function FaceEnrollScreen() {
                         case "enrolled":
                             completed = true;
                             stopScanning.current = true;
+
                             setGuideState("valid");
                             setStatusMessage("Enrollment complete");
-                            setScanLabel("Face enrollment successful");
+                            setScanLabel("Face enrolled successfully");
+
                             router.replace("/login");
                             return;
 
                         case "collecting":
                             setGuideState("valid");
-                            setStatusMessage("Scanning face...");
-                            setScanLabel("Hold steady while we scan");
+                            setStatusMessage("Face detected");
+                            setScanLabel(
+                                "Hold steady while we complete your scan"
+                            );
                             break;
 
                         case "duplicate_frame":
-                            setGuideState("invalid");
-                            setStatusMessage("Turn your head slightly");
-                            setScanLabel("Need a slightly different angle");
+                            setGuideState("valid");
+                            setStatusMessage(
+                                "Turn your head slightly"
+                            );
+                            setScanLabel(
+                                "Capturing a different face angle"
+                            );
                             break;
 
                         case "low_quality":
                             setGuideState("invalid");
-                            setStatusMessage("Improve lighting and hold steady");
-                            setScanLabel("Image quality too low");
+                            setStatusMessage(
+                                "Improve lighting and hold steady"
+                            );
+                            setScanLabel(
+                                "A clearer image is needed"
+                            );
                             break;
 
-                        case "invalid_face_count":
                         case "no_face_detected":
                             setGuideState("invalid");
-                            setStatusMessage("Keep one face inside the guide");
-                            setScanLabel("Only one face should be visible");
+                            setStatusMessage(
+                                "No face detected"
+                            );
+                            setScanLabel(
+                                "Move your face inside the oval"
+                            );
+                            break;
+
+                        case "multiple_faces_detected":
+                        case "invalid_face_count":
+                            setGuideState("invalid");
+                            setStatusMessage(
+                                "Only one face should be visible"
+                            );
+                            setScanLabel(
+                                "Make sure nobody else is in view"
+                            );
                             break;
 
                         case "embedding_failed":
                         case "invalid_embedding":
                         case "invalid_frame":
                             setGuideState("invalid");
-                            setStatusMessage("Adjust your face and try again");
-                            setScanLabel("Unable to capture a usable frame");
+                            setStatusMessage(
+                                "Adjust your face and try again"
+                            );
+                            setScanLabel(
+                                "Unable to process this frame"
+                            );
                             break;
 
                         case "inconsistent_embeddings":
@@ -219,9 +262,12 @@ export default function FaceEnrollScreen() {
                         default:
                             setGuideState("idle");
                             setStatusMessage(
-                                result.message ?? "Scanning face..."
+                                result.message ??
+                                "Scanning your face..."
                             );
-                            setScanLabel("Processing enrollment");
+                            setScanLabel(
+                                "Processing face scan"
+                            );
                     }
                 } finally {
                     if (photoFile) {
@@ -244,7 +290,9 @@ export default function FaceEnrollScreen() {
                 setStatusMessage(
                     "Scan incomplete. Go back and try again."
                 );
-                setScanLabel("Enrollment timed out");
+                setScanLabel(
+                    "Unable to collect enough samples"
+                );
             }
         } catch (error) {
             console.log("Enrollment scan error:", error);
@@ -256,7 +304,7 @@ export default function FaceEnrollScreen() {
                         ? error.message
                         : "Unable to scan face"
                 );
-                setScanLabel("Enrollment failed");
+                setScanLabel("Enrollment unsuccessful");
             }
         } finally {
             if (sessionStarted && !completed && token) {
@@ -324,8 +372,14 @@ export default function FaceEnrollScreen() {
 
     if (!permission) {
         return (
-            <View style={styles.container}>
-                <Text>Loading camera permission...</Text>
+            <View style={styles.centerContainer}>
+                <ActivityIndicator
+                    size="large"
+                    color={Colors.primary}
+                />
+                <Text style={styles.loadingText}>
+                    Loading camera permission...
+                </Text>
             </View>
         );
     }
@@ -333,8 +387,21 @@ export default function FaceEnrollScreen() {
     if (!permission.granted) {
         return (
             <View style={styles.permissionContainer}>
+                <View style={styles.permissionIcon}>
+                    <Ionicons
+                        name="camera-outline"
+                        size={42}
+                        color={Colors.primary}
+                    />
+                </View>
+
+                <Text style={styles.permissionTitle}>
+                    Camera Access Required
+                </Text>
+
                 <Text style={styles.permissionText}>
-                    Camera permission is required for face enrollment.
+                    Camera permission is required to securely
+                    enroll your face for attendance verification.
                 </Text>
 
                 <Pressable
@@ -351,14 +418,22 @@ export default function FaceEnrollScreen() {
 
     return (
         <View style={styles.container}>
-            <View style={styles.header}>
+            <View
+                style={[
+                    styles.header,
+                    { paddingTop: insets.top }
+                ]}
+            >
                 <Pressable
                     onPress={handleBack}
                     style={styles.backButton}
+                    hitSlop={12}
                 >
-                    <Text style={styles.backButtonText}>
-                        {"⬅"}
-                    </Text>
+                    <Ionicons
+                        name="arrow-back"
+                        size={26}
+                        color={Colors.textPrimary}
+                    />
                 </Pressable>
 
                 <Text style={styles.headerTitle}>
@@ -368,17 +443,26 @@ export default function FaceEnrollScreen() {
                 <Image
                     source={require("../assets/logo.png")}
                     style={styles.headerLogo}
+                    resizeMode="contain"
                 />
             </View>
 
-            <View style={styles.content}>
-                <Text style={styles.pageTitle}>
-                    Secure Enrollment
-                </Text>
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+            >
+                <View style={styles.introSection}>
+                    <Text style={styles.pageTitle}>
+                        Secure Face Enrollment
+                    </Text>
 
-                <Text style={styles.pageSubtitle}>
-                    Hold your face inside the guide while we scan.
-                </Text>
+                    <Text style={styles.pageSubtitle}>
+                        Look at your camera while we securely
+                        scan your face for future attendance.
+                    </Text>
+                </View>
 
                 <View style={styles.cameraShell}>
                     <View style={styles.cameraBox}>
@@ -391,10 +475,6 @@ export default function FaceEnrollScreen() {
                             onCameraReady={() => {
                                 console.log("Camera ready");
                                 setCameraReady(true);
-                                setStatusMessage(
-                                    "Position your face inside the frame"
-                                );
-                                setScanLabel("Camera ready");
                             }}
                             onMountError={(error) => {
                                 console.log(
@@ -420,143 +500,292 @@ export default function FaceEnrollScreen() {
                             ]}
                         />
 
-                        <View style={styles.topStatusPill}>
-                            <Text style={styles.topStatusText}>
-                                Live Scan
+                        <View
+                            pointerEvents="none"
+                            style={styles.liveIndicator}
+                        >
+                            <View style={styles.liveDot} />
+
+                            <Text style={styles.liveText}>
+                                LIVE SCAN
+                            </Text>
+                        </View>
+
+                        <View
+                            pointerEvents="none"
+                            style={styles.cameraBottomLabel}
+                        >
+                            <MaterialCommunityIcons
+                                name="face-recognition"
+                                size={18}
+                                color="#FFFFFF"
+                            />
+
+                            <Text style={styles.cameraBottomText}>
+                                {guideState === "valid"
+                                    ? "Face detected"
+                                    : guideState === "invalid"
+                                        ? "Adjust your position"
+                                        : "Align your face"}
                             </Text>
                         </View>
                     </View>
                 </View>
 
                 <View style={styles.statusCard}>
-                    <Text style={styles.statusTitle}>
-                        {statusMessage}
-                    </Text>
+                    <View style={styles.statusHeader}>
+                        <View
+                            style={[
+                                styles.statusIcon,
+                                guideState === "valid" &&
+                                    styles.successIcon,
+                                guideState === "invalid" &&
+                                    styles.errorIcon
+                            ]}
+                        >
+                            <Ionicons
+                                name={
+                                    guideState === "valid"
+                                        ? "checkmark-circle"
+                                        : guideState === "invalid"
+                                            ? "alert-circle"
+                                            : "scan-outline"
+                                }
+                                size={25}
+                                color={
+                                    guideState === "valid"
+                                        ? Colors.success
+                                        : guideState === "invalid"
+                                            ? Colors.danger
+                                            : Colors.primary
+                                }
+                            />
+                        </View>
 
-                    <Text style={styles.statusSubtext}>
-                        {scanLabel}
-                    </Text>
+                        <View style={styles.statusTextContainer}>
+                            <Text style={styles.statusTitle}>
+                                {statusMessage}
+                            </Text>
+
+                            <Text style={styles.statusSubtext}>
+                                {scanLabel}
+                            </Text>
+                        </View>
+                    </View>
+
+                    <View style={styles.statusDivider} />
 
                     <View style={styles.scanIndicator}>
-                        <ActivityIndicator
-                            size="small"
-                            color="#0a3a00"
-                        />
+                        {isScanning ? (
+                            <ActivityIndicator
+                                size="small"
+                                color={Colors.primary}
+                            />
+                        ) : (
+                            <MaterialCommunityIcons
+                                name="shield-check-outline"
+                                size={21}
+                                color={Colors.primary}
+                            />
+                        )}
+
                         <Text style={styles.scanLabel}>
                             {isScanning
                                 ? "Scanning securely..."
-                                : "Waiting to scan"}
+                                : "Secure face enrollment"}
                         </Text>
                     </View>
                 </View>
 
                 <View style={styles.tipCard}>
-                    <Text style={styles.tipTitle}>
-                        Tips
-                    </Text>
+                    <View style={styles.tipHeader}>
+                        <Ionicons
+                            name="information-circle-outline"
+                            size={23}
+                            color={Colors.primary}
+                        />
 
-                    <Text style={styles.tipText}>
-                        • Keep only one face visible{"\n"}
-                        • Look at the camera{"\n"}
-                        • Make small head movements{"\n"}
-                        • Use good lighting
+                        <Text style={styles.tipTitle}>
+                            Tips for a successful scan
+                        </Text>
+                    </View>
+
+                    <View style={styles.tipRow}>
+                        <Ionicons
+                            name="checkmark-circle-outline"
+                            size={19}
+                            color={Colors.success}
+                        />
+                        <Text style={styles.tipText}>
+                            Keep only one face visible.
+                        </Text>
+                    </View>
+
+                    <View style={styles.tipRow}>
+                        <Ionicons
+                            name="checkmark-circle-outline"
+                            size={19}
+                            color={Colors.success}
+                        />
+                        <Text style={styles.tipText}>
+                            Look directly at the camera.
+                        </Text>
+                    </View>
+
+                    <View style={styles.tipRow}>
+                        <Ionicons
+                            name="checkmark-circle-outline"
+                            size={19}
+                            color={Colors.success}
+                        />
+                        <Text style={styles.tipText}>
+                            Make small head movements when prompted.
+                        </Text>
+                    </View>
+
+                    <View style={styles.tipRow}>
+                        <Ionicons
+                            name="checkmark-circle-outline"
+                            size={19}
+                            color={Colors.success}
+                        />
+                        <Text style={styles.tipText}>
+                            Use bright, even lighting.
+                        </Text>
+                    </View>
+
+                    <View style={styles.tipRow}>
+                        <Ionicons
+                            name="checkmark-circle-outline"
+                            size={19}
+                            color={Colors.success}
+                        />
+                        <Text style={styles.tipText}>
+                            Remove glasses and hats during enrollment.
+                        </Text>
+                    </View>
+                </View>
+
+                <View style={styles.privacySection}>
+                    <MaterialCommunityIcons
+                        name="shield-lock-outline"
+                        size={22}
+                        color={Colors.textSecondary}
+                    />
+
+                    <Text style={styles.privacyText}>
+                        Your face is processed for secure
+                        biometric enrollment.
                     </Text>
                 </View>
-            </View>
+            </ScrollView>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    background: {
-        flex: 1
-    },
-
-    backgroundImage: {
-        transform: [
-            {
-                scale: 1.3
-            }
-        ]
-    },
-
     container: {
         flex: 1,
-        backgroundColor: "#f6f7f9"
+        backgroundColor: Colors.background
+    },
+
+    centerContainer: {
+        flex: 1,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: Colors.background
+    },
+
+    loadingText: {
+        marginTop: 14,
+        fontSize: 16,
+        color: Colors.textSecondary
     },
 
     header: {
-        height: 90,
-        backgroundColor: "#0f5c00",
-        paddingHorizontal: 20,
-        paddingTop: 40,
+        minHeight: 94,
+        backgroundColor: Colors.surface,
+        paddingHorizontal: Spacing.lg,
+        flexDirection: "row",
         alignItems: "center",
+        justifyContent: "space-between",
         borderBottomWidth: 1,
-        borderBottomColor: "#ddd",
-        flexDirection: "row"
+        borderBottomColor: Colors.borderLight
     },
 
     backButton: {
-        width: 40
-    },
-
-    backButtonText: {
-        fontSize: 26,
-        fontWeight: "bold",
-        color: "white"
+        width: 44,
+        height: 44,
+        alignItems: "center",
+        justifyContent: "center"
     },
 
     headerTitle: {
         flex: 1,
+        color: Colors.textPrimary,
         fontSize: 22,
-        fontWeight: "bold",
-        textAlign: "center",
-        color: "white"
+        fontWeight: "800",
+        textAlign: "center"
     },
 
     headerLogo: {
-        width: 45,
-        height: 45,
-        borderRadius: 8
+        width: 48,
+        height: 48
     },
 
-    content: {
-        flex: 1,
+    scrollView: {
+        flex: 1
+    },
+
+    scrollContent: {
+        flexGrow: 1,
         alignItems: "center",
         paddingHorizontal: 20,
-        paddingTop: 28,
-        paddingBottom: 24
+        paddingTop: 26,
+        paddingBottom: 55
+    },
+
+    introSection: {
+        width: "100%",
+        maxWidth: 420,
+        marginBottom: 22,
+        alignItems: "center"
     },
 
     pageTitle: {
-        fontSize: 28,
+        color: Colors.textPrimary,
+        fontSize: 27,
         fontWeight: "800",
-        color: "#0a3a00",
-        marginBottom: 8
+        textAlign: "center"
     },
 
     pageSubtitle: {
+        color: Colors.textSecondary,
         fontSize: 15,
-        color: "#5f6d63",
+        lineHeight: 22,
         textAlign: "center",
-        marginBottom: 22
+        marginTop: 9,
+        paddingHorizontal: 8
     },
 
     cameraShell: {
         width: "100%",
         maxWidth: 390,
-        padding: 8,
-        borderRadius: 28,
-        backgroundColor: "#e9f2eb",
+        backgroundColor: Colors.surface,
+        borderRadius: Radius.lg,
+        padding: 7,
+        borderWidth: 1,
+        borderColor: Colors.borderLight,
         marginBottom: 18
     },
 
     cameraBox: {
         width: "100%",
-        height: 410,
-        borderRadius: 24,
+        aspectRatio: 0.94,
+        maxHeight: 405,
+        borderRadius: Radius.md,
         overflow: "hidden",
-        backgroundColor: "#000",
+        backgroundColor: "#101510",
         position: "relative"
     },
 
@@ -566,66 +795,125 @@ const styles = StyleSheet.create({
 
     faceGuide: {
         position: "absolute",
-        width: 220,
-        height: 280,
-        top: 60,
+        width: "62%",
+        height: "69%",
+        top: "15%",
         alignSelf: "center",
-        borderWidth: 4,
-        borderColor: "white",
-        borderRadius: 120,
-        backgroundColor: "transparent"
+        borderWidth: 3,
+        borderColor: "#FFFFFF",
+        borderRadius: 150
     },
 
     faceGuideValid: {
-        borderColor: "#22a447"
+        borderColor: Colors.success
     },
 
     faceGuideInvalid: {
-        borderColor: "#d83a34"
+        borderColor: Colors.danger
     },
 
-    topStatusPill: {
+    liveIndicator: {
         position: "absolute",
-        top: 18,
-        alignSelf: "center",
-        backgroundColor: "rgba(0,0,0,0.45)",
-        paddingHorizontal: 16,
+        top: 15,
+        left: 15,
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: "rgba(0,0,0,0.55)",
+        paddingHorizontal: 12,
         paddingVertical: 8,
-        borderRadius: 999
+        borderRadius: Radius.pill,
+        gap: 7
     },
 
-    topStatusText: {
-        color: "white",
+    liveDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: "#37DA69"
+    },
+
+    liveText: {
+        color: "#FFFFFF",
+        fontSize: 11,
+        fontWeight: "800",
+        letterSpacing: 1
+    },
+
+    cameraBottomLabel: {
+        position: "absolute",
+        bottom: 16,
+        alignSelf: "center",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        backgroundColor: "rgba(0,0,0,0.55)",
+        paddingHorizontal: 15,
+        paddingVertical: 9,
+        borderRadius: Radius.pill
+    },
+
+    cameraBottomText: {
+        color: "#FFFFFF",
         fontSize: 13,
-        fontWeight: "700",
-        letterSpacing: 0.3
+        fontWeight: "600"
     },
 
     statusCard: {
         width: "100%",
         maxWidth: 390,
-        backgroundColor: "white",
-        borderRadius: 18,
-        paddingHorizontal: 18,
-        paddingVertical: 18,
-        marginBottom: 16,
+        backgroundColor: Colors.surface,
         borderWidth: 1,
-        borderColor: "#e4e8e4"
+        borderColor: Colors.borderLight,
+        borderRadius: Radius.lg,
+        padding: 18,
+        marginBottom: 16
+    },
+
+    statusHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12
+    },
+
+    statusIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: Radius.pill,
+        backgroundColor: Colors.featureIconBackground,
+        alignItems: "center",
+        justifyContent: "center"
+    },
+
+    successIcon: {
+        backgroundColor: Colors.successSoft
+    },
+
+    errorIcon: {
+        backgroundColor: Colors.dangerSoft
+    },
+
+    statusTextContainer: {
+        flex: 1
     },
 
     statusTitle: {
-        color: "#0a3a00",
-        fontSize: 18,
-        fontWeight: "700",
-        textAlign: "center",
-        marginBottom: 6
+        color: Colors.textPrimary,
+        fontSize: 17,
+        fontWeight: "800",
+        marginBottom: 4
     },
 
     statusSubtext: {
-        color: "#6a766d",
+        color: Colors.textSecondary,
         fontSize: 14,
-        textAlign: "center",
-        marginBottom: 14
+        lineHeight: 19
+    },
+
+    statusDivider: {
+        height: 1,
+        backgroundColor: Colors.borderLight,
+        marginVertical: 15
     },
 
     scanIndicator: {
@@ -633,37 +921,71 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         gap: 10,
-        minHeight: 36
+        minHeight: 28
     },
 
     scanLabel: {
-        color: "#0a3a00",
-        fontSize: 16,
-        fontWeight: "600"
+        color: Colors.primary,
+        fontSize: 15,
+        fontWeight: "700"
     },
 
     tipCard: {
         width: "100%",
         maxWidth: 390,
-        backgroundColor: "#ffffff",
-        borderRadius: 18,
-        paddingHorizontal: 18,
-        paddingVertical: 18,
+        backgroundColor: Colors.surface,
         borderWidth: 1,
-        borderColor: "#e4e8e4"
+        borderColor: Colors.borderLight,
+        borderRadius: Radius.lg,
+        padding: 18,
+        marginBottom: 16
+    },
+
+    tipHeader: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 9,
+        marginBottom: 14
     },
 
     tipTitle: {
-        fontSize: 16,
+        color: Colors.textPrimary,
+        fontSize: 17,
         fontWeight: "800",
-        color: "#0a3a00",
-        marginBottom: 10
+        flex: 1
+    },
+
+    tipRow: {
+        flexDirection: "row",
+        alignItems: "flex-start",
+        gap: 10,
+        marginBottom: 11
     },
 
     tipText: {
-        color: "#5f6d63",
+        flex: 1,
+        color: Colors.textSecondary,
         fontSize: 14,
-        lineHeight: 22
+        lineHeight: 20
+    },
+
+    privacySection: {
+        width: "100%",
+        maxWidth: 390,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 10,
+        paddingHorizontal: 15,
+        marginTop: 4
+    },
+
+    privacyText: {
+        flex: 1,
+        color: Colors.textSecondary,
+        fontSize: 13,
+        lineHeight: 19,
+        textAlign: "center"
     },
 
     permissionContainer: {
@@ -671,26 +993,45 @@ const styles = StyleSheet.create({
         alignItems: "center",
         justifyContent: "center",
         padding: 30,
-        backgroundColor: "#f6f7f9"
+        backgroundColor: Colors.background
+    },
+
+    permissionIcon: {
+        width: 84,
+        height: 84,
+        borderRadius: Radius.pill,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: Colors.featureIconBackground,
+        marginBottom: 18
+    },
+
+    permissionTitle: {
+        fontSize: 24,
+        fontWeight: "800",
+        color: Colors.textPrimary,
+        textAlign: "center"
     },
 
     permissionText: {
-        fontSize: 18,
+        fontSize: 16,
+        lineHeight: 23,
+        color: Colors.textSecondary,
         textAlign: "center",
-        marginBottom: 25,
-        color: "#0a3a00"
+        marginTop: 12,
+        marginBottom: 25
     },
 
     permissionButton: {
-        backgroundColor: "#0f5c00",
-        paddingVertical: 14,
+        backgroundColor: Colors.primary,
+        paddingVertical: 16,
         paddingHorizontal: 30,
-        borderRadius: 10
+        borderRadius: Radius.md
     },
 
     permissionButtonText: {
-        color: "white",
+        color: Colors.surface,
         fontSize: 16,
-        fontWeight: "bold"
+        fontWeight: "800"
     }
 });
