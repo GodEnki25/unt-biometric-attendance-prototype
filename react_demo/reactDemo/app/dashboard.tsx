@@ -11,6 +11,7 @@ import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors, Radius, Spacing } from "../constants/theme";
 import { useEffect, useState } from "react";
+import { usePresenceTracking } from "@/hooks/usePresenceTracking";
 import { API_BASE } from "@/constants/api";
 
 // ============================================================
@@ -102,6 +103,12 @@ export default function DashboardScreen() {
     const [activeSession, setActiveSession] = useState<any | null>(null);
     const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
     const [studentName, setStudentName] = useState("Student");
+    const {
+        result: presenceResult,
+        confirmedInside,
+        rawInside,
+        location,
+    } = usePresenceTracking();
 
     // ============================================================
     // LOAD STUDENT INFO

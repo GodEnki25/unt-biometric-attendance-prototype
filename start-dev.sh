@@ -38,7 +38,7 @@ echo "Starting Expo..."
 
 cd "$ROOT/react_demo/reactDemo"
 
-npx expo start --tunnel &
+npx expo start --tunnel 
 
 EXPO_PID=$!
 

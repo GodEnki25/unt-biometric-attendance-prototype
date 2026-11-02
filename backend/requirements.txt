@@ -2,7 +2,7 @@ fastapi
 uvicorn
 pydantic
 redis
-opencv-python-headless
+opencv-contrib-python-headless==4.13.0.92
 insightface
 python-multipart
 mediapipe
