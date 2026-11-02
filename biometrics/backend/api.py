@@ -103,13 +103,13 @@ def clear_enrollment(user_id):
 
 
 def clear_verification(user_id):
-    verifier = verification_sessions.pop(
-        user_id,
-        None
-    )
+    verifier = verification_sessions.pop(user_id, None)
 
     if verifier is not None:
-        verifier.close()
+        close_method = getattr(verifier, "close", None)
+
+        if callable(close_method):
+            close_method()
 
 
 @router.get("/biometric-test")
@@ -219,8 +219,9 @@ def enroll_frame(
 
     except Exception:
         print(
-            "Enrollment frame processing failed for user:",
-            user_id
+            "[ENROLL] Frame processing failed for user:",
+            user_id,
+            flush=True
         )
 
         return {
@@ -256,6 +257,11 @@ async def verify_face(
     frame = await get_frame(file)
 
     if frame is None:
+        print(
+            f"[VERIFY] User={user_id} invalid frame",
+            flush=True
+        )
+
         return {
             "status": "invalid_frame"
         }
@@ -269,6 +275,11 @@ async def verify_face(
             )
 
             if stored_embedding is None:
+                print(
+                    f"[VERIFY] User={user_id} face not enrolled",
+                    flush=True
+                )
+
                 return {
                     "status": "face_not_enrolled"
                 }
@@ -277,9 +288,25 @@ async def verify_face(
                 user_id
             )
 
-            verification_sessions[user_id] = Verifier(
-                stored_embedding=stored_embedding,
-                stored_periocular_embedding=stored_periocular
+            try:
+                verification_sessions[user_id] = Verifier(
+                    stored_embedding=stored_embedding,
+                    stored_periocular_embedding=stored_periocular
+                )
+
+            except Exception:
+                print(
+                    f"[VERIFY] User={user_id} "
+                    "failed to initialize verifier",
+                    flush=True
+                )
+                raise
+
+            print(
+                f"[VERIFY] User={user_id} session started | "
+                f"Periocular stored: "
+                f"{stored_periocular is not None}",
+                flush=True
             )
 
         verifier = verification_sessions[user_id]
@@ -291,12 +318,24 @@ async def verify_face(
             clear_verification(user_id)
             raise
 
-        if result["status"] == "verified":
+        status = result.get("status", "unknown")
+
+        if status == "verified":
             verified_users.add(user_id)
             clear_verification(user_id)
 
-        elif result["status"] == "liveness_failed":
+            print(
+                f"[VERIFY] User={user_id} verified successfully",
+                flush=True
+            )
+
+        elif status == "liveness_failed":
             clear_verification(user_id)
+
+            print(
+                f"[VERIFY] User={user_id} liveness failed",
+                flush=True
+            )
 
         return result
 
@@ -309,6 +348,11 @@ def cancel_verification(
 
     with _verification_lock:
         clear_verification(user_id)
+
+    print(
+        f"[VERIFY] User={user_id} session cancelled",
+        flush=True
+    )
 
     return {
         "status": "cancelled"

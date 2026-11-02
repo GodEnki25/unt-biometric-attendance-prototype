@@ -8,13 +8,16 @@ from biometrics.backend.enrollment.enrollment_layer import extract_periocular_em
 EMBEDDING_DIM = 512
 MIN_NORM = 1e-8
 
+FACE_THRESHOLD = 0.60
+REQUIRED_MATCHES = 3
+
 
 class Verifier:
 
     def __init__(
         self,
         stored_embedding,
-        threshold=0.75,
+        threshold=FACE_THRESHOLD,
         stored_periocular_embedding=None
     ):
 
@@ -42,9 +45,21 @@ class Verifier:
                     "Expected three periocular embeddings."
                 )
 
+            print(
+                "[VERIFY] Periocular templates loaded: "
+                f"{self.stored_periocular_embeddings.shape[0]}",
+                flush=True
+            )
+
+        else:
+            print(
+                "[VERIFY] No stored periocular templates",
+                flush=True
+            )
+
         self.threshold = threshold
         self.counter = 0
-        self.required_matches = 3
+        self.required_matches = REQUIRED_MATCHES
 
     @staticmethod
     def normalize_embeddings(embeddings, dimension=None):
@@ -145,10 +160,18 @@ class Verifier:
         except ValueError:
             return None
 
+    def close(self):
+        self.counter = 0
+
     def process(self, frame):
 
         if frame is None or frame.size == 0:
             self.counter = 0
+
+            print(
+                "[VERIFY] Invalid or empty frame",
+                flush=True
+            )
 
             return {
                 "status": "no_face_detected"
@@ -159,8 +182,17 @@ class Verifier:
         if len(faces) != 1:
             self.counter = 0
 
+            print(
+                f"[VERIFY] Faces detected: {len(faces)}",
+                flush=True
+            )
+
             return {
-                "status": "no_face_detected"
+                "status": (
+                    "multiple_faces_detected"
+                    if len(faces) > 1
+                    else "no_face_detected"
+                )
             }
 
         face = faces[0]
@@ -174,9 +206,17 @@ class Verifier:
         if live_embedding is None:
             self.counter = 0
 
+            print(
+                "[VERIFY] Face detected but embedding unavailable",
+                flush=True
+            )
+
             return {
-                "status": "face_not_matched",
-                "confidence": 0.0
+                "status": "scanning",
+                "confidence": 0.0,
+                "periocular_confidence": None,
+                "matches": 0,
+                "required": self.required_matches
             }
 
         try:
@@ -184,12 +224,20 @@ class Verifier:
                 live_embedding
             )
 
-        except ValueError:
+        except ValueError as error:
             self.counter = 0
 
+            print(
+                f"[VERIFY] Full-face embedding error: {error}",
+                flush=True
+            )
+
             return {
-                "status": "face_not_matched",
-                "confidence": 0.0
+                "status": "scanning",
+                "confidence": 0.0,
+                "periocular_confidence": None,
+                "matches": 0,
+                "required": self.required_matches
             }
 
         eye_score = self.periocular_similarity(
@@ -202,18 +250,51 @@ class Verifier:
             "periocular_confidence": eye_score
         }
 
+        eye_display = (
+            f"{eye_score:.4f}"
+            if eye_score is not None
+            else "Unavailable"
+        )
+
+        print(
+            f"[VERIFY] Full-face={face_score:.4f} | "
+            f"Periocular={eye_display} | "
+            f"Threshold={self.threshold:.4f} | "
+            f"Matches={self.counter}/{self.required_matches}",
+            flush=True
+        )
+
         if face_score < self.threshold:
             self.counter = 0
 
+            print(
+                f"[VERIFY] Low similarity: {face_score:.4f} "
+                f"< {self.threshold:.4f}. Continuing scan.",
+                flush=True
+            )
+
             return {
-                "status": "face_not_matched",
-                **biometric_scores
+                "status": "scanning",
+                **biometric_scores,
+                "matches": 0,
+                "required": self.required_matches
             }
 
         self.counter += 1
 
+        print(
+            "[VERIFY] Full-face match accepted | "
+            f"Consecutive={self.counter}/{self.required_matches}",
+            flush=True
+        )
+
         if self.counter >= self.required_matches:
             self.counter = 0
+
+            print(
+                "[VERIFY] Required consecutive matches completed",
+                flush=True
+            )
 
             return {
                 "status": "verified",

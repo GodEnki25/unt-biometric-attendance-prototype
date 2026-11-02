@@ -1,5 +1,14 @@
 
-import { View, Text, StyleSheet, Image, Pressable, ActivityIndicator, ScrollView } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  Pressable,
+  ActivityIndicator,
+  ScrollView,
+  type ScrollViewInstance,
+} from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useEffect, useState, useRef } from "react";
 import * as Location from "expo-location";
@@ -76,7 +85,7 @@ export default function CheckInScreen() {
   const { userId } = useLocalSearchParams();
 
   const cameraRef = useRef<CameraView | null>(null);
-  const scrollRef = useRef<ScrollView | null>(null);
+  const scrollRef = useRef<ScrollViewInstance | null>(null);
   const faceCardY = useRef(0);
   const pendingCameraScroll = useRef(false);
   const scanStopped = useRef(false);
