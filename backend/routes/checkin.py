@@ -1,17 +1,19 @@
-from fastapi import APIRouter, UploadFile, File, Form, Depends
-from backend.database.db import get_db_connection
-from biometrics.backend.api import verified_users
+
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-CENTRAL_TZ = ZoneInfo("America/Chicago")
+from fastapi import APIRouter, UploadFile, File, Form, Depends
 
+from backend.database.db import get_db_connection
 from backend.services.tile38_service import check_geofence
 from backend.routes.geofence import ACTIVE_SESSION
 from backend.services.token_service import get_current_user, require_instructor
+from biometrics.backend.api import consume_verification
 
 
 router = APIRouter()
+CENTRAL_TZ = ZoneInfo("America/Chicago")
+
 
 def calculate_attendance_times(cursor, attendance_id, session_end=None):
     if attendance_id is None:
@@ -65,8 +67,13 @@ def calculate_attendance_times(cursor, attendance_id, session_end=None):
             latest_exit = event["event_time"]
 
     if inside_since is not None:
-        end = session_end or datetime.now(CENTRAL_TZ).replace(tzinfo=None)
-        total_seconds += max(0, (end - inside_since).total_seconds())
+        end = session_end or datetime.now(
+            CENTRAL_TZ
+        ).replace(tzinfo=None)
+
+        total_seconds += max(
+            0, (end - inside_since).total_seconds()
+        )
 
     total_seconds = int(total_seconds)
     hours, remainder = divmod(total_seconds, 3600)
@@ -79,9 +86,6 @@ def calculate_attendance_times(cursor, attendance_id, session_end=None):
         "total_time": f"{hours:02d}:{minutes:02d}:{seconds:02d}",
     }
 
-# =========================
-# CREATE SESSION
-# =========================
 
 @router.post("/session")
 def create_session(
@@ -111,26 +115,23 @@ def create_session(
         )
 
         conn.commit()
-        session_id = cursor.lastrowid
 
-    except Exception as e:
+        return {
+            "success": True,
+            "session_id": cursor.lastrowid,
+        }
+
+    except Exception as error:
+        conn.rollback()
+
         return {
             "success": False,
-            "error": str(e),
+            "error": str(error),
         }
 
     finally:
         conn.close()
 
-    return {
-        "success": True,
-        "session_id": session_id,
-    }
-
-
-# =========================
-# CHECK-IN (CORE FEATURE)
-# =========================
 
 @router.post("/checkin")
 async def checkin(
@@ -146,11 +147,10 @@ async def checkin(
     cursor = conn.cursor()
 
     try:
-        # =========================
-        # ACTIVE SESSION VALIDATION
-        # =========================
-
-        if not ACTIVE_SESSION["is_open"] or ACTIVE_SESSION["id"] is None:
+        if (
+            not ACTIVE_SESSION["is_open"]
+            or ACTIVE_SESSION["id"] is None
+        ):
             return {
                 "success": False,
                 "message": "No active session",
@@ -175,11 +175,9 @@ async def checkin(
                 "message": "Active session not found in database",
             }
 
-        # =========================
-        # TIME VALIDATION
-        # =========================
-
-        now = datetime.now(CENTRAL_TZ).replace(tzinfo=None)
+        now = datetime.now(
+            CENTRAL_TZ
+        ).replace(tzinfo=None)
 
         session_date = session["session_date"]
         start_time = session["start_time"]
@@ -187,13 +185,11 @@ async def checkin(
         def parse_datetime(dt_str):
             try:
                 return datetime.strptime(
-                    dt_str,
-                    "%Y-%m-%d %H:%M:%S",
+                    dt_str, "%Y-%m-%d %H:%M:%S"
                 )
             except ValueError:
                 return datetime.strptime(
-                    dt_str,
-                    "%Y-%m-%d %H:%M",
+                    dt_str, "%Y-%m-%d %H:%M"
                 )
 
         start_datetime = parse_datetime(
@@ -205,10 +201,6 @@ async def checkin(
                 "success": False,
                 "message": "Check-in not allowed before session start",
             }
-
-        # =========================
-        # GEOFENCE VALIDATION
-        # =========================
 
         accuracy_buffer_m = min(accuracy, 10.0)
 
@@ -233,26 +225,16 @@ async def checkin(
                 "allowed_radius_m": allowed_radius_m,
             }
 
-        # =========================
-        # FACE VALIDATION
-        # =========================
+        # Face recognition and liveness must both be completed.
+        # The authorization expires after 30 seconds and is
+        # consumed once, preventing reuse for another check-in.
 
-        # Face identity was already verified by /verify using the student's stored biometric embedding.
-        if user_id not in verified_users:
+        if not consume_verification(user_id):
             return {
                 "success": False,
-                "message": "Face verification not completed",
+                "message": "Face and liveness verification required or expired",
                 "face_verified": False,
             }
-
-        # Consume the verification so it cannot be reused for another check-in attempt.
-        verified_users.discard(user_id)
-
-        face_verified = True
-
-        # =========================
-        # DUPLICATE CHECK
-        # =========================
 
         cursor.execute(
             """
@@ -261,29 +243,20 @@ async def checkin(
             WHERE session_id = ?
               AND student_id = ?
             """,
-            (
-                session_id,
-                user_id,
-            ),
+            (session_id, user_id),
         )
 
-        existing_record = cursor.fetchone()
-
-        if existing_record:
+        if cursor.fetchone():
             return {
                 "success": False,
                 "message": "Student already checked in for this session",
             }
 
-        # =========================
-        # SAVE ATTENDANCE
-        # =========================
-
         status = "present"
 
-        check_in_time = datetime.now(CENTRAL_TZ).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        check_in_time = datetime.now(
+            CENTRAL_TZ
+        ).strftime("%Y-%m-%d %H:%M:%S")
 
         cursor.execute(
             """
@@ -309,11 +282,6 @@ async def checkin(
 
         attendance_id = cursor.lastrowid
 
-        #==============================
-        # INITIAL GEOFENCE EVENT
-        #==============================
-        # A sucessfull attendance check-in can only occur while
-        # the student is inside the active classroom geofence.
         cursor.execute(
             """
             INSERT INTO geofence_status_changes (
@@ -346,21 +314,18 @@ async def checkin(
             "engine": "tile38",
         }
 
-    except Exception as e:
+    except Exception as error:
         conn.rollback()
 
         return {
             "success": False,
-            "error": str(e),
+            "error": str(error),
         }
 
     finally:
+        await file.close()
         conn.close()
 
-
-# =========================
-# GET CHECK-INS
-# =========================
 
 @router.get("/checkins")
 def get_checkins(
@@ -370,14 +335,13 @@ def get_checkins(
     cursor = conn.cursor()
 
     try:
-        # If a class is currently running, show attendance
-        # for that exact session.
-        if ACTIVE_SESSION["is_open"] and ACTIVE_SESSION["id"] is not None:
+        if (
+            ACTIVE_SESSION["is_open"]
+            and ACTIVE_SESSION["id"] is not None
+        ):
             session_id = int(ACTIVE_SESSION["id"])
 
         else:
-            # If the class has ended, show attendance from
-            # the most recently created session.
             cursor.execute(
                 """
                 SELECT session_id
@@ -410,13 +374,6 @@ def get_checkins(
 
         course_id = session_course["course_id"]
 
-
-
-        # Get every enrolled student and their attendance
-        # record for this specific session only.
-        #
-        # Keep the same response format expected by the
-        # instructor dashboard and override screen.
         cursor.execute(
             """
             SELECT
@@ -438,7 +395,7 @@ def get_checkins(
                 ON ar.student_id = u.user_id
                 AND ar.session_id = ?
             WHERE ce.course_id = ?
-                AND u.role = 'student'
+              AND u.role = 'student'
             ORDER BY u.full_name
             """,
             (session_id, course_id),
@@ -454,9 +411,10 @@ def get_checkins(
             """,
             (session_id,),
         )
-        session = cursor.fetchone()
 
+        session = cursor.fetchone()
         session_end = None
+
         if session and session["end_time"]:
             session_end = datetime.strptime(
                 f'{session["session_date"]} {session["end_time"]}',
@@ -468,13 +426,14 @@ def get_checkins(
         for row in records:
             record = dict(row)
 
-            times = calculate_attendance_times(
-                cursor,
-                record["attendance_id"],
-                session_end,
+            record.update(
+                calculate_attendance_times(
+                    cursor,
+                    record["attendance_id"],
+                    session_end,
+                )
             )
 
-            record.update(times)
             results.append(record)
 
         return results
@@ -482,9 +441,6 @@ def get_checkins(
     finally:
         conn.close()
 
-# =========================
-# GET CURRENT CHECK-IN STATUS
-# =========================
 
 @router.get("/checkin/status")
 def get_checkin_status(
@@ -500,9 +456,7 @@ def get_checkin_status(
             "checked_in": False
         }
 
-    session_id = int(
-        ACTIVE_SESSION["id"]
-    )
+    session_id = int(ACTIVE_SESSION["id"])
 
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -519,10 +473,7 @@ def get_checkin_status(
               AND student_id = ?
             LIMIT 1
             """,
-            (
-                session_id,
-                user_id,
-            ),
+            (session_id, user_id),
         )
 
         record = cursor.fetchone()
@@ -542,9 +493,7 @@ def get_checkin_status(
     finally:
         conn.close()
 
-# ============================================================
-# INSTRUCTOR ATTENDANCE OVERRIDE DETAILS
-# ============================================================
+
 @router.get("/attendance/override/{student_id}")
 def get_attendance_override_details(
     student_id: int,
@@ -554,12 +503,10 @@ def get_attendance_override_details(
     cursor = conn.cursor()
 
     try:
-
-        # --------------------------------------------------------
-        # DETERMINE CURRENT / MOST RECENT SESSION
-        # --------------------------------------------------------
-
-        if(ACTIVE_SESSION["is_open"] and ACTIVE_SESSION["id"] is not None):
+        if (
+            ACTIVE_SESSION["is_open"]
+            and ACTIVE_SESSION["id"] is not None
+        ):
             session_id = int(ACTIVE_SESSION["id"])
 
         else:
@@ -574,66 +521,48 @@ def get_attendance_override_details(
 
             session = cursor.fetchone()
 
-            if not session: 
+            if not session:
                 return {
                     "success": False,
                     "message": "No attendance session found.",
                 }
 
-            session_id = session ["session_id"]
+            session_id = session["session_id"]
 
-        # --------------------------------------------------------
-        # LOAD SESSION / COURSE / STUDENT / ATTENDANCE
-        # --------------------------------------------------------
         cursor.execute(
             """
             SELECT
                 s.session_id,
                 s.session_date,
-                
                 c.course_id,
                 c.course_code,
                 c.course_name,
-                
                 u.user_id AS student_id,
                 u.full_name AS student_name,
-                
                 ar.attendance_id,
                 ar.check_in_time,
                 ar.face_verified,
                 ar.location_verified,
-                
                 CASE
-                    WHEN ar.attendance_id IS NULL
-                        THEN 'absent'
+                    WHEN ar.attendance_id IS NULL THEN 'absent'
                     ELSE ar.status
                 END AS status
-            
             FROM attendance_sessions s
-
             JOIN courses c
                 ON c.course_id = s.course_id
-
-            JOIN course_enrollments ce 
+            JOIN course_enrollments ce
                 ON ce.course_id = s.course_id
-
             JOIN users u
                 ON u.user_id = ce.student_id
-
             LEFT JOIN attendance_records ar
                 ON ar.session_id = s.session_id
                 AND ar.student_id = u.user_id
-
             WHERE s.session_id = ?
-                AND u.user_id = ?
-                AND u.role = 'student'
-
+              AND u.user_id = ?
+              AND u.role = 'student'
             LIMIT 1
             """,
-            (
-                session_id,
-                student_id,
-            ),
+            (session_id, student_id),
         )
 
         record = cursor.fetchone()
@@ -645,11 +574,6 @@ def get_attendance_override_details(
             }
 
         attendance_id = record["attendance_id"]
-
-        # --------------------------------------------------------
-        # LOAD GEOFENCE / ATTENDANCE EVENTS
-        # --------------------------------------------------------
-
         events = []
 
         if attendance_id is not None:
@@ -660,25 +584,16 @@ def get_attendance_override_details(
                 WHERE attendance_id = ?
                 ORDER BY event_time ASC
                 """,
-                (
-                    attendance_id,
-                ),
+                (attendance_id,),
             )
-
-            event_rows = cursor.fetchall()
 
             events = [
                 {
                     "event_type": row["event_type"],
                     "event_time": row["event_time"],
                 }
-
-                for row in event_rows
+                for row in cursor.fetchall()
             ]
-
-        # --------------------------------------------------------
-        # RETURN OVERRIDE DATA
-        # --------------------------------------------------------
 
         return {
             "success": True,
@@ -686,70 +601,52 @@ def get_attendance_override_details(
                 "student_id": record["student_id"],
                 "student_name": record["student_name"],
             },
-
             "course": {
                 "course_id": record["course_id"],
                 "course_code": record["course_code"],
                 "course_name": record["course_name"],
             },
-
             "session": {
                 "session_id": record["session_id"],
                 "session_date": record["session_date"],
             },
-
             "attendance": {
-                "attendance_id": record["attendance_id"],
-
+                "attendance_id": attendance_id,
                 "status": record["status"],
-
                 "check_in_time": record["check_in_time"],
-
-                "face_verified": bool (record["face_verified"])
-
-                    if attendance_id
-                    else False,
-
-                "location_verified": bool(record["location_verified"])
-
-                    if attendance_id
-                    else False,
+                "face_verified": (
+                    bool(record["face_verified"])
+                    if attendance_id is not None
+                    else False
+                ),
+                "location_verified": (
+                    bool(record["location_verified"])
+                    if attendance_id is not None
+                    else False
+                ),
             },
-
             "events": events,
         }
 
     finally:
         conn.close()
 
-# ============================================================
-# SAVE INSTRUCTOR ATTENDANCE OVERRIDE
-# ============================================================
+
 @router.post("/attendance/override")
-def save_attendance_override(data: dict, current_user=Depends(require_instructor), ):
-    
+def save_attendance_override(
+    data: dict,
+    current_user=Depends(require_instructor),
+):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-
-        # --------------------------------------------------------
-        # REQUEST DATA
-        # --------------------------------------------------------
-
         session_id = data.get("session_id")
-
         student_id = data.get("student_id")
+        status = (data.get("status") or "").lower()
 
-        status = ( data.get("status") or "" ).lower()
-
-        # --------------------------------------------------------
-        # VALIDATE REQUEST
-        # --------------------------------------------------------   
-
-        if(session_id is None or student_id is None):
-
-            return{
+        if session_id is None or student_id is None:
+            return {
                 "success": False,
                 "message": "Session and student are required.",
             }
@@ -767,54 +664,36 @@ def save_attendance_override(data: dict, current_user=Depends(require_instructor
                 "message": "Invalid attendance status.",
             }
 
-        # --------------------------------------------------------
-        # VERIFY SESSION / STUDENT ENROLLMENT
-        # --------------------------------------------------------
-
         cursor.execute(
             """
             SELECT 1
             FROM attendance_sessions s
-            JOIN course_enrollments ce 
+            JOIN course_enrollments ce
                 ON ce.course_id = s.course_id
             WHERE s.session_id = ?
-                AND ce.student_id = ?
+              AND ce.student_id = ?
             """,
-            (
-                session_id,
-                student_id,
-            ),
+            (session_id, student_id),
         )
 
         if not cursor.fetchone():
-            return{
+            return {
                 "success": False,
                 "message": "Student is not enrolled in this session's course.",
             }
-
-        # --------------------------------------------------------
-        # FIND EXISTING ATTENDANCE RECORD
-        # --------------------------------------------------------
 
         cursor.execute(
             """
             SELECT attendance_id
             FROM attendance_records
             WHERE session_id = ?
-                AND student_id = ?
+              AND student_id = ?
             LIMIT 1
             """,
-            (
-                session_id,
-                student_id,
-            ),
+            (session_id, student_id),
         )
 
         existing = cursor.fetchone()
-
-        # --------------------------------------------------------
-        # EXISTING RECORD -> UPDATE STATUS
-        # --------------------------------------------------------
 
         if existing:
             cursor.execute(
@@ -823,21 +702,10 @@ def save_attendance_override(data: dict, current_user=Depends(require_instructor
                 SET status = ?
                 WHERE attendance_id = ?
                 """,
-                (
-                    status,
-                    existing["attendance_id"],
-                ),
+                (status, existing["attendance_id"]),
             )
 
-        # --------------------------------------------------------
-        # ABSENT WITH NO RECORD
-        # --------------------------------------------------------
-
         elif status == "absent":
-            # No attendance row is required for a naturally
-            # absent student. /checkins already interprets
-            # a missing row as absent.
-
             conn.commit()
 
             return {
@@ -846,12 +714,10 @@ def save_attendance_override(data: dict, current_user=Depends(require_instructor
                 "status": status,
             }
 
-        # --------------------------------------------------------
-        # NO RECORD -> CREATE MANUAL ATTENDANCE RECORD
-        # --------------------------------------------------------
-
         else:
-            override_time = datetime.now(CENTRAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+            override_time = datetime.now(
+                CENTRAL_TZ
+            ).strftime("%Y-%m-%d %H:%M:%S")
 
             cursor.execute(
                 """
@@ -863,14 +729,12 @@ def save_attendance_override(data: dict, current_user=Depends(require_instructor
                     location_verified,
                     status
                 )
-                
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
                     student_id,
                     override_time,
-
                     0,
                     0,
                     status,
@@ -881,15 +745,14 @@ def save_attendance_override(data: dict, current_user=Depends(require_instructor
 
         return {
             "success": True,
-            "message": "Attendance overrride saved.",
+            "message": "Attendance override saved.",
             "status": status,
         }
 
     except Exception as error:
-
         conn.rollback()
 
-        return{
+        return {
             "success": False,
             "message": str(error),
         }

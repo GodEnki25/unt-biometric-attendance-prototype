@@ -3,24 +3,22 @@ import {
   View,
   Text,
   StyleSheet,
-  Image,
   Pressable,
   ActivityIndicator,
   ScrollView,
-  type ScrollViewInstance,
 } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "expo-router";
 import * as Location from "expo-location";
-import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
+import { CameraView, useCameraPermissions } from "expo-camera";
 import { File } from "expo-file-system";
 import { fetch as expoFetch } from "expo/fetch";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { API_BASE } from "../constants/api";
-import { Colors, Radius, Spacing } from "../constants/theme";
+import { Colors } from "../constants/theme";
 
 type Session = {
   id: string;
@@ -30,26 +28,25 @@ type Session = {
   is_open: boolean;
   session_date?: string;
   start_time?: string;
-  end_time?: string | null;
 };
 
-type UserLoation = {
+type Coordinates = {
   lat: number;
   lon: number;
   accuracy: number;
 };
 
-type CheckInResult = {
-  ok: boolean;
-  reason: string;
-  distance_m?: number;
-  allowed_distance_m?: number;
-  server_time?: string;
+type GeofenceResult = {
+  inside: boolean;
+  allow_biometric: boolean;
+  reason?: string;
+  confirmed_state?: string;
+  candidate_state?: string;
+  event_type?: string | null;
 };
 
-type FaceCheckResult = {
+type VerificationResult = {
   status?: string;
-  user?: string;
   confidence?: number;
   periocular_confidence?: number | null;
   matches?: number;
@@ -58,462 +55,561 @@ type FaceCheckResult = {
   step?: number;
   total_steps?: number;
   seconds_remaining?: number;
+  liveness?: string;
   reason?: string;
-  error?: string;
-  detail?: any;
+  message?: string;
+  detail?: unknown;
 };
 
-type GeofenceResult = {
-  inside: boolean;
-  allow_biometric: boolean;
-  reason: string;
-  confirmed_state?: "INSIDE" | "OUTSIDE";
-  candidate_state?: "INSIDE" | "OUTSIDE" | null;
-  candidate_count?: number;
-  state_changed?: boolean;
-  event_type?: "EXIT" | "REENTER" | null;
-  presence_tracking?: boolean;
-  radius_m?: number;
-  accuracy_buffer_m?: number;
-  allowed_radius_m?: number;
-  engine?: string;
+type AttendanceResult = {
+  success?: boolean;
+  message?: string;
+  error?: string;
+  detail?: unknown;
+};
+
+const MAX_SCAN_MS = 55000;
+const MAX_FRAMES = 120;
+
+const actionLabel = (action?: string) => {
+  switch (action) {
+    case "blink":
+      return "Blink once, then reopen your eyes";
+    case "open_mouth":
+      return "Open your mouth wide";
+    case "smile":
+      return "Smile widely";
+    case "turn_head":
+      return "Slowly turn your head to one side";
+    default:
+      return "Keep your face centered";
+  }
 };
 
 export default function CheckInScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { userId } = useLocalSearchParams();
 
   const cameraRef = useRef<CameraView | null>(null);
-  const scrollRef = useRef<ScrollViewInstance | null>(null);
-  const faceCardY = useRef(0);
-  const pendingCameraScroll = useRef(false);
   const scanStopped = useRef(false);
   const scanningRef = useRef(false);
-
-  const [cameraReady, setCameraReady] = useState(false);
-  const [challengeText, setChallengeText] = useState("");
-  const [faceGuideState, setFaceGuideState] =
-    useState<"idle" | "valid" | "invalid">("idle");
-  const [faceGuideMessage, setFaceGuideMessage] = useState(
-    "Position your face inside the camera"
-  );
-
-  const [session, setSession] = useState<Session | null>(null);
-  const [checkInTime, setCheckInTime] = useState<Date | null>(null);
-  const [alreadyCheckedIn, setAlreadyCheckedIn] = useState(false);
-  const [loc, setLoc] = useState<UserLoation | null>(null);
-  const [result, setResult] = useState<CheckInResult | null>(null);
-  const [faceResult, setFaceResult] = useState<FaceCheckResult | null>(null);
-
-  const [permisssionStatus, setPermissionStatus] =
-    useState<"unknown" | "granted" | "denied">("unknown");
-  const [status, setStatus] = useState("Starting...");
-  const [isBootLoading, setIsBootLoading] = useState(true);
-  const [isRefreshingLocation, setIsRefreshingLocation] = useState(false);
-  const [isCheckingIn, setIsCheckingIn] = useState(false);
-  const [showCamera, setShowCamera] = useState(false);
-  const [isUploadingFace, setIsuploadingFace] = useState(false);
+  const mountedRef = useRef(true);
 
   const [cameraPermission, requestCameraPermission] =
     useCameraPermissions();
 
+  const [session, setSession] = useState<Session | null>(null);
+  const [location, setLocation] = useState<Coordinates | null>(null);
   const [inside, setInside] = useState(false);
-  const [geofenceResult, setGeofenceResult] =
-    useState<GeofenceResult | null>(null);
+  const [geo, setGeo] = useState<GeofenceResult | null>(null);
 
-  useEffect(() => {
-    initializeApp();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
-    return () => {
-      scanStopped.current = true;
+  const [status, setStatus] = useState("Initializing...");
+  const [error, setError] = useState("");
+  const [checkedIn, setCheckedIn] = useState(false);
+  const [checkInTime, setCheckInTime] = useState<Date | null>(null);
+
+  const [phase, setPhase] = useState<
+    "idle" | "face" | "countdown" | "liveness" | "confirm" | "done"
+  >("idle");
+
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [countdownDeadline, setCountdownDeadline] =
+    useState<number | null>(null);
+
+  const [challenge, setChallenge] = useState("");
+  const [challengeStep, setChallengeStep] = useState(0);
+  const [challengeTotal, setChallengeTotal] = useState(2);
+  const [challengeRemaining, setChallengeRemaining] = useState(0);
+  const [matches, setMatches] = useState(0);
+  const [requiredMatches, setRequiredMatches] = useState(3);
+
+  const [faceDetected, setFaceDetected] = useState(false);
+
+  async function getToken() {
+    const token = await SecureStore.getItemAsync("access_token");
+
+    if (!token) {
+      throw new Error("Session expired. Please log in again.");
+    }
+
+    return token;
+  }
+
+  async function getSession(): Promise<Session | null> {
+    const token = await getToken();
+
+    const response = await fetch(`${API_BASE}/geofence/session`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Unable to load the attendance session.");
+    }
+
+    const data = await response.json();
+    const currentSession: Session | null =
+      data && typeof data.is_open === "boolean" ? data : null;
+
+    if (mountedRef.current) {
+      setSession(currentSession);
+    }
+
+    return currentSession;
+  }
+
+  async function getCurrentLocation(): Promise<Coordinates> {
+    const permission =
+      await Location.requestForegroundPermissionsAsync();
+
+    if (permission.status !== "granted") {
+      throw new Error("Location permission is required.");
+    }
+
+    const result = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.High,
+    });
+
+    return {
+      lat: result.coords.latitude,
+      lon: result.coords.longitude,
+      accuracy: result.coords.accuracy ?? 999,
     };
-  }, []);
-
-  useEffect(() => {
-    console.log("LOCATION WATCH EFFECT:", permisssionStatus);
-
-    if (permisssionStatus !== "granted") {
-      return;
-    }
-
-    const interval = setInterval(async () => {
-      await fetchSession();
-      await getUserLocation(true);
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [permisssionStatus]);
-
-  async function initializeApp() {
-    try {
-      setIsBootLoading(true);
-      setResult(null);
-      setFaceResult(null);
-      setShowCamera(false);
-
-      const granted = await requestLocationPermission();
-      if (!granted) return;
-
-      await fetchSession();
-      await getUserLocation();
-      await fetchCheckInStatus();
-    } catch (err: any) {
-      setStatus("Error: " + err.message);
-    } finally {
-      setIsBootLoading(false);
-    }
   }
 
-  async function requestLocationPermission() {
-    try {
-      setStatus("Requesting location permission...");
-      const { status } =
-        await Location.requestForegroundPermissionsAsync();
+  async function checkGeofence(
+    coordinates: Coordinates
+  ): Promise<GeofenceResult> {
+    const token = await getToken();
 
-      if (status !== "granted") {
-        setPermissionStatus("denied");
-        setStatus("Location permission denied.");
-        return false;
-      }
-
-      setPermissionStatus("granted");
-      return true;
-    } catch (err: any) {
-      setPermissionStatus("denied");
-      setStatus(`Permission error: ${err.message}`);
-      return false;
-    }
-  }
-
-  async function fetchSession() {
-    setStatus("Fetching session...");
-    const token = await SecureStore.getItemAsync("access_token");
-
-    if (!token) {
-      throw new Error("Not logged in.");
-    }
-
-    const res = await fetch(`${API_BASE}/geofence/session`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (!res.ok) {
-      throw new Error(`Failed to fetch session (${res.status})`);
-    }
-
-    const data = await res.json();
-    setSession(data);
-  }
-
-  async function verifyGeofence(currentLoc: UserLoation) {
-    try {
-      setStatus("Checking geofence...");
-
-      const token = await SecureStore.getItemAsync("access_token");
-
-      const res = await fetch(`${API_BASE}/geofence/check`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          lat: currentLoc.lat,
-          lon: currentLoc.lon,
-          accuracy_m: currentLoc.accuracy,
-        }),
-      });
-
-      const data: GeofenceResult = await res.json();
-
-      console.log("GEOFENCE UPDATE:", {
-        phone_lat: currentLoc.lat,
-        phone_lon: currentLoc.lon,
-        inside: data.inside,
-        confirmed_state: data.confirmed_state,
-        candidate_state: data.candidate_state,
-        candidate_count: data.candidate_count,
-        state_changed: data.state_changed,
-        event_type: data.event_type,
-      });
-
-      if (!res.ok) {
-        throw new Error("Geofence check failed");
-      }
-
-      setGeofenceResult(data);
-      setInside(data.inside === true && data.allow_biometric === true);
-      setStatus(data.inside ? "Inside geofence" : "Outside geofence");
-
-      return data.inside === true;
-    } catch (err: any) {
-      setInside(false);
-      setGeofenceResult(null);
-      setStatus(`Geofence error: ${err.message}`);
-      return false;
-    }
-  }
-
-  async function getUserLocation(refresh = false) {
-    try {
-      if (refresh) {
-        setIsRefreshingLocation(true);
-        setStatus("Refreshing location...");
-      } else {
-        setStatus("Getting location...");
-      }
-
-      const current = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
-
-      const currentLoc = {
-        lat: current.coords.latitude,
-        lon: current.coords.longitude,
-        accuracy: current.coords.accuracy ?? 999,
-      };
-
-      setLoc(currentLoc);
-      await verifyGeofence(currentLoc);
-    } catch (err: any) {
-      setStatus(`Location error: ${err.message}`);
-    } finally {
-      setIsRefreshingLocation(false);
-    }
-  }
-
-  async function refreshLocation() {
-    await getUserLocation(true);
-  }
-
-  async function retryPermissionFlow() {
-    setResult(null);
-    setFaceResult(null);
-    await initializeApp();
-  }
-
-  async function fetchCheckInStatus() {
-    const token = await SecureStore.getItemAsync("access_token");
-
-    if (!token) {
-      return;
-    }
-
-    const res = await fetch(`${API_BASE}/checkin/status`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
-    if (!res.ok) {
-      return;
-    }
-
-    const data = await res.json();
-
-    if (data.checked_in) {
-      setAlreadyCheckedIn(true);
-
-      if (data.check_in_time) {
-        setCheckInTime(new Date(data.check_in_time));
-      }
-    }
-  }
-
-  async function sendToFaceAPI(
-    photoUri: string
-  ): Promise<FaceCheckResult> {
-    const token = await SecureStore.getItemAsync("access_token");
-
-    if (!token) {
-      throw new Error(
-        "Authentication token not found. Please log in again."
-      );
-    }
-
-    const formData = new FormData();
-    formData.append("file", new File(photoUri));
-
-    const res = await expoFetch(`${API_BASE}/verify`, {
+    const response = await fetch(`${API_BASE}/geofence/check`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        lat: coordinates.lat,
+        lon: coordinates.lon,
+        accuracy_m: coordinates.accuracy,
+      }),
     });
 
-    const responseText = await res.text();
-    let data: FaceCheckResult;
+    const data = await response.json();
 
-    try {
-      data = JSON.parse(responseText) as FaceCheckResult;
-    } catch {
-      console.log("Verification returned non-JSON:", {
-        status: res.status,
-        body: responseText.slice(0, 300),
-      });
-
+    if (!response.ok) {
       throw new Error(
-        `Verification server error (HTTP ${res.status}). Check Vision logs.`
-      );
-    }
-
-    if (!res.ok) {
-      const detail = data?.detail;
-
-      throw new Error(
-        typeof detail === "string"
-          ? detail
-          : `Face verification failed (HTTP ${res.status})`
+        data?.detail || "Geofence verification failed."
       );
     }
 
     return data;
   }
 
-  async function cancelFaceVerification() {
-    try {
-      const token = await SecureStore.getItemAsync("access_token");
-
-      if (token) {
-        await expoFetch(`${API_BASE}/verify/cancel`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      }
-    } catch (error) {
-      console.log("Verification cleanup error:", error);
+  async function refreshLocation(showLoading = true) {
+    if (showLoading) {
+      setRefreshing(true);
     }
-  }
-
-  function deleteTemporaryPhoto(uri: string | undefined) {
-    if (!uri) return;
 
     try {
-      const file = new File(uri);
+      const currentSession = await getSession();
+      const coordinates = await getCurrentLocation();
+      const result = await checkGeofence(coordinates);
 
-      if (file.exists) {
-        file.delete();
+      if (!mountedRef.current) {
+        return;
       }
-    } catch (error) {
-      console.log("Temporary photo cleanup error:", error);
+
+      setLocation(coordinates);
+      setGeo(result);
+
+      const allowed =
+        currentSession?.is_open === true &&
+        result.inside === true &&
+        result.allow_biometric === true;
+
+      setInside(allowed);
+
+      console.log("GEOFENCE UPDATE:", {
+        phone_lat: coordinates.lat,
+        phone_lon: coordinates.lon,
+        accuracy_m: coordinates.accuracy,
+        inside: result.inside,
+        allow_biometric: result.allow_biometric,
+        confirmed_state: result.confirmed_state,
+        event_type: result.event_type,
+      });
+
+      if (!currentSession?.is_open) {
+        setStatus("No active instructor session");
+      } else if (!allowed) {
+        setStatus("Outside Boundary");
+      } else {
+        setStatus("Inside Boundary");
+      }
+
+      if (!allowed && scanningRef.current) {
+        scanStopped.current = true;
+        setError("Geofence access is no longer valid.");
+        setShowCamera(false);
+      }
+    } catch (err: any) {
+      if (mountedRef.current) {
+        setInside(false);
+        setStatus("Location unavailable");
+        setError(err?.message || "Unable to check location.");
+      }
+    } finally {
+      if (mountedRef.current) {
+        setRefreshing(false);
+      }
     }
   }
 
-  function labelForAction(action?: string) {
-    switch (action) {
-      case "blink":
-        return "Blink once: open, close, then open your eyes";
+  async function loadAttendanceStatus() {
+    try {
+      const token = await getToken();
 
-      case "open_mouth":
-        return "Close your mouth, then open it";
+      const response = await fetch(
+        `${API_BASE}/checkin/status`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
-      case "turn_head":
-        return "Look forward, then gently turn your head";
+      if (!response.ok) {
+        return;
+      }
 
-      default:
-        return "Keep your face in view";
+      const data = await response.json();
+
+      if (data.checked_in && mountedRef.current) {
+        setCheckedIn(true);
+
+        if (data.check_in_time) {
+          setCheckInTime(new Date(data.check_in_time));
+        }
+      }
+    } catch (err) {
+      console.log("Attendance status error:", err);
     }
   }
 
-  async function submitAttendanceCheckIn(photoUri: string) {
-    if (!loc || !inside) return;
+  useEffect(() => {
+    mountedRef.current = true;
 
-    const token = await SecureStore.getItemAsync("access_token");
+    const initialize = async () => {
+      try {
+        setLoading(true);
+        await refreshLocation(false);
+        await loadAttendanceStatus();
+      } finally {
+        if (mountedRef.current) {
+          setLoading(false);
+        }
+      }
+    };
 
-    if (!token) {
-      throw new Error("No authentication token found");
+    void initialize();
+
+    return () => {
+      mountedRef.current = false;
+      scanStopped.current = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!scanningRef.current) {
+        void refreshLocation(false);
+      }
+    }, 10000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (countdownDeadline === null) {
+      return;
     }
 
-    const formData = new FormData();
+    const update = () => {
+      const remaining = Math.max(
+        0,
+        Math.ceil((countdownDeadline - Date.now()) / 1000)
+      );
 
-    formData.append("latitude", String(loc.lat));
-    formData.append("longitude", String(loc.lon));
-    formData.append("accuracy", String(loc.accuracy));
+      setCountdown(remaining);
+    };
 
-    const photoFile = new File(photoUri);
-    formData.append("file", photoFile);
+    update();
 
-    const res = await expoFetch(`${API_BASE}/checkin`, {
+    const interval = setInterval(update, 100);
+
+    return () => clearInterval(interval);
+  }, [countdownDeadline]);
+
+  function resetVisualVerification() {
+    setPhase("idle");
+    setCountdown(null);
+    setCountdownDeadline(null);
+    setChallenge("");
+    setChallengeStep(0);
+    setChallengeRemaining(0);
+    setMatches(0);
+    setFaceDetected(false);
+  }
+
+  async function cancelVerification() {
+    try {
+      const token = await getToken();
+
+      await expoFetch(`${API_BASE}/verify/cancel`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (err) {
+      console.log("Verification cleanup error:", err);
+    }
+  }
+
+  async function openCamera() {
+    if (!inside || !session?.is_open || checkedIn) {
+      return;
+    }
+
+    try {
+      if (!cameraPermission?.granted) {
+        const permission = await requestCameraPermission();
+
+        if (!permission.granted) {
+          throw new Error("Camera permission is required.");
+        }
+      }
+
+      await cancelVerification();
+
+      resetVisualVerification();
+      setError("");
+      setCameraReady(false);
+      scanStopped.current = false;
+      setShowCamera(true);
+      setStatus("Position your face inside the camera");
+    } catch (err: any) {
+      setError(err?.message || "Cannot open camera.");
+    }
+  }
+
+  function deletePhoto(uri?: string) {
+    if (!uri) {
+      return;
+    }
+
+    try {
+      const photo = new File(uri);
+
+      if (photo.exists) {
+        photo.delete();
+      }
+    } catch (err) {
+      console.log("Temporary image cleanup failed:", err);
+    }
+  }
+
+  async function sendVerificationFrame(
+    photoUri: string
+  ): Promise<VerificationResult> {
+    const token = await getToken();
+    const form = new FormData();
+
+    form.append("file", new File(photoUri));
+
+    const response = await expoFetch(`${API_BASE}/verify`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
       },
-      body: formData,
+      body: form,
     });
 
-    const data = await res.json();
+    const text = await response.text();
 
-    if (!res.ok) {
-      setResult({
-        ok: false,
-        reason: data?.detail
-          ? JSON.stringify(data.detail)
-          : data?.message || "Server error",
-      });
+    let data: VerificationResult;
 
-      setStatus("Check-in failed");
-      return;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error("Invalid response from biometric server.");
     }
 
-    setResult({
-      ok: data.success,
-      reason: data.message || data.error || "Check-in failed",
-    });
-
-    if (data.success) {
-      setAlreadyCheckedIn(true);
-      setCheckInTime(new Date());
+    if (!response.ok) {
+      throw new Error(
+        typeof data.detail === "string"
+          ? data.detail
+          : `Verification failed (HTTP ${response.status}).`
+      );
     }
 
-    setStatus(
-      data.success
-        ? "Check-in complete"
-        : "Check-in rejected"
-    );
+    return data;
   }
 
-  async function openCameraFlow() {
-    if (!inside || !session?.is_open) return;
-
-    scanStopped.current = false;
-    setCameraReady(false);
-    setChallengeText("");
-    setFaceGuideState("idle");
-    setFaceGuideMessage("Position your face inside the camera");
-    setResult(null);
-    setFaceResult(null);
-
-    if (!cameraPermission) {
-      setStatus("Checking camera permission...");
-      return;
+  async function submitAttendance(photoUri: string) {
+    if (!location || !inside || !session?.is_open) {
+      throw new Error("Student is not inside an active geofence.");
     }
 
-    if (!cameraPermission.granted) {
-      setStatus("Requesting camera permission...");
+    const token = await getToken();
+    const form = new FormData();
 
-      const response = await requestCameraPermission();
+    form.append("latitude", String(location.lat));
+    form.append("longitude", String(location.lon));
+    form.append("accuracy", String(location.accuracy));
+    form.append("file", new File(photoUri));
 
-      if (!response.granted) {
-        setStatus("Camera permission denied.");
-        return;
+    const response = await expoFetch(`${API_BASE}/checkin`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      body: form,
+    });
+
+    const data: AttendanceResult = await response.json();
+
+    if (!response.ok || data.success !== true) {
+      throw new Error(
+        data.error ||
+        data.message ||
+        "Attendance was not accepted."
+      );
+    }
+
+    setCheckedIn(true);
+    setCheckInTime(new Date());
+    setPhase("done");
+    setStatus("Check-in complete");
+    setShowCamera(false);
+  }
+
+  function processVerificationResult(data: VerificationResult) {
+    switch (data.status) {
+      case "liveness_countdown": {
+        setPhase("countdown");
+        setFaceDetected(true);
+        setChallenge("");
+
+        const remaining = Math.max(
+          0,
+          data.seconds_remaining ?? 0
+        );
+
+        setCountdownDeadline(Date.now() + remaining * 1000);
+        setStatus("Face matched. Prepare for liveness.");
+        return "continue";
+      }
+
+      case "liveness_pending": {
+        setPhase("liveness");
+        setCountdown(null);
+        setCountdownDeadline(null);
+
+        setFaceDetected(true);
+        setChallenge(actionLabel(data.action));
+        setChallengeStep(data.step ?? 1);
+        setChallengeTotal(data.total_steps ?? 2);
+        setChallengeRemaining(
+          Math.ceil(data.seconds_remaining ?? 0)
+        );
+
+        setStatus("Complete the liveness challenge");
+        return "continue";
+      }
+
+      case "scanning": {
+        setCountdown(null);
+        setCountdownDeadline(null);
+        setChallenge("");
+        setFaceDetected(true);
+        setMatches(data.matches ?? 0);
+        setRequiredMatches(data.required ?? 3);
+
+        if (data.liveness === "passed") {
+          setPhase("confirm");
+          setStatus("Liveness passed. Confirming identity...");
+        } else {
+          setPhase("face");
+          setStatus("Matching your face...");
+        }
+
+        return "continue";
+      }
+
+      case "no_face_detected":
+      case "invalid_frame": {
+        setFaceDetected(false);
+        setStatus("Keep one face centered in the frame");
+        return "continue";
+      }
+
+      case "multiple_faces_detected":
+      case "invalid_face_count": {
+        setFaceDetected(false);
+        setStatus("Only one face should be visible");
+        return "continue";
+      }
+
+      case "verified": {
+        if (data.liveness !== "passed") {
+          throw new Error(
+            "Verification did not confirm successful liveness."
+          );
+        }
+
+        return "verified";
+      }
+
+      case "face_not_enrolled": {
+        throw new Error("No enrolled biometric profile found.");
+      }
+
+      case "face_not_matched": {
+        setStatus("Face mismatch. Please try again.");
+        return "continue";
+      }
+
+      case "liveness_failed": {
+        throw new Error(
+          `Liveness failed: ${data.reason || "challenge expired"}`
+        );
+      }
+
+      default: {
+        throw new Error(
+          `Unexpected verification status: ${data.status}`
+        );
       }
     }
-
-    pendingCameraScroll.current = true;
-    setShowCamera(true);
-    setStatus("Position your face in the camera");
   }
 
-  async function captureFaceAndCheckIn() {
+  async function scanAndCheckIn() {
     if (
+      scanningRef.current ||
       !cameraRef.current ||
       !cameraReady ||
-      !loc ||
       !inside ||
       !session?.is_open ||
-      scanningRef.current
+      checkedIn
     ) {
       return;
     }
@@ -521,23 +617,23 @@ export default function CheckInScreen() {
     scanningRef.current = true;
     scanStopped.current = false;
 
-    let verified = false;
+    let attendanceCompleted = false;
+
+    setScanning(true);
+    setError("");
+    resetVisualVerification();
+    setPhase("face");
+    setStatus("Scanning your face...");
 
     try {
-      setIsCheckingIn(true);
-      setIsuploadingFace(true);
-      setResult(null);
-      setFaceResult(null);
-      setChallengeText("");
-      setFaceGuideState("idle");
-      setFaceGuideMessage("Scanning your face...");
+      // A new attempt must start a new backend verifier.
+      await cancelVerification();
 
-      const startedAt = Date.now();
-      const maxScanMs = 27000;
+      const started = Date.now();
 
       for (
         let attempt = 0;
-        attempt < 55 && Date.now() - startedAt < maxScanMs;
+        attempt < MAX_FRAMES && Date.now() - started < MAX_SCAN_MS;
         attempt++
       ) {
         if (scanStopped.current || !cameraRef.current) {
@@ -547,721 +643,104 @@ export default function CheckInScreen() {
         let photoUri: string | undefined;
 
         try {
-          const photo = await cameraRef.current.takePictureAsync({
+          const image = await cameraRef.current.takePictureAsync({
             quality: 0.55,
             skipProcessing: false,
             shutterSound: false,
           });
 
-          photoUri = photo?.uri;
+          photoUri = image?.uri;
 
-          if (!photoUri || scanStopped.current) {
-            break;
+          if (!photoUri) {
+            continue;
           }
-
-          setStatus("Checking identity and liveness...");
-
-          const data = await sendToFaceAPI(photoUri);
 
           if (scanStopped.current) {
             break;
           }
 
-          setFaceResult(data);
+          const response = await sendVerificationFrame(photoUri);
 
-          if (
-            data.status === "no_face_detected" ||
-            data.status === "invalid_frame"
-          ) {
-            setFaceGuideState("invalid");
-            setFaceGuideMessage(
-              "No face detected. Center your face in the camera."
-            );
-          } else if (
-            data.status === "multiple_faces_detected" ||
-            data.status === "invalid_face_count"
-          ) {
-            setFaceGuideState("invalid");
-            setFaceGuideMessage(
-              "Multiple faces detected. Only one person should be visible."
-            );
-          } else if (
-            [
-              "liveness_pending",
-              "scanning",
-              "verified",
-              "face_not_matched",
-            ].includes(data.status ?? "")
-          ) {
-            setFaceGuideState("valid");
-            setFaceGuideMessage(
-              "Face detected. Follow the instructions below."
-            );
+          if (scanStopped.current) {
+            break;
           }
 
-          if (data.status === "liveness_pending") {
-            const action = labelForAction(data.action);
+          const outcome = processVerificationResult(response);
 
-            setChallengeText(
-              `${action} · Step ${data.step ?? 1}/${data.total_steps ?? 2} · ${Math.ceil(data.seconds_remaining ?? 0)}s`
-            );
+          if (outcome === "verified") {
+            setStatus("Verification complete. Recording attendance...");
 
-            setStatus("Complete the liveness challenge");
-            continue;
+            await submitAttendance(photoUri);
+
+            attendanceCompleted = true;
+            break;
           }
-
-          if (data.status === "scanning") {
-            setChallengeText("");
-
-            setStatus(
-              `Matching face... ${data.matches ?? 0}/${data.required ?? 3}`
-            );
-
-            continue;
-          }
-
-          if (
-            data.status === "no_face_detected" ||
-            data.status === "invalid_frame" ||
-            data.status === "multiple_faces_detected" ||
-            data.status === "invalid_face_count"
-          ) {
-            setStatus(
-              data.status === "multiple_faces_detected" ||
-              data.status === "invalid_face_count"
-                ? "Only one person should be visible"
-                : "Keep one face centered in the frame"
-            );
-            continue;
-          }
-
-          if (data.status === "verified") {
-            verified = true;
-
-            setChallengeText("Liveness and identity verified");
-            setStatus("Face verified. Submitting check-in...");
-
-            await submitAttendanceCheckIn(photoUri);
-
-            setShowCamera(false);
-            return;
-          }
-
-          if (
-            data.status === "face_not_matched" ||
-            data.status === "face_not_enrolled" ||
-            data.status === "liveness_failed"
-          ) {
-            throw new Error(
-              data.status === "liveness_failed"
-                ? "Liveness challenge failed or expired. Please retry."
-                : data.status === "face_not_enrolled"
-                  ? "No enrolled face profile was found."
-                  : "Face does not match the enrolled student."
-            );
-          }
-
-          throw new Error(
-            `Unexpected verification status: ${data.status ?? "unknown"}`
-          );
         } finally {
-          deleteTemporaryPhoto(photoUri);
+          deletePhoto(photoUri);
         }
       }
 
-      if (!scanStopped.current) {
-        throw new Error("Verification timed out. Please try again.");
+      if (!attendanceCompleted && !scanStopped.current) {
+        throw new Error(
+          "Verification timed out. Please try again."
+        );
       }
     } catch (err: any) {
       if (!scanStopped.current) {
-        setResult({
-          ok: false,
-          reason: err?.message || "Face verification failed",
-        });
-
+        setError(err?.message || "Verification failed.");
         setStatus("Check-in failed");
       }
     } finally {
-      if (!verified) {
-        await cancelFaceVerification();
+      if (!attendanceCompleted) {
+        await cancelVerification();
       }
 
+      setScanning(false);
       scanningRef.current = false;
-      setIsuploadingFace(false);
-      setIsCheckingIn(false);
+      setCountdown(null);
+      setCountdownDeadline(null);
     }
   }
 
-  function formatSessionDate(date?: string) {
-    if (!date) return "Current session";
+  async function closeCamera() {
+    scanStopped.current = true;
 
-    const [year, month, day] = date.split("-").map(Number);
+    await cancelVerification();
 
-    return new Date(year, month - 1, day).toLocaleDateString(
-      "en-US",
-      {
-        month: "short",
-        day: "numeric",
-        year: "numeric",
-      }
-    );
+    setShowCamera(false);
+    setCameraReady(false);
+    setScanning(false);
+    resetVisualVerification();
+    setStatus("Ready");
   }
 
-  function formatSessionTime(time?: string) {
-    if (!time) return "";
+  const canCheckIn =
+    inside &&
+    session?.is_open === true &&
+    !checkedIn;
 
-    const [hours, minutes] = time.split(":").map(Number);
+  const faceColor = faceDetected
+    ? "#27AE60"
+    : "#FFFFFF";
 
-    const date = new Date();
-    date.setHours(hours, minutes, 0);
-
-    return date.toLocaleTimeString("en-US", {
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-
-  function formatCheckInTime(date: Date | null) {
-    if (!date) return "—";
-
-    return date.toLocaleString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-
-  const renderContent = () => {
-    if (isBootLoading) {
-      return (
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.statusText}>{status}</Text>
-        </View>
-      );
-    }
-
-    if (permisssionStatus === "denied") {
-      return (
-        <View style={styles.permissionCard}>
-          <View style={styles.largeSoftIcon}>
-            <Ionicons
-              name="location-outline"
-              size={40}
-              color={Colors.primary}
-            />
-          </View>
-
-          <Text style={styles.permissionTitle}>
-            Location Access Required
-          </Text>
-
-          <Text style={styles.permissionText}>
-            Location access is required to verify that you are
-            inside the classroom geofence.
-          </Text>
-
-          <Pressable
-            style={styles.primaryButton}
-            onPress={retryPermissionFlow}
-          >
-            <Text style={styles.primaryButtonText}>Try Again</Text>
-          </Pressable>
-        </View>
-      );
-    }
-
-    if (!session || !loc) {
-      return (
-        <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={styles.statusText}>{status}</Text>
-        </View>
-      );
-    }
-
-    if (result?.ok === true || alreadyCheckedIn) {
-      return (
-        <ScrollView
-          contentContainerStyle={styles.successContent}
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={styles.successIconOuter}>
-            <View style={styles.successIconInner}>
-              <Ionicons
-                name="checkmark"
-                size={44}
-                color={Colors.success}
-              />
-            </View>
-          </View>
-
-          <Text style={styles.successTitle}>
-            Checked in successfully
-          </Text>
-
-          <Text style={styles.successSubtitle}>
-            Your attendance has been recorded.
-          </Text>
-
-          <View style={styles.infoCard}>
-            <Text style={styles.cardTitle}>Session details</Text>
-
-            <View style={styles.detailRow}>
-              <Ionicons
-                name="book-outline"
-                size={23}
-                color={Colors.textSecondary}
-              />
-              <Text style={styles.detailLabel}>COURSE</Text>
-              <Text style={styles.detailValue}>
-                CSCE 4901 - Capstone
-              </Text>
-            </View>
-
-            <View style={styles.rowDivider} />
-
-            <View style={styles.detailRow}>
-              <Ionicons
-                name="location-outline"
-                size={23}
-                color={Colors.textSecondary}
-              />
-              <Text style={styles.detailLabel}>ROOM</Text>
-              <Text style={styles.detailValue}>Classroom 266</Text>
-            </View>
-
-            <View style={styles.rowDivider} />
-
-            <View style={styles.detailRow}>
-              <Ionicons
-                name="time-outline"
-                size={23}
-                color={Colors.textSecondary}
-              />
-              <Text style={styles.detailLabel}>CHECK-IN TIME</Text>
-              <Text style={styles.detailValue}>
-                {formatCheckInTime(checkInTime)}
-              </Text>
-            </View>
-
-            <View style={styles.rowDivider} />
-
-            <View style={styles.detailRow}>
-              <Ionicons
-                name="person-outline"
-                size={23}
-                color={Colors.textSecondary}
-              />
-              <Text style={styles.detailLabel}>STATUS</Text>
-              <View style={styles.successBadge}>
-                <Text style={styles.successBadgeText}>Present</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.infoCard}>
-            <Text style={styles.cardTitle}>Verification status</Text>
-
-            <View style={styles.verifyRow}>
-              <View style={styles.smallSoftIcon}>
-                <Ionicons
-                  name="location-outline"
-                  size={23}
-                  color={Colors.primary}
-                />
-              </View>
-
-              <View style={styles.verifyTextWrap}>
-                <Text style={styles.detailLabel}>
-                  GEOFENCE STATUS
-                </Text>
-                <Text style={styles.verifyValue}>
-                  {inside ? "Inside boundary" : "Outside boundary"}
-                </Text>
-              </View>
-
-              <View style={styles.successBadge}>
-                <Text style={styles.successBadgeText}>Verified</Text>
-              </View>
-            </View>
-
-            <View style={styles.rowDivider} />
-
-            <View style={styles.verifyRow}>
-              <View style={styles.smallSoftIcon}>
-                <MaterialCommunityIcons
-                  name="face-recognition"
-                  size={23}
-                  color={Colors.primary}
-                />
-              </View>
-
-              <View style={styles.verifyTextWrap}>
-                <Text style={styles.detailLabel}>
-                  FACE VERIFICATION
-                </Text>
-                <Text style={styles.verifyValue}>Complete</Text>
-              </View>
-
-              <View style={styles.successBadge}>
-                <Text style={styles.successBadgeText}>Verified</Text>
-              </View>
-            </View>
-          </View>
-
-          <Pressable
-            style={styles.sessionDetailsButton}
-            onPress={() => {}}
-          >
-            <Text style={styles.sessionDetailButtonText}>
-              View Session Details
-            </Text>
-          </Pressable>
-
-          <Pressable
-            style={styles.doneButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.doneButtonText}>Done</Text>
-          </Pressable>
-        </ScrollView>
-      );
-    }
-
+  if (loading) {
     return (
-      <ScrollView
-        ref={scrollRef}
-        contentContainerStyle={styles.preCheckInContent}
-        showsVerticalScrollIndicator={false}
-        onContentSizeChange={() => {
-          if (pendingCameraScroll.current && showCamera) {
-            pendingCameraScroll.current = false;
-
-            scrollRef.current?.scrollTo({
-              y: Math.max(0, faceCardY.current - 16),
-              animated: true,
-            });
-          }
-        }}
-      >
-        <View style={styles.pageIntro}>
-          <Text style={styles.pageTitle}>Check In</Text>
-          <Text style={styles.pageSubtitle}>
-            Verify your presence in class.
-          </Text>
-        </View>
-
-        <View style={styles.infoCard}>
-          <Text style={styles.cardTitle}>Current Class</Text>
-          <Text style={styles.courseHero}>
-            CSCE 4901 - Capstone
-          </Text>
-
-          <View style={styles.currentClassRow}>
-            <Ionicons
-              name="book-outline"
-              size={27}
-              color={Colors.textSecondary}
-            />
-            <Text style={styles.currentClassLabel}>Course</Text>
-            <Text style={styles.currentClassValue}>
-              CSCE 4901 - Capstone
-            </Text>
-          </View>
-
-          <View style={styles.currentClassRow}>
-            <Ionicons
-              name="location-outline"
-              size={27}
-              color={Colors.textSecondary}
-            />
-            <Text style={styles.currentClassLabel}>Room</Text>
-            <Text style={styles.currentClassValue}>
-              Classroom 266
-            </Text>
-          </View>
-
-          <View style={styles.currentClassRow}>
-            <Ionicons
-              name="time-outline"
-              size={27}
-              color={Colors.textSecondary}
-            />
-            <Text style={styles.currentClassLabel}>Session Time</Text>
-
-            <View style={styles.sessionTimeWrap}>
-              <Text style={styles.currentClassValue}>
-                {formatSessionDate(session.session_date)}
-              </Text>
-              <Text style={styles.sessionSubValue}>
-                {session.is_open
-                  ? `Started ${formatSessionTime(session.start_time)}`
-                  : `Ended ${formatSessionTime(
-                      session.end_time ?? undefined
-                    )}`}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.infoCard}>
-          <Text style={styles.cardTitle}>Location Status</Text>
-
-          <View style={styles.statusCardRow}>
-            <View
-              style={[
-                styles.largeSoftIcon,
-                inside
-                  ? styles.successSoftBackground
-                  : styles.dangerSoftBackground,
-              ]}
-            >
-              <Ionicons
-                name="location-outline"
-                size={46}
-                color={inside ? Colors.success : Colors.danger}
-              />
-            </View>
-
-            <View style={styles.statusTextWrap}>
-              <Text
-                style={[
-                  styles.statusHeadline,
-                  {
-                    color: inside ? Colors.success : Colors.danger,
-                  },
-                ]}
-              >
-                {inside
-                  ? "You are inside the classroom boundary"
-                  : "You are outside the classroom boundary"}
-              </Text>
-
-              <Text style={styles.statusMeta}>
-                Lat: {loc.lat.toFixed(6)}, {loc.lon.toFixed(6)}
-              </Text>
-
-              <Text style={styles.statusMeta}>
-                Accuracy: ±{Math.round(loc.accuracy)} m
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View
-          style={styles.infoCard}
-          onLayout={(event) => {
-            faceCardY.current = event.nativeEvent.layout.y;
-          }}
-        >
-          <Text style={styles.cardTitle}>Face Verification</Text>
-
-          {!showCamera ? (
-            <View style={styles.statusCardRow}>
-              <View style={styles.largeSoftIcon}>
-                <MaterialCommunityIcons
-                  name="face-recognition"
-                  size={44}
-                  color={Colors.primary}
-                />
-              </View>
-
-              <View style={styles.statusTextWrap}>
-                <Text style={styles.faceReadyTitle}>
-                  Ready to verify
-                </Text>
-
-                <Text style={styles.faceReadyText}>
-                  Your face will be matched for attendance when
-                  you start check-in.
-                </Text>
-              </View>
-            </View>
-          ) : (
-            <>
-              <Text style={styles.cameraHelper}>
-                Keep your face centered and follow the
-                instructions that appear below.
-              </Text>
-
-              <View style={styles.cameraFrame}>
-                <CameraView
-                  ref={cameraRef}
-                  style={styles.camera}
-                  facing="front"
-                  mode="picture"
-                  animateShutter={false}
-                  onCameraReady={() => {
-                    setCameraReady(true);
-                    console.log("CAMERA READY");
-                    setStatus("Camera ready");
-                  }}
-                />
-
-                <View
-                  pointerEvents="none"
-                  style={[
-                    styles.faceGuideOverlay,
-                    {
-                      borderColor:
-                        faceGuideState === "valid"
-                          ? Colors.success
-                          : faceGuideState === "invalid"
-                            ? Colors.danger
-                            : Colors.surface,
-                    },
-                  ]}
-                />
-              </View>
-
-              <View style={styles.scanInstructionCard}>
-                <View style={styles.scanFeedback}>
-                  {(isCheckingIn || isUploadingFace) && (
-                    <ActivityIndicator
-                      size="small"
-                      color={Colors.primary}
-                    />
-                  )}
-
-                  <Text style={styles.scanFeedbackText}>
-                    {faceGuideMessage}
-                  </Text>
-                </View>
-
-                {!!challengeText && (
-                  <View style={styles.challengeRow}>
-                    <Ionicons
-                      name="scan-outline"
-                      size={22}
-                      color={Colors.primary}
-                    />
-
-                    <Text style={styles.challengeInstruction}>
-                      {challengeText}
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <Pressable
-                onPress={captureFaceAndCheckIn}
-                disabled={
-                  !cameraReady ||
-                  isUploadingFace ||
-                  isCheckingIn
-                }
-                style={[
-                  styles.primaryButton,
-                  (isUploadingFace || isCheckingIn) &&
-                    styles.disabledButton,
-                ]}
-              >
-                <Text style={styles.primaryButtonText}>
-                  {isUploadingFace || isCheckingIn
-                    ? "Verifying..."
-                    : "Verify Face & Check In"}
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => {
-                  scanStopped.current = true;
-                  void cancelFaceVerification();
-                  setShowCamera(false);
-                  setFaceResult(null);
-                  setFaceGuideState("idle");
-                  setFaceGuideMessage(
-                    "Position your face inside the camera"
-                  );
-                  setStatus("Ready");
-                }}
-                style={styles.secondaryButton}
-              >
-                <Text style={styles.secondaryButtonText}>
-                  Close Camera
-                </Text>
-              </Pressable>
-            </>
-          )}
-        </View>
-
-        {!showCamera && (
-          <Pressable
-            onPress={openCameraFlow}
-            disabled={
-              !inside ||
-              !session.is_open ||
-              isCheckingIn
-            }
-            style={[
-              styles.startButton,
-              (!inside || isCheckingIn) &&
-                styles.startButtonDisabled,
-            ]}
-          >
-            <Text style={styles.startButtonText}>
-              Start Check-In
-            </Text>
-
-            <Ionicons
-              name="arrow-forward"
-              size={28}
-              color={Colors.surface}
-            />
-          </Pressable>
-        )}
-
-        <View style={styles.privacyRow}>
-          <Ionicons
-            name="information-circle-outline"
-            size={22}
-            color={Colors.textSecondary}
-          />
-
-          <Text style={styles.privacyText}>
-            Location is only checked during active class sessions.
-          </Text>
-        </View>
-
-        {result && result.ok === false && (
-          <View style={styles.errorCard}>
-            <Ionicons
-              name="alert-circle-outline"
-              size={24}
-              color={Colors.danger}
-            />
-
-            <View style={styles.errorTextWrap}>
-              <Text style={styles.errorTitle}>
-                Check-in unsuccessful
-              </Text>
-
-              <Text style={styles.errorText}>
-                {result.reason}
-              </Text>
-            </View>
-          </View>
-        )}
-      </ScrollView>
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={Colors.primary} />
+        <Text style={styles.body}>Initializing GeoFace...</Text>
+      </View>
     );
-  };
+  }
 
   return (
-    <View style={styles.container}>
-      <View
-        style={[
-          styles.header,
-          { paddingTop: insets.top },
-        ]}
-      >
-        <Pressable
-          onPress={() => router.back()}
-          style={styles.headerBack}
-          accessibilityLabel="Go back"
-        >
+    <View
+      style={[
+        styles.screen,
+        { paddingTop: insets.top }
+      ]}
+    >
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()}>
           <Ionicons
             name="arrow-back"
             size={25}
@@ -1270,236 +749,431 @@ export default function CheckInScreen() {
         </Pressable>
 
         <Text style={styles.headerTitle}>
-          {result?.ok === true || alreadyCheckedIn
-            ? "Attendance Status"
-            : "Check In"}
+          GeoFace Check-In
         </Text>
 
-        <Image
-          source={require("../assets/logo.png")}
-          style={styles.headerLogo}
-          resizeMode="contain"
-        />
+        <View style={{ width: 25 }} />
       </View>
 
-      <View style={styles.content}>
-        {renderContent()}
-      </View>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Text style={styles.title}>Attendance Check-In</Text>
+        <Text style={styles.subtitle}>
+          Confirm your classroom location and verify your identity.
+        </Text>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Class Session</Text>
+
+          <Text style={styles.value}>
+            CSCE4999 - Capstone Testing
+          </Text>
+
+          <Text style={styles.muted}>
+            {session?.is_open
+              ? `Active session · ${session.radius_m} m radius`
+              : "No active instructor session"}
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <Ionicons
+              name="location-outline"
+              size={28}
+              color={inside ? "#27AE60" : "#E74C3C"}
+            />
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle}>
+                Geofence Status
+              </Text>
+
+              <Text
+                style={[
+                  styles.status,
+                  { color: inside ? "#27AE60" : "#E74C3C" }
+                ]}
+              >
+                {inside ? "Inside Boundary" : "Outside Boundary"}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.muted}>
+            {geo?.reason || status}
+          </Text>
+
+          {location && (
+            <Text style={styles.small}>
+              GPS accuracy: ±{Math.round(location.accuracy)} m
+            </Text>
+          )}
+
+          <Pressable
+            onPress={() => void refreshLocation()}
+            disabled={refreshing || scanning}
+            style={styles.secondaryButton}
+          >
+            <Text style={styles.secondaryButtonText}>
+              {refreshing ? "Refreshing..." : "Refresh Location"}
+            </Text>
+          </Pressable>
+        </View>
+
+        {checkedIn ? (
+          <View style={styles.card}>
+            <Ionicons
+              name="checkmark-circle"
+              size={60}
+              color="#27AE60"
+              style={{ alignSelf: "center" }}
+            />
+
+            <Text style={styles.successTitle}>
+              Attendance Recorded
+            </Text>
+
+            <Text style={styles.mutedCenter}>
+              Your check-in was successfully recorded.
+            </Text>
+
+            {checkInTime && (
+              <Text style={styles.mutedCenter}>
+                {checkInTime.toLocaleString()}
+              </Text>
+            )}
+
+            <Pressable
+              style={styles.primaryButton}
+              onPress={() => router.back()}
+            >
+              <Text style={styles.primaryButtonText}>
+                Done
+              </Text>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>
+              Biometric Verification
+            </Text>
+
+            {!showCamera ? (
+              <>
+                <Text style={styles.muted}>
+                  Each check-in requires facial recognition and
+                  a new liveness test.
+                </Text>
+
+                <Pressable
+                  onPress={() => void openCamera()}
+                  disabled={!canCheckIn}
+                  style={[
+                    styles.primaryButton,
+                    !canCheckIn && styles.disabledButton
+                  ]}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    Start Face Verification
+                  </Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <View style={styles.cameraFrame}>
+                  <CameraView
+                    ref={cameraRef}
+                    facing="front"
+                    mode="picture"
+                    animateShutter={false}
+                    style={styles.camera}
+                    onCameraReady={() => {
+                      setCameraReady(true);
+                      setStatus("Camera ready");
+                    }}
+                  />
+
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      styles.faceOval,
+                      { borderColor: faceColor }
+                    ]}
+                  />
+
+                  {phase === "countdown" && countdown !== null && (
+                    <View
+                      pointerEvents="none"
+                      style={styles.countdownOverlay}
+                    >
+                      <Ionicons
+                        name="shield-checkmark-outline"
+                        size={38}
+                        color="#FFFFFF"
+                      />
+
+                      <Text style={styles.overlayTitle}>
+                        Face Matched Successfully
+                      </Text>
+
+                      <Text style={styles.overlaySubtitle}>
+                        Liveness test starts in
+                      </Text>
+
+                      <Text style={styles.countdownNumber}>
+                        {countdown}
+                      </Text>
+
+                      <Text style={styles.overlaySubtitle}>
+                        Keep your face centered and get ready
+                      </Text>
+                    </View>
+                  )}
+
+                  {phase === "liveness" && (
+                    <View
+                      pointerEvents="none"
+                      style={styles.challengeOverlay}
+                    >
+                      <Text style={styles.challengeTitle}>
+                        Liveness Test
+                      </Text>
+
+                      <Text style={styles.challengeAction}>
+                        {challenge}
+                      </Text>
+
+                      <Text style={styles.challengeMeta}>
+                        Step {challengeStep}/{challengeTotal}
+                        {" · "}
+                        {challengeRemaining}s
+                      </Text>
+                    </View>
+                  )}
+
+                  {phase === "confirm" && (
+                    <View
+                      pointerEvents="none"
+                      style={styles.challengeOverlay}
+                    >
+                      <Text style={styles.challengeAction}>
+                        Liveness Passed
+                      </Text>
+
+                      <Text style={styles.challengeMeta}>
+                        Final face confirmation:
+                        {" "}
+                        {matches}/{requiredMatches}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.feedback}>
+                  {scanning && (
+                    <ActivityIndicator
+                      size="small"
+                      color={Colors.primary}
+                    />
+                  )}
+
+                  <Text style={styles.feedbackText}>
+                    {status}
+                  </Text>
+                </View>
+
+                <Pressable
+                  onPress={() => void scanAndCheckIn()}
+                  disabled={!cameraReady || scanning}
+                  style={[
+                    styles.primaryButton,
+                    (!cameraReady || scanning) &&
+                      styles.disabledButton
+                  ]}
+                >
+                  <Text style={styles.primaryButtonText}>
+                    {scanning
+                      ? "Verifying..."
+                      : "Verify Face & Check In"}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={() => void closeCamera()}
+                  style={styles.secondaryButton}
+                >
+                  <Text style={styles.secondaryButtonText}>
+                    Close Camera
+                  </Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        )}
+
+        {!!error && (
+          <View style={styles.errorCard}>
+            <Ionicons
+              name="alert-circle-outline"
+              size={25}
+              color="#C0392B"
+            />
+
+            <Text style={styles.errorText}>
+              {error}
+            </Text>
+          </View>
+        )}
+
+        <Text style={styles.privacyText}>
+          Verification frames are processed temporarily and
+          removed from the phone's application cache after use.
+        </Text>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: "#F5F7FB",
   },
-
-  content: {
-    flex: 1,
-  },
-
-  centerContent: {
+  center: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    gap: Spacing.md,
+    padding: 24,
   },
-
-  statusText: {
-    color: Colors.textSecondary,
-    fontSize: 15,
-    textAlign: "center",
-  },
-
   header: {
-    minHeight: 80,
-    backgroundColor: Colors.surface,
-    paddingHorizontal: Spacing.lg,
+    height: 60,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    paddingHorizontal: 22,
+    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: Colors.borderLight,
+    borderBottomColor: "#E5E7EB",
   },
-
-  headerBack: {
-    width: 48,
-    height: 48,
-    justifyContent: "center",
-    alignItems: "flex-start",
-  },
-
-  headerLogo: {
-    width: 48,
-    height: 48,
-  },
-
   headerTitle: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontSize: 22,
+    fontSize: 19,
     fontWeight: "800",
-    textAlign: "center",
-  },
-
-  preCheckInContent: {
-    paddingHorizontal: 22,
-    paddingTop: 28,
-    paddingBottom: 30,
-  },
-
-  pageIntro: {
-    marginBottom: Spacing.lg,
-  },
-
-  pageTitle: {
     color: Colors.textPrimary,
-    fontSize: 40,
-    fontWeight: "800",
   },
-
-  pageSubtitle: {
+  content: {
+    padding: 20,
+    paddingBottom: 60,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: "800",
+    color: Colors.textPrimary,
+  },
+  subtitle: {
+    fontSize: 15,
     color: Colors.textSecondary,
-    fontSize: 20,
-    marginTop: Spacing.sm,
+    marginTop: 8,
+    marginBottom: 20,
+    lineHeight: 22,
   },
-
-  infoCard: {
-    width: "100%",
-    backgroundColor: Colors.surface,
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 18,
     borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: Radius.lg,
-    paddingHorizontal: 22,
-    paddingVertical: 22,
-    marginBottom: 18,
+    borderColor: "#E5E7EB",
+    marginBottom: 16,
   },
-
   cardTitle: {
-    color: Colors.textPrimary,
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "800",
-    marginBottom: 22,
-  },
-
-  courseHero: {
     color: Colors.textPrimary,
-    fontSize: 27,
-    fontWeight: "700",
-    marginBottom: 18,
+    marginBottom: 10,
   },
-
-  currentClassRow: {
-    minHeight: 58,
+  value: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: Colors.textPrimary,
+  },
+  row: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
   },
-
-  currentClassLabel: {
-    width: 120,
+  body: {
     color: Colors.textSecondary,
     fontSize: 16,
+    marginTop: 16,
   },
-
-  currentClassValue: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontSize: 16,
-    fontWeight: "500",
-  },
-
-  sessionRow: {
-    alignItems: "flex-start",
-    paddingTop: 10,
-  },
-
-  sessionTimeWrap: {
-    flex: 1,
-  },
-
-  sessionSubValue: {
+  muted: {
     color: Colors.textSecondary,
-    fontSize: 16,
-    marginTop: 5,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: 8,
   },
-
-  statusCardRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 18,
+  mutedCenter: {
+    color: Colors.textSecondary,
+    fontSize: 15,
+    textAlign: "center",
+    marginTop: 8,
   },
-
-  largeSoftIcon: {
-    width: 94,
-    height: 94,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.featureIconBackground,
+  small: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    marginTop: 10,
+  },
+  status: {
+    fontSize: 17,
+    fontWeight: "800",
+  },
+  primaryButton: {
+    backgroundColor: Colors.primary,
+    minHeight: 56,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: 18,
+    paddingHorizontal: 16,
   },
-
-  successSoftBackground: {
-    backgroundColor: Colors.successSoft,
-  },
-
-  dangerSoftBackground: {
-    backgroundColor: Colors.dangerSoft,
-  },
-
-  statusTextWrap: {
-    flex: 1,
-  },
-
-  statusHeadline: {
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "800",
-    marginBottom: Spacing.sm,
-  },
-
-  statusMeta: {
-    color: Colors.textSecondary,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-
-  faceReadyTitle: {
-    color: Colors.primary,
-    fontSize: 19,
-    fontWeight: "800",
-    marginBottom: 6,
-  },
-
-  faceReadyText: {
-    color: Colors.textSecondary,
+  primaryButtonText: {
+    color: "#FFFFFF",
     fontSize: 16,
-    lineHeight: 22,
+    fontWeight: "800",
   },
-
-  cameraHelper: {
-    color: Colors.textSecondary,
+  secondaryButton: {
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    minHeight: 50,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 12,
+    paddingHorizontal: 14,
+  },
+  secondaryButtonText: {
+    color: Colors.primary,
     fontSize: 15,
-    lineHeight: 21,
-    marginBottom: 14,
+    fontWeight: "700",
   },
-
+  disabledButton: {
+    opacity: 0.5,
+  },
   cameraFrame: {
     width: "100%",
     aspectRatio: 1,
+    borderRadius: 14,
     overflow: "hidden",
-    borderRadius: Radius.md,
-    backgroundColor: Colors.textPrimary,
-    marginBottom: Spacing.md,
+    backgroundColor: "#111111",
+    marginTop: 12,
   },
-
   camera: {
     flex: 1,
   },
-
-  faceGuideOverlay: {
+  faceOval: {
     position: "absolute",
     top: "9%",
     bottom: "9%",
@@ -1508,344 +1182,107 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderRadius: 160,
   },
-
-  scanInstructionCard: {
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.borderLight,
-    borderRadius: Radius.md,
-    padding: 14,
-    marginBottom: Spacing.md,
-  },
-
-  challengeRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    marginTop: 10,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-  },
-
-  challengeInstruction: {
-    flex: 1,
-    fontSize: 16,
-    lineHeight: 23,
-    fontWeight: "700",
-    color: Colors.textPrimary,
-  },
-
-  scanFeedback: {
-    flexDirection: "row",
-    alignItems: "center",
+  countdownOverlay: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    backgroundColor: "rgba(0,0,0,0.60)",
     justifyContent: "center",
-    gap: 10,
-    minHeight: 24,
-  },
-
-  scanFeedbackText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    flexShrink: 1,
-    textAlign: "center",
-  },
-
-  startButton: {
-    minHeight: 64,
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 22,
-    marginTop: 2,
+    paddingHorizontal: 16,
   },
-
-  startButtonDisabled: {
-    backgroundColor: Colors.disabled,
-  },
-
-  startButtonText: {
-    flex: 1,
-    color: Colors.surface,
-    fontSize: 20,
+  overlayTitle: {
+    color: "#FFFFFF",
+    fontSize: 19,
     fontWeight: "800",
     textAlign: "center",
-    marginLeft: 28,
+    marginTop: 12,
   },
-
-  privacyRow: {
+  overlaySubtitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 10,
+  },
+  countdownNumber: {
+    color: "#FFFFFF",
+    fontSize: 86,
+    fontWeight: "900",
+    marginVertical: 8,
+  },
+  challengeOverlay: {
+    position: "absolute",
+    top: 8,
+    left: 8,
+    right: 8,
+    zIndex: 10,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    borderRadius: 12,
+    padding: 14,
+    alignItems: "center",
+  },
+  challengeTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 6,
+  },
+  challengeAction: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  challengeMeta: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    marginTop: 8,
+  },
+  feedback: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    minHeight: 48,
+    gap: 10,
+  },
+  feedbackText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: "center",
+    flexShrink: 1,
+  },
+  successTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#27AE60",
+    textAlign: "center",
+    marginTop: 12,
+  },
+  errorCard: {
+    backgroundColor: "#FFF1F0",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#F5C6CB",
+    padding: 14,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     gap: 12,
-    paddingTop: 20,
-    paddingHorizontal: 14,
+    marginBottom: 16,
   },
-
-  privacyText: {
+  errorText: {
+    color: "#C0392B",
     flex: 1,
-    color: Colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
+  },
+  privacyText: {
     textAlign: "center",
-  },
-
-  successContent: {
-    paddingHorizontal: 22,
-    paddingTop: 22,
-    paddingBottom: 22,
-    alignItems: "center",
-  },
-
-  successIconOuter: {
-    width: 96,
-    height: 96,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.successSoft,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 18,
-  },
-
-  successIconInner: {
-    width: 70,
-    height: 70,
-    borderRadius: Radius.pill,
-    borderWidth: 3,
-    borderColor: Colors.success,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  successTitle: {
-    color: Colors.textPrimary,
-    fontSize: 26,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-
-  successSubtitle: {
     color: Colors.textSecondary,
-    fontSize: 16,
-    textAlign: "center",
-    marginTop: 6,
-    marginBottom: 22,
-  },
-
-  detailRow: {
-    minHeight: 58,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-
-  detailLabel: {
-    width: 116,
-    color: Colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
-  detailValue: {
-    flex: 1,
-    color: Colors.textPrimary,
-    fontSize: 16,
-    fontWeight: "500",
-  },
-
-  rowDivider: {
-    height: 1,
-    backgroundColor: Colors.borderLight,
-  },
-
-  successBadge: {
-    backgroundColor: Colors.successSoft,
-    borderRadius: Radius.pill,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-
-  successBadgeText: {
-    color: Colors.success,
-    fontSize: 14,
-    fontWeight: "800",
-  },
-
-  verifyRow: {
-    minHeight: 76,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-  },
-
-  smallSoftIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: Radius.pill,
-    backgroundColor: Colors.featureIconBackground,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  verifyTextWrap: {
-    flex: 1,
-  },
-
-  verifyLabel: {
-    color: Colors.textSecondary,
-    fontSize: 13,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-
-  verifyValue: {
-    color: Colors.textPrimary,
-    fontSize: 17,
-    fontWeight: "500",
-  },
-
-  primaryButton: {
-    width: "100%",
-    minHeight: 58,
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 18,
-    marginTop: 4,
-  },
-
-  primaryButtonText: {
-    color: Colors.surface,
-    fontSize: 18,
-    fontWeight: "800",
-  },
-
-  secondaryButton: {
-    width: "100%",
-    minHeight: 54,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 10,
-  },
-
-  secondaryButtonText: {
-    color: Colors.primary,
-    fontSize: 16,
-    fontWeight: "700",
-  },
-
-  outlineButton: {
-    width: "100%",
-    minHeight: 58,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 12,
-  },
-
-  outlineButtonText: {
-    color: Colors.primary,
-    fontSize: 18,
-    fontWeight: "800",
-  },
-
-  sessionDetailsButton: {
-    width: "100%",
-    minHeight: 56,
-    backgroundColor: Colors.primary,
-    borderRadius: Radius.md,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 2,
-  },
-
-  sessionDetailButtonText: {
-    color: Colors.surface,
-    fontSize: 17,
-    fontWeight: "800",
-  },
-
-  doneButton: {
-    width: "100%",
-    minHeight: 56,
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 12,
-  },
-
-  doneButtonText: {
-    color: Colors.primary,
-    fontSize: 17,
-    fontWeight: "800",
-  },
-
-  disabledButton: {
-    opacity: 0.5,
-  },
-
-  permissionCard: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 28,
-  },
-
-  permissionTitle: {
-    color: Colors.textPrimary,
-    fontSize: 27,
-    fontWeight: "800",
-    textAlign: "center",
-    marginTop: 18,
-  },
-
-  permissionText: {
-    color: Colors.textSecondary,
-    fontSize: 16,
-    lineHeight: 22,
-    textAlign: "center",
-    marginTop: 10,
-    marginBottom: 22,
-  },
-
-  errorCard: {
-    flexDirection: "row",
-    gap: 12,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.dangerSoft,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    marginTop: 18,
-  },
-
-  errorTextWrap: {
-    flex: 1,
-  },
-
-  errorTitle: {
-    color: Colors.danger,
-    fontSize: 16,
-    fontWeight: "800",
-  },
-
-  errorText: {
-    color: Colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 19,
-    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
   },
 });

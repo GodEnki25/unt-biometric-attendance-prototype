@@ -151,3 +151,4 @@ venv/
 *.db
 *.sqlite
 *.sqlite3
+.venv312/

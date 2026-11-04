@@ -1,15 +1,20 @@
 
 import numpy as np
+from time import monotonic
 
 from biometrics.backend.detection.detection_layer import detect_faces
-from biometrics.backend.enrollment.enrollment_layer import extract_periocular_embedding
+from biometrics.backend.enrollment.enrollment_layer import (
+    extract_periocular_embedding
+)
+from biometrics.backend.liveness.liveness_layer import LivenessSession
 
 
 EMBEDDING_DIM = 512
 MIN_NORM = 1e-8
-
 FACE_THRESHOLD = 0.60
 REQUIRED_MATCHES = 3
+PREPARE_SECONDS = 7.0
+MAX_VERIFICATION_SECONDS = 90.0
 
 
 class Verifier:
@@ -20,7 +25,6 @@ class Verifier:
         threshold=FACE_THRESHOLD,
         stored_periocular_embedding=None
     ):
-
         self.stored_embeddings = self.normalize_embeddings(
             stored_embedding,
             dimension=EMBEDDING_DIM
@@ -45,25 +49,21 @@ class Verifier:
                     "Expected three periocular embeddings."
                 )
 
-            print(
-                "[VERIFY] Periocular templates loaded: "
-                f"{self.stored_periocular_embeddings.shape[0]}",
-                flush=True
-            )
-
-        else:
-            print(
-                "[VERIFY] No stored periocular templates",
-                flush=True
-            )
-
         self.threshold = threshold
-        self.counter = 0
         self.required_matches = REQUIRED_MATCHES
+        self.counter = 0
+
+        self.started_at = monotonic()
+        self.countdown_started = None
+
+        self.liveness = None
+        self.liveness_passed = False
+
+        self.phase = "face_matching"
+        self.finished = False
 
     @staticmethod
     def normalize_embeddings(embeddings, dimension=None):
-
         vectors = np.asarray(
             embeddings,
             dtype=np.float32
@@ -112,18 +112,16 @@ class Verifier:
 
     @staticmethod
     def compare_embeddings(stored, live):
-
         if stored.shape[1] != live.shape[0]:
             raise ValueError(
                 "Embedding dimensions do not match."
             )
 
-        scores = stored @ live
-
-        return float(np.max(scores))
+        return float(
+            np.max(stored @ live)
+        )
 
     def cosine_similarity(self, live_embedding):
-
         live = self.normalize_embeddings(
             live_embedding,
             dimension=EMBEDDING_DIM
@@ -135,7 +133,6 @@ class Verifier:
         )
 
     def periocular_similarity(self, frame, face):
-
         if self.stored_periocular_embeddings is None:
             return None
 
@@ -161,17 +158,52 @@ class Verifier:
             return None
 
     def close(self):
+        if self.liveness is not None:
+            self.liveness.close()
+            self.liveness = None
+
+    def fail(self, reason):
         self.counter = 0
+        self.finished = True
+        self.phase = "failed"
+        self.close()
+
+        return {
+            "status": "liveness_failed",
+            "reason": reason
+        }
 
     def process(self, frame):
+        if self.finished:
+            return {
+                "status": "liveness_failed",
+                "reason": "session_finished"
+            }
+
+        now = monotonic()
+
+        if (
+            now - self.started_at
+            >= MAX_VERIFICATION_SECONDS
+        ):
+            return self.fail("verification_timeout")
+
+        if (
+            self.phase == "liveness"
+            and self.liveness is not None
+            and (
+                now - self.liveness.step_started
+                >= 7.0
+            )
+        ):
+            return self.fail("challenge_timeout")
 
         if frame is None or frame.size == 0:
-            self.counter = 0
-
-            print(
-                "[VERIFY] Invalid or empty frame",
-                flush=True
-            )
+            if self.phase in (
+                "face_matching",
+                "final_confirmation"
+            ):
+                self.counter = 0
 
             return {
                 "status": "no_face_detected"
@@ -180,19 +212,14 @@ class Verifier:
         faces = detect_faces(frame)
 
         if len(faces) != 1:
-            self.counter = 0
-
-            print(
-                f"[VERIFY] Faces detected: {len(faces)}",
-                flush=True
-            )
+            if self.phase in (
+                "face_matching",
+                "final_confirmation"
+            ):
+                self.counter = 0
 
             return {
-                "status": (
-                    "multiple_faces_detected"
-                    if len(faces) > 1
-                    else "no_face_detected"
-                )
+                "status": "no_face_detected"
             }
 
         face = faces[0]
@@ -204,18 +231,16 @@ class Verifier:
         )
 
         if live_embedding is None:
-            self.counter = 0
-
-            print(
-                "[VERIFY] Face detected but embedding unavailable",
-                flush=True
-            )
+            if self.phase in (
+                "face_matching",
+                "final_confirmation"
+            ):
+                self.counter = 0
 
             return {
                 "status": "scanning",
                 "confidence": 0.0,
-                "periocular_confidence": None,
-                "matches": 0,
+                "matches": self.counter,
                 "required": self.required_matches
             }
 
@@ -224,19 +249,17 @@ class Verifier:
                 live_embedding
             )
 
-        except ValueError as error:
-            self.counter = 0
-
-            print(
-                f"[VERIFY] Full-face embedding error: {error}",
-                flush=True
-            )
+        except ValueError:
+            if self.phase in (
+                "face_matching",
+                "final_confirmation"
+            ):
+                self.counter = 0
 
             return {
                 "status": "scanning",
                 "confidence": 0.0,
-                "periocular_confidence": None,
-                "matches": 0,
+                "matches": self.counter,
                 "required": self.required_matches
             }
 
@@ -245,65 +268,190 @@ class Verifier:
             face
         )
 
-        biometric_scores = {
+        scores = {
             "confidence": face_score,
             "periocular_confidence": eye_score
         }
 
-        eye_display = (
-            f"{eye_score:.4f}"
-            if eye_score is not None
-            else "Unavailable"
-        )
-
-        print(
-            f"[VERIFY] Full-face={face_score:.4f} | "
-            f"Periocular={eye_display} | "
-            f"Threshold={self.threshold:.4f} | "
-            f"Matches={self.counter}/{self.required_matches}",
-            flush=True
-        )
-
         if face_score < self.threshold:
-            self.counter = 0
-
-            print(
-                f"[VERIFY] Low similarity: {face_score:.4f} "
-                f"< {self.threshold:.4f}. Continuing scan.",
-                flush=True
-            )
+            if self.phase in (
+                "face_matching",
+                "final_confirmation"
+            ):
+                self.counter = 0
 
             return {
                 "status": "scanning",
-                **biometric_scores,
+                **scores,
+                "matches": self.counter,
+                "required": self.required_matches,
+                "message": "Keep your face centered."
+            }
+
+        if self.phase == "face_matching":
+            self.counter += 1
+
+            print(
+                f"[VERIFY] Initial face match "
+                f"{self.counter}/{self.required_matches} "
+                f"| Score={face_score:.4f}",
+                flush=True
+            )
+
+            if self.counter < self.required_matches:
+                return {
+                    "status": "scanning",
+                    **scores,
+                    "matches": self.counter,
+                    "required": self.required_matches
+                }
+
+            self.phase = "countdown"
+            self.countdown_started = monotonic()
+            self.counter = 0
+
+            print(
+                "[VERIFY] Face matched. "
+                "Starting 7-second liveness countdown.",
+                flush=True
+            )
+
+        if self.phase == "countdown":
+            remaining = max(
+                0.0,
+                PREPARE_SECONDS - (
+                    monotonic() - self.countdown_started
+                )
+            )
+
+            if remaining > 0:
+                return {
+                    "status": "liveness_countdown",
+                    **scores,
+                    "seconds_remaining": remaining,
+                    "message": (
+                        "Face matched. "
+                        "Liveness test will start shortly."
+                    )
+                }
+
+            try:
+                self.liveness = LivenessSession()
+
+            except Exception as error:
+                print(
+                    f"[VERIFY] Liveness initialization error: "
+                    f"{error}",
+                    flush=True
+                )
+
+                return self.fail(
+                    "liveness_initialization_failed"
+                )
+
+            self.phase = "liveness"
+
+            print(
+                "[VERIFY] Countdown completed. "
+                "Starting randomized liveness challenges.",
+                flush=True
+            )
+
+        if self.phase == "liveness":
+            try:
+                liveness_result = self.liveness.process(
+                    frame
+                )
+
+            except Exception as error:
+                print(
+                    f"[VERIFY] Liveness processing error: "
+                    f"{error}",
+                    flush=True
+                )
+
+                return self.fail(
+                    "liveness_processing_failed"
+                )
+
+            liveness_status = liveness_result.get(
+                "status"
+            )
+
+            if liveness_status == "liveness_failed":
+                reason = liveness_result.get(
+                    "reason",
+                    "challenge_failed"
+                )
+
+                return self.fail(reason)
+
+            if liveness_status == "liveness_passed":
+                self.liveness_passed = True
+                self.phase = "final_confirmation"
+                self.counter = 0
+                self.close()
+
+                print(
+                    "[VERIFY] Liveness passed. "
+                    "Starting final face confirmation.",
+                    flush=True
+                )
+
+                return {
+                    "status": "scanning",
+                    **scores,
+                    "matches": 0,
+                    "required": self.required_matches,
+                    "liveness": "passed"
+                }
+
+            return {
+                **liveness_result,
+                **scores,
                 "matches": 0,
                 "required": self.required_matches
             }
 
-        self.counter += 1
+        if self.phase == "final_confirmation":
+            if not self.liveness_passed:
+                return self.fail(
+                    "liveness_not_completed"
+                )
 
-        print(
-            "[VERIFY] Full-face match accepted | "
-            f"Consecutive={self.counter}/{self.required_matches}",
-            flush=True
-        )
-
-        if self.counter >= self.required_matches:
-            self.counter = 0
+            self.counter += 1
 
             print(
-                "[VERIFY] Required consecutive matches completed",
+                f"[VERIFY] Final face match "
+                f"{self.counter}/{self.required_matches} "
+                f"| Score={face_score:.4f}",
                 flush=True
             )
 
+            if self.counter >= self.required_matches:
+                self.finished = True
+                self.phase = "verified"
+                self.close()
+
+                print(
+                    "[VERIFY] Face and liveness verified.",
+                    flush=True
+                )
+
+                return {
+                    "status": "verified",
+                    **scores,
+                    "liveness": "passed"
+                }
+
             return {
-                "status": "verified",
-                **biometric_scores
+                "status": "scanning",
+                **scores,
+                "matches": self.counter,
+                "required": self.required_matches,
+                "liveness": "passed"
             }
 
-        return {
-            "status": "scanning",
-            **biometric_scores,
-            "matches": self.counter,
-            "required": self.required_matches
-        }
+        return self.fail(
+            "invalid_verification_state"
+        )

@@ -21,9 +21,11 @@ enrollment_manager = EnrollmentManager(required_captures=7)
 
 verification_sessions = {}
 verified_users = set()
+verified_at = {}
 
 MAX_IMAGE_BYTES = 3 * 1024 * 1024
 MAX_SESSION_SECONDS = 120
+VERIFICATION_VALID_SECONDS = 30
 
 MIN_BRIGHTNESS = 40
 MAX_BRIGHTNESS = 215
@@ -112,11 +114,39 @@ def clear_verification(user_id):
             close_method()
 
 
+def revoke_verification(user_id):
+    verified_users.discard(user_id)
+    verified_at.pop(user_id, None)
+
+
+def consume_verification(user_id):
+    with _verification_lock:
+        completed_at = verified_at.get(user_id)
+
+        if (
+            completed_at is None
+            or user_id not in verified_users
+        ):
+            revoke_verification(user_id)
+            return False
+
+        valid = (
+            monotonic() - completed_at
+            <= VERIFICATION_VALID_SECONDS
+        )
+
+        revoke_verification(user_id)
+
+        return valid
+
+
 @router.get("/biometric-test")
 def biometric_test():
     return {
         "status": "working",
-        "version": "DUAL_BIOMETRIC_LIVENESS_V1"
+        "version": "DUAL_BIOMETRIC_LIVENESS_V2",
+        "liveness_required": True,
+        "verification_valid_seconds": VERIFICATION_VALID_SECONDS
     }
 
 
@@ -131,6 +161,10 @@ def start_frame_enrollment(
 
         enrollment_manager.sessions[user_id] = []
         _enrollment_started[user_id] = monotonic()
+
+    with _verification_lock:
+        clear_verification(user_id)
+        revoke_verification(user_id)
 
     return {
         "status": "ready",
@@ -215,6 +249,10 @@ def enroll_frame(
             if result.get("status") == "enrolled":
                 clear_enrollment(user_id)
 
+                with _verification_lock:
+                    clear_verification(user_id)
+                    revoke_verification(user_id)
+
             return result
 
     except Exception:
@@ -257,18 +295,14 @@ async def verify_face(
     frame = await get_frame(file)
 
     if frame is None:
-        print(
-            f"[VERIFY] User={user_id} invalid frame",
-            flush=True
-        )
-
         return {
             "status": "invalid_frame"
         }
 
     with _verification_lock:
-
         if user_id not in verification_sessions:
+
+            revoke_verification(user_id)
 
             stored_embedding = get_face_embedding(
                 user_id
@@ -316,21 +350,42 @@ async def verify_face(
 
         except Exception:
             clear_verification(user_id)
+            revoke_verification(user_id)
             raise
 
         status = result.get("status", "unknown")
 
         if status == "verified":
-            verified_users.add(user_id)
+
+            if result.get("liveness") != "passed":
+                clear_verification(user_id)
+                revoke_verification(user_id)
+
+                print(
+                    f"[VERIFY] User={user_id} rejected: "
+                    "liveness not confirmed",
+                    flush=True
+                )
+
+                return {
+                    "status": "liveness_failed",
+                    "reason": "liveness_not_completed"
+                }
+
             clear_verification(user_id)
 
+            verified_users.add(user_id)
+            verified_at[user_id] = monotonic()
+
             print(
-                f"[VERIFY] User={user_id} verified successfully",
+                f"[VERIFY] User={user_id} "
+                "identity and liveness verified",
                 flush=True
             )
 
         elif status == "liveness_failed":
             clear_verification(user_id)
+            revoke_verification(user_id)
 
             print(
                 f"[VERIFY] User={user_id} liveness failed",
@@ -348,9 +403,10 @@ def cancel_verification(
 
     with _verification_lock:
         clear_verification(user_id)
+        revoke_verification(user_id)
 
     print(
-        f"[VERIFY] User={user_id} session cancelled",
+        f"[VERIFY] User={user_id} verification cancelled",
         flush=True
     )
 
