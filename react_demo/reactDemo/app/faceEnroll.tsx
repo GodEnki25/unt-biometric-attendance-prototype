@@ -13,11 +13,11 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { File } from "expo-file-system";
 import { fetch as expoFetch } from "expo/fetch";
-import * as SecureStore from "expo-secure-store";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { API_BASE } from "../constants/api";
+import { getStoredItem, setStoredItem } from "@/utils/storage";
 import { Colors, Radius, Spacing } from "../constants/theme";
 
 const MAX_ATTEMPTS = 35;
@@ -76,7 +76,7 @@ export default function FaceEnrollScreen() {
             setStatusMessage("Preparing face scan...");
             setScanLabel("Connecting securely");
 
-            token = await SecureStore.getItemAsync("access_token");
+            token = await getStoredItem("access_token");
 
             if (!token) {
                 throw new Error(

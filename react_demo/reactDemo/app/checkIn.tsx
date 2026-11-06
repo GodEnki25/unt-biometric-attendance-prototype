@@ -9,13 +9,14 @@ import {
 } from "react-native";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
-import * as Location from "expo-location";
-import * as SecureStore from "expo-secure-store";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { File } from "expo-file-system";
 import { fetch as expoFetch } from "expo/fetch";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+import { usePresenceTracking } from "@/hooks/usePresenceTracking";
+import { getStoredItem } from "../utils/storage";
 
 import { API_BASE } from "../constants/api";
 import { Colors } from "../constants/theme";
@@ -28,21 +29,6 @@ type Session = {
   is_open: boolean;
   session_date?: string;
   start_time?: string;
-};
-
-type Coordinates = {
-  lat: number;
-  lon: number;
-  accuracy: number;
-};
-
-type GeofenceResult = {
-  inside: boolean;
-  allow_biometric: boolean;
-  reason?: string;
-  confirmed_state?: string;
-  candidate_state?: string;
-  event_type?: string | null;
 };
 
 type VerificationResult = {
@@ -99,12 +85,17 @@ export default function CheckInScreen() {
     useCameraPermissions();
 
   const [session, setSession] = useState<Session | null>(null);
-  const [location, setLocation] = useState<Coordinates | null>(null);
-  const [inside, setInside] = useState(false);
-  const [geo, setGeo] = useState<GeofenceResult | null>(null);
+
+  const {
+    location,
+    rawInside,
+    confirmedInside,
+    permissionStatus: presencePermissionStatus,
+    isRefreshing: presenceRefreshing,
+    refreshPresence,
+  } = usePresenceTracking();
 
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -113,6 +104,8 @@ export default function CheckInScreen() {
   const [error, setError] = useState("");
   const [checkedIn, setCheckedIn] = useState(false);
   const [checkInTime, setCheckInTime] = useState<Date | null>(null);
+
+  const inside = checkedIn ? confirmedInside : rawInside;
 
   const [phase, setPhase] = useState<
     "idle" | "face" | "countdown" | "liveness" | "confirm" | "done"
@@ -132,7 +125,7 @@ export default function CheckInScreen() {
   const [faceDetected, setFaceDetected] = useState(false);
 
   async function getToken() {
-    const token = await SecureStore.getItemAsync("access_token");
+    const token = await getStoredItem("access_token");
 
     if (!token) {
       throw new Error("Session expired. Please log in again.");
@@ -163,114 +156,6 @@ export default function CheckInScreen() {
     }
 
     return currentSession;
-  }
-
-  async function getCurrentLocation(): Promise<Coordinates> {
-    const permission =
-      await Location.requestForegroundPermissionsAsync();
-
-    if (permission.status !== "granted") {
-      throw new Error("Location permission is required.");
-    }
-
-    const result = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.High,
-    });
-
-    return {
-      lat: result.coords.latitude,
-      lon: result.coords.longitude,
-      accuracy: result.coords.accuracy ?? 999,
-    };
-  }
-
-  async function checkGeofence(
-    coordinates: Coordinates
-  ): Promise<GeofenceResult> {
-    const token = await getToken();
-
-    const response = await fetch(`${API_BASE}/geofence/check`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        lat: coordinates.lat,
-        lon: coordinates.lon,
-        accuracy_m: coordinates.accuracy,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data?.detail || "Geofence verification failed."
-      );
-    }
-
-    return data;
-  }
-
-  async function refreshLocation(showLoading = true) {
-    if (showLoading) {
-      setRefreshing(true);
-    }
-
-    try {
-      const currentSession = await getSession();
-      const coordinates = await getCurrentLocation();
-      const result = await checkGeofence(coordinates);
-
-      if (!mountedRef.current) {
-        return;
-      }
-
-      setLocation(coordinates);
-      setGeo(result);
-
-      const allowed =
-        currentSession?.is_open === true &&
-        result.inside === true &&
-        result.allow_biometric === true;
-
-      setInside(allowed);
-
-      console.log("GEOFENCE UPDATE:", {
-        phone_lat: coordinates.lat,
-        phone_lon: coordinates.lon,
-        accuracy_m: coordinates.accuracy,
-        inside: result.inside,
-        allow_biometric: result.allow_biometric,
-        confirmed_state: result.confirmed_state,
-        event_type: result.event_type,
-      });
-
-      if (!currentSession?.is_open) {
-        setStatus("No active instructor session");
-      } else if (!allowed) {
-        setStatus("Outside Boundary");
-      } else {
-        setStatus("Inside Boundary");
-      }
-
-      if (!allowed && scanningRef.current) {
-        scanStopped.current = true;
-        setError("Geofence access is no longer valid.");
-        setShowCamera(false);
-      }
-    } catch (err: any) {
-      if (mountedRef.current) {
-        setInside(false);
-        setStatus("Location unavailable");
-        setError(err?.message || "Unable to check location.");
-      }
-    } finally {
-      if (mountedRef.current) {
-        setRefreshing(false);
-      }
-    }
   }
 
   async function loadAttendanceStatus() {
@@ -310,8 +195,16 @@ export default function CheckInScreen() {
     const initialize = async () => {
       try {
         setLoading(true);
-        await refreshLocation(false);
+
+        const currentSession = await getSession();
         await loadAttendanceStatus();
+
+        // Before check-in, this is a single intentional location check.
+        // Periodic tracking is owned by usePresenceTracking and only
+        // begins after /checkin/status confirms this student checked in.
+        if (currentSession?.is_open) {
+          await refreshPresence();
+        }
       } finally {
         if (mountedRef.current) {
           setLoading(false);
@@ -328,14 +221,36 @@ export default function CheckInScreen() {
   }, []);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (!scanningRef.current) {
-        void refreshLocation(false);
-      }
-    }, 10000);
+    if (presencePermissionStatus === "denied") {
+      setStatus("Location permission is required");
+      return;
+    }
 
-    return () => clearInterval(timer);
-  }, []);
+    if (!session?.is_open) {
+      setStatus("No active instructor session");
+      return;
+    }
+
+    if (!location) {
+      setStatus("Checking location...");
+      return;
+    }
+
+    setStatus(inside ? "Inside Boundary" : "Outside Boundary");
+  }, [
+    presencePermissionStatus,
+    session?.is_open,
+    location,
+    inside,
+  ]);
+
+  useEffect(() => {
+    if (!inside && scanningRef.current) {
+      scanStopped.current = true;
+      setError("Geofence access is no longer valid.");
+      setShowCamera(false);
+    }
+  }, [inside]);
 
   useEffect(() => {
     if (countdownDeadline === null) {
@@ -497,6 +412,11 @@ export default function CheckInScreen() {
 
     setCheckedIn(true);
     setCheckInTime(new Date());
+
+    // Attendance now exists for this student/session.
+    // Refresh once so periodic presence tracking can begin.
+    await refreshPresence();
+
     setPhase("done");
     setStatus("Check-in complete");
     setShowCamera(false);
@@ -803,7 +723,7 @@ export default function CheckInScreen() {
           </View>
 
           <Text style={styles.muted}>
-            {geo?.reason || status}
+            {status}
           </Text>
 
           {location && (
@@ -813,12 +733,12 @@ export default function CheckInScreen() {
           )}
 
           <Pressable
-            onPress={() => void refreshLocation()}
-            disabled={refreshing || scanning}
+            onPress={() => void refreshPresence()}
+            disabled={presenceRefreshing || scanning}
             style={styles.secondaryButton}
           >
             <Text style={styles.secondaryButtonText}>
-              {refreshing ? "Refreshing..." : "Refresh Location"}
+              {presenceRefreshing ? "Refreshing..." : "Refresh Location"}
             </Text>
           </Pressable>
         </View>
@@ -1029,8 +949,11 @@ export default function CheckInScreen() {
         )}
 
         <Text style={styles.privacyText}>
-          Verification frames are processed temporarily and
-          removed from the phone's application cache after use.
+          Location is checked once when you start check-in.
+          Periodic presence tracking begins only after successful
+          check-in and stops when the class session ends. Verification
+          frames are processed temporarily and removed from the phone's
+          application cache after use.
         </Text>
       </ScrollView>
     </View>

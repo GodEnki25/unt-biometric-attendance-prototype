@@ -7,11 +7,12 @@ import {
     ScrollView,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import { Colors, Radius, Spacing } from "../constants/theme";
 import { useEffect, useState } from "react";
+import { usePresenceTracking } from "@/hooks/usePresenceTracking";
 import { API_BASE } from "@/constants/api";
+import { getStoredItem } from "../utils/storage";
 
 // ============================================================
 // ATTENDANCE PERCENTAGE RING
@@ -102,6 +103,12 @@ export default function DashboardScreen() {
     const [activeSession, setActiveSession] = useState<any | null>(null);
     const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
     const [studentName, setStudentName] = useState("Student");
+    const {
+        result: presenceResult,
+        confirmedInside,
+        rawInside,
+        location,
+    } = usePresenceTracking();
 
     // ============================================================
     // LOAD STUDENT INFO
@@ -113,7 +120,7 @@ export default function DashboardScreen() {
 
     async function loadStudent() {
         const storedUser =
-            await SecureStore.getItemAsync("user");
+            await getStoredItem("user");
 
         if (!storedUser) {
             return;
@@ -143,7 +150,7 @@ export default function DashboardScreen() {
 
     async function loadClasses() {
         const token =
-            await SecureStore.getItemAsync(
+            await getStoredItem(
                 "access_token"
             );
 
@@ -218,6 +225,7 @@ export default function DashboardScreen() {
     // ============================================================
     // COURSE DATA AND PERCENTAGE
     // ============================================================
+
     const [attendanceSummary, setAttendanceSummary] = useState({
         present: 0,
         late: 0,
@@ -235,13 +243,14 @@ export default function DashboardScreen() {
 
     async function loadAttendanceSummary() {
         const token =
-            await SecureStore.getItemAsync("access_token");
+            await getStoredItem("access_token");
 
         if (!token || selectedCourseId === null) {
             return;
         }
 
-        const res = await fetch(`${API_BASE}/courses/student/${selectedCourseId}/attendance-summary`,
+        const res = await fetch(
+            `${API_BASE}/courses/student/${selectedCourseId}/attendance-summary`,
             {
                 headers: {
                     Authorization:
@@ -271,7 +280,6 @@ export default function DashboardScreen() {
     function openCheckIn() {
         router.push({
             pathname: "/checkIn",
-
             params: {
                 userId:
                     userId?.toString(),
@@ -289,7 +297,6 @@ export default function DashboardScreen() {
     }
 
     function openAttendanceHistory() {
-
         router.push(
             "/attendanceHistory"
         );
@@ -298,11 +305,9 @@ export default function DashboardScreen() {
     return (
         <View style={styles.container}>
 
-
-
             {/* =====================================================
-          HEADER
-      ====================================================== */}
+                HEADER
+            ====================================================== */}
 
             <View style={styles.header}>
                 <Pressable
@@ -338,8 +343,8 @@ export default function DashboardScreen() {
             </View>
 
             {/* =====================================================
-          DASHBOARD CONTENT
-      ====================================================== */}
+                DASHBOARD CONTENT
+            ====================================================== */}
 
             <ScrollView
                 contentContainerStyle={
@@ -365,10 +370,9 @@ export default function DashboardScreen() {
                     </Text>
                 </Pressable>
 
-
                 {/* =====================================================
-            STUDENT INFO
-        ====================================================== */}
+                    STUDENT INFO
+                ====================================================== */}
 
                 <View style={styles.card}>
                     <View
@@ -376,13 +380,11 @@ export default function DashboardScreen() {
                             styles.studentInfoLayout
                         }
                     >
-
                         <View
                             style={
                                 styles.studentInfoSection
                             }
                         >
-
                             <Text
                                 style={
                                     styles.cardTitle
@@ -390,8 +392,6 @@ export default function DashboardScreen() {
                             >
                                 Student Info
                             </Text>
-
-                            {/* Name */}
 
                             <View
                                 style={
@@ -434,8 +434,6 @@ export default function DashboardScreen() {
                                 </View>
                             </View>
 
-                            {/* Status */}
-
                             <View
                                 style={
                                     styles.studentInfoRow
@@ -473,15 +471,11 @@ export default function DashboardScreen() {
                             </View>
                         </View>
 
-                        {/* Divider */}
-
                         <View
                             style={
                                 styles.studentInfoDivider
                             }
                         />
-
-                        {/* Check In Button */}
 
                         <View
                             style={
@@ -511,13 +505,12 @@ export default function DashboardScreen() {
                                 </Text>
                             </Pressable>
                         </View>
-
                     </View>
                 </View>
 
                 {/* =====================================================
-            CURRENT / UPCOMING CLASS
-        ====================================================== */}
+                    CURRENT / UPCOMING CLASS
+                ====================================================== */}
 
                 <View style={styles.card}>
 
@@ -526,8 +519,6 @@ export default function DashboardScreen() {
                     >
                         Current / Upcoming Class
                     </Text>
-
-                    {/* Selected Course */}
 
                     <View
                         style={
@@ -565,8 +556,6 @@ export default function DashboardScreen() {
                         </View>
                     </View>
 
-                    {/* Room */}
-
                     <View
                         style={
                             styles.classInfoRow
@@ -588,8 +577,6 @@ export default function DashboardScreen() {
                             Room 266
                         </Text>
                     </View>
-
-                    {/* Session Time */}
 
                     <View
                         style={
@@ -618,10 +605,6 @@ export default function DashboardScreen() {
                             styles.classDivider
                         }
                     />
-
-                    {/* =====================================================
-              COURSE TABS
-          ====================================================== */}
 
                     <View
                         style={
@@ -665,8 +648,8 @@ export default function DashboardScreen() {
                 </View>
 
                 {/* =====================================================
-            ATTENDANCE SUMMARY
-        ====================================================== */}
+                    ATTENDANCE SUMMARY
+                ====================================================== */}
 
                 <View style={styles.card}>
 
@@ -689,17 +672,11 @@ export default function DashboardScreen() {
                             styles.summaryLayout
                         }
                     >
-
-                        {/* Summary Stats */}
-
                         <View
                             style={
                                 styles.summaryStats
                             }
                         >
-
-                            {/* Present */}
-
                             <View
                                 style={
                                     styles.summaryItem
@@ -737,8 +714,6 @@ export default function DashboardScreen() {
                                 </Text>
                             </View>
 
-                            {/* Late */}
-
                             <View
                                 style={
                                     styles.summaryItem
@@ -775,8 +750,6 @@ export default function DashboardScreen() {
                                     Late
                                 </Text>
                             </View>
-
-                            {/* Absent */}
 
                             <View
                                 style={
@@ -816,15 +789,11 @@ export default function DashboardScreen() {
                             </View>
                         </View>
 
-                        {/* Divider */}
-
                         <View
                             style={
                                 styles.summaryDivider
                             }
                         />
-
-                        {/* Attendance Percentage */}
 
                         <View
                             style={
@@ -849,8 +818,8 @@ export default function DashboardScreen() {
                 </View>
 
                 {/* =====================================================
-            ATTENDANCE HISTORY
-        ====================================================== */}
+                    ATTENDANCE HISTORY
+                ====================================================== */}
 
                 <Pressable
                     style={

@@ -11,7 +11,6 @@ import {
     ScrollView
 } from "react-native";
 
-import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import { useState } from "react";
 
@@ -19,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 
 import { API_BASE } from "../constants/api";
+import { setStoredItem } from "@/utils/storage";
 import { Colors, Radius, Spacing } from "../constants/theme";
 
 
@@ -125,9 +125,9 @@ export default function EnrollSignup() {
                 return;
             }
 
-            await SecureStore.setItem("access_token", result.access_token);
+            await setStoredItem("access_token", result.access_token);
             
-            await SecureStore.setItem("user", JSON.stringify(result.user));
+            await setStoredItem("user", JSON.stringify(result.user));
 
 
             console.log(
