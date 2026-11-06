@@ -108,7 +108,7 @@ def clear_verification(user_id):
         None
     )
 
-    if verifier is not None:
+    if (verifier is not None and hasattr(verifier, "close")):
         verifier.close()
 
 

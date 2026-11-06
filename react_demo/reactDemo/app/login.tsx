@@ -1,577 +1,877 @@
-import { View, Text, TextInput, StyleSheet, Image, Pressable, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
-import * as SecureStore from "expo-secure-store";
+import { View, Text, TextInput, StyleSheet, Image, Pressable, KeyboardAvoidingView, Platform, ScrollView, } from "react-native";
+
 import { useRouter } from "expo-router";
 import { useState } from "react";
 
-import { Ionicons, MaterialCommunityIcons  } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons, } from "@expo/vector-icons";
 
 import { API_BASE } from "../constants/api";
-import { Colors, Radius, Spacing } from "../constants/theme";
 
+import { Colors, Radius, Spacing, } from "../constants/theme";
 
-export default function LoginScreen()
-{
-    const router = useRouter();
+import { clearAuthStorage, setStoredItem, } from "../utils/storage";
 
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
+// ============================================================
+// STUDENT LOGIN
+// ============================================================
 
-    const [error, setError] = useState("");
+export default function LoginScreen() {
+  const router = useRouter();
 
-    const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [email, setEmail] =
+    useState("");
 
-    const [showPassword, setShowPassword] = useState(false);
+  const [password, setPassword] =
+    useState("");
 
+  const [error, setError] =
+    useState("");
 
-    async function handleLogin()
-    {
-        if (!email || !password)
-        {
-            setError("Please enter your email and password.");
-            return;
-        }
+  const [
+    isLoggingIn,
+    setIsLoggingIn,
+  ] =
+    useState(false);
 
-        try
-        {
-            setIsLoggingIn(true);
-            setError("");
+  const [
+    showPassword,
+    setShowPassword,
+  ] =
+    useState(false);
 
+  // ==========================================================
+  // LOGIN
+  // ==========================================================
 
-            const response = await fetch(`${API_BASE}/login`, {
-                method: "POST",
+  async function handleLogin() {
+    if (
+      !email.trim() ||
+      !password
+    ) {
+      setError(
+        "Please enter your email and password."
+      );
 
-                headers: {
-                    "Content-Type": "application/json",
-                },
-
-                body: JSON.stringify({
-                    email: email.trim().toLowerCase(),
-                    password: password,
-                }),
-            });
-
-
-            const data = await response.json();
-
-
-            if (!data.success)
-            {
-                setError(
-                    data.message || "Login failed."
-                );
-
-                return;
-            }
-
-            // Save the JWT returned by FastAPI
-            await SecureStore.setItem(
-                "access_token",
-                data.access_token
-            );
-
-            // Save user information
-            await SecureStore.setItem(
-                "user",
-                JSON.stringify(data.user)
-            );
-
-            const userId = data.user.id;
-
-            router.push({
-                pathname: "/dashboard",
-
-                params: {
-                    userId: userId.toString()
-                }
-            });
-        }
-
-        catch (err)
-        {
-            console.log(
-                "Login error:",
-                err
-            );
-
-            setError(
-                "Could not connect to the server."
-            );
-        }
-
-        finally
-        {
-            setIsLoggingIn(false);
-        }
+      return;
     }
 
+    try {
+      setIsLoggingIn(true);
+      setError("");
 
-    return (
+      // ------------------------------------------------------
+      // IMPORTANT:
+      //
+      // Remove any stale token/user before creating a new
+      // authenticated session.
+      //
+      // This prevents Web localStorage from retaining an old
+      // student's JWT while the UI displays another student.
+      // ------------------------------------------------------
 
-        <KeyboardAvoidingView
-            style={styles.container}
-            behavior={
-                Platform.OS === "ios"
-                    ? "padding"
-                    : undefined
-            }
+      await clearAuthStorage();
+
+      // ------------------------------------------------------
+      // LOGIN REQUEST
+      // ------------------------------------------------------
+
+      const response =
+        await fetch(
+          `${API_BASE}/login`,
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body: JSON.stringify({
+              email:
+                email
+                  .trim()
+                  .toLowerCase(),
+
+              password,
+            }),
+          }
+        );
+
+      let data: any;
+
+      try {
+        data =
+          await response.json();
+      } catch {
+        throw new Error(
+          "Server returned an invalid response."
+        );
+      }
+
+      // ------------------------------------------------------
+      // HTTP ERROR
+      // ------------------------------------------------------
+
+      if (!response.ok) {
+        setError(
+          data?.message ||
+            data?.detail ||
+            "Login failed."
+        );
+
+        return;
+      }
+
+      // ------------------------------------------------------
+      // APPLICATION ERROR
+      // ------------------------------------------------------
+
+      if (
+        !data?.success
+      ) {
+        setError(
+          data?.message ||
+            "Login failed."
+        );
+
+        return;
+      }
+
+      // ------------------------------------------------------
+      // VALIDATE RESPONSE
+      // ------------------------------------------------------
+
+      if (
+        !data.access_token
+      ) {
+        throw new Error(
+          "Login response did not include an access token."
+        );
+      }
+
+      if (
+        !data.user ||
+        data.user.id === undefined ||
+        data.user.id === null
+      ) {
+        throw new Error(
+          "Login response did not include valid user information."
+        );
+      }
+
+      // ------------------------------------------------------
+      // SAVE AUTH
+      //
+      // Native:
+      //   SecureStore
+      //
+      // Web:
+      //   localStorage
+      // ------------------------------------------------------
+
+      await setStoredItem(
+        "access_token",
+        data.access_token
+      );
+
+      await setStoredItem(
+        "user",
+        JSON.stringify(
+          data.user
+        )
+      );
+
+      console.log(
+        "LOGIN SUCCESS:",
+        {
+          user_id:
+            data.user.id,
+
+          role:
+            data.user.role,
+
+          platform:
+            Platform.OS,
+        }
+      );
+
+      // ------------------------------------------------------
+      // ROUTE
+      // ------------------------------------------------------
+
+      router.replace({
+        pathname:
+          "/dashboard",
+
+        params: {
+          userId:
+            String(
+              data.user.id
+            ),
+        },
+      });
+    } catch (err) {
+      console.error(
+        "Login error:",
+        err
+      );
+
+      if (
+        err instanceof Error
+      ) {
+        setError(
+          err.message
+        );
+      } else {
+        setError(
+          "Could not connect to the server."
+        );
+      }
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
+
+  // ==========================================================
+  // UI
+  // ==========================================================
+
+  return (
+    <KeyboardAvoidingView
+      style={
+        styles.container
+      }
+      behavior={
+        Platform.OS === "ios"
+          ? "padding"
+          : undefined
+      }
+    >
+      <ScrollView
+        contentContainerStyle={
+          styles.scrollContent
+        }
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={
+          false
+        }
+      >
+        {/* =====================================================
+            BRANDING
+        ====================================================== */}
+
+        <View
+          style={
+            styles.brandSection
+          }
         >
+          <Image
+            source={require(
+              "../assets/wave-bg.png"
+            )}
+            style={
+              styles.waveBackground
+            }
+            resizeMode="contain"
+          />
 
-            <ScrollView
-                contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
+          <Image
+            source={require(
+              "../assets/logo.png"
+            )}
+            style={
+              styles.logo
+            }
+            resizeMode="contain"
+          />
+
+          <Text
+            style={
+              styles.title
+            }
+          >
+            Student Sign In
+          </Text>
+
+          <Text
+            style={
+              styles.subtitle
+            }
+          >
+            Use your UNT credentials to access biometric attendance.
+          </Text>
+        </View>
+
+        {/* =====================================================
+            LOGIN FORM
+        ====================================================== */}
+
+        <View
+          style={
+            styles.form
+          }
+        >
+          {/* Email */}
+
+          <View
+            style={
+              styles.inputWrapper
+            }
+          >
+            <Ionicons
+              name="mail-outline"
+              size={28}
+              color={
+                Colors.textSecondary
+              }
+            />
+
+            <TextInput
+              style={
+                styles.input
+              }
+              placeholder="Email"
+              placeholderTextColor={
+                Colors.textSecondary
+              }
+              value={
+                email
+              }
+              onChangeText={
+                setEmail
+              }
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoCorrect={
+                false
+              }
+            />
+          </View>
+
+          {/* Password */}
+
+          <View
+            style={
+              styles.inputWrapper
+            }
+          >
+            <Ionicons
+              name="lock-closed-outline"
+              size={28}
+              color={
+                Colors.textSecondary
+              }
+            />
+
+            <TextInput
+              style={
+                styles.input
+              }
+              placeholder="Password"
+              placeholderTextColor={
+                Colors.textSecondary
+              }
+              value={
+                password
+              }
+              onChangeText={
+                setPassword
+              }
+              secureTextEntry={
+                !showPassword
+              }
+            />
+
+            <Pressable
+              onPress={() =>
+                setShowPassword(
+                  !showPassword
+                )
+              }
+              hitSlop={10}
             >
+              <Ionicons
+                name={
+                  showPassword
+                    ? "eye-outline"
+                    : "eye-off-outline"
+                }
+                size={28}
+                color={
+                  Colors.textSecondary
+                }
+              />
+            </Pressable>
+          </View>
 
+          {/* Error */}
 
-                {/* =====================================================
-                    BRANDING
-                ====================================================== */}
+          {error ? (
+            <Text
+              style={
+                styles.errorText
+              }
+            >
+              {error}
+            </Text>
+          ) : null}
 
-                <View style={styles.brandSection}>
+          {/* Login */}
 
-                    <Image 
-                        source={require("../assets/wave-bg.png")}
-                        style={styles.waveBackground}
-                        resizeMode="contain"
-                    />
+          <Pressable
+            style={[
+              styles.loginButton,
 
-                    <Image
-                        source={require("../assets/logo.png")}
-                        style={styles.logo}
-                        resizeMode="contain"
-                    />
+              isLoggingIn &&
+                styles.disabledButton,
+            ]}
+            onPress={
+              handleLogin
+            }
+            disabled={
+              isLoggingIn
+            }
+          >
+            <Text
+              style={
+                styles.loginButtonText
+              }
+            >
+              {isLoggingIn
+                ? "Logging in..."
+                : "Login"}
+            </Text>
+          </Pressable>
 
+          {/* Enroll Face */}
 
-                    <Text style={styles.title}>
-                        Student Sign In
-                    </Text>
+          <Pressable
+            style={
+              styles.enrollButton
+            }
+            onPress={() =>
+              router.push(
+                "/enrollSignup"
+              )
+            }
+          >
+            <Text
+              style={
+                styles.enrollLink
+              }
+            >
+              Enroll Face
+            </Text>
+          </Pressable>
+        </View>
 
+        {/* =====================================================
+            SECURITY FOOTER
+        ====================================================== */}
 
-                    <Text style={styles.subtitle}>
-                        Use your UNT credentials to access
-                        biometric attendance.
-                    </Text>
+        <View
+          style={
+            styles.securitySection
+          }
+        >
+          <View
+            style={
+              styles.securityDivider
+            }
+          >
+            <View
+              style={
+                styles.dividerLine
+              }
+            />
 
-                </View>
+            <View
+              style={
+                styles.securityIconCircle
+              }
+            >
+              <MaterialCommunityIcons
+                name="shield-lock-outline"
+                size={30}
+                color={
+                  Colors.textSecondary
+                }
+              />
+            </View>
 
+            <View
+              style={
+                styles.dividerLine
+              }
+            />
+          </View>
 
-                {/* =====================================================
-                    LOGIN FORM
-                ====================================================== */}
-
-                <View style={styles.form}>
-
-
-                    {/* Email */}
-
-                    <View style={styles.inputWrapper}>
-
-                        <Ionicons
-                            name="mail-outline"
-                            size={28}
-                            color={Colors.textSecondary}
-                        />
-
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Email"
-                            placeholderTextColor={Colors.textSecondary}
-                            value={email}
-                            onChangeText={setEmail}
-                            autoCapitalize="none"
-                            keyboardType="email-address"
-                            autoCorrect={false}
-                        />
-
-                    </View>
-
-
-                    {/* Password */}
-
-                    <View style={styles.inputWrapper}>
-
-                        <Ionicons
-                            name="lock-closed-outline"
-                            size={28}
-                            color={Colors.textSecondary}
-                        />
-
-                        <TextInput
-                            style={styles.input}
-                            placeholder="Password"
-                            placeholderTextColor={Colors.textSecondary}
-                            value={password}
-                            onChangeText={setPassword}
-                            secureTextEntry={!showPassword}
-                        />
-
-                        <Pressable
-                            onPress={() =>
-                                setShowPassword(!showPassword)
-                            }
-                            hitSlop={10}
-                        >
-
-                            <Ionicons
-                                name={
-                                    showPassword
-                                        ? "eye-outline"
-                                        : "eye-off-outline"
-                                }
-                                size={28}
-                                color={Colors.textSecondary}
-                            />
-
-                        </Pressable>
-
-                    </View>
-
-
-                    {/* Error */}
-
-                    {error ? (
-
-                        <Text style={styles.errorText}>
-                            {error}
-                        </Text>
-
-                    ) : null}
-
-
-                    {/* Login Button */}
-
-                    <Pressable
-                        style={[
-                            styles.loginButton,
-                            isLoggingIn &&
-                            styles.disabledButton
-                        ]}
-                        onPress={handleLogin}
-                        disabled={isLoggingIn}
-                    >
-
-                        <Text style={styles.loginButtonText}>
-                            {
-                                isLoggingIn
-                                    ? "Logging in..."
-                                    : "Login"
-                            }
-                        </Text>
-
-                    </Pressable>
-
-
-                    {/* Enroll Face */}
-
-                    <Pressable
-                        style={styles.enrollButton}
-                        onPress={() =>
-                            router.push("/enrollSignup")
-                        }
-                    >
-
-                        <Text style={styles.enrollLink}>
-                            Enroll Face
-                        </Text>
-
-                    </Pressable>
-
-                </View>
-
-
-                {/* =====================================================
-                    SECURITY FOOTER
-                ====================================================== */}
-
-                <View style={styles.securitySection}>
-
-                    <View style={styles.securityDivider}>
-
-                        <View style={styles.dividerLine} />
-
-                        <View style={styles.securityIconCircle}>
-
-                            <MaterialCommunityIcons 
-                                name="shield-lock-outline"
-                                size={30}
-                                color={Colors.textSecondary}
-                            />
-
-                        </View>
-
-                        <View style={styles.dividerLine} />
-
-                    </View>
-
-
-                    <Text style={styles.securityText}>
-                        Use your UNT credentials to access
-                        biometric attendance.
-                    </Text>
-
-                </View>
-
-
-            </ScrollView>
-
-        </KeyboardAvoidingView>
-    );
+          <Text
+            style={
+              styles.securityText
+            }
+          >
+            Use your UNT credentials to access biometric attendance.
+          </Text>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
 }
 
+// ============================================================
+// STYLES
+// ============================================================
 
-const styles = StyleSheet.create({
-
-
-    // ============================================================
-    // PAGE
-    // ============================================================
-
+const styles =
+  StyleSheet.create({
     container: {
-        flex: 1,
-        backgroundColor: Colors.background
-    },
+      flex: 1,
 
+      backgroundColor:
+        Colors.background,
+    },
 
     scrollContent: {
-        flexGrow: 1,
+      flexGrow: 1,
 
-        paddingHorizontal: 32,
-        paddingTop: 42,
-        paddingBottom: 30,
+      paddingHorizontal:
+        32,
 
-        alignItems: "center"
+      paddingTop:
+        42,
+
+      paddingBottom:
+        30,
+
+      alignItems:
+        "center",
     },
 
-
-    // ============================================================
+    // ========================================================
     // BRANDING
-    // ============================================================
+    // ========================================================
 
     brandSection: {
-        width: "100%",
-        alignItems: "center",
-        position: "relative"
+      width:
+        "100%",
+
+      alignItems:
+        "center",
+
+      position:
+        "relative",
     },
 
     waveBackground: {
-        position: "absolute",
+      position:
+        "absolute",
 
-        left: -125,
+      left:
+        -125,
 
-        width: 620,
-        height: 320,
+      width:
+        620,
 
-        opacity: 1,
+      height:
+        320,
 
-        zIndex: 0
+      opacity:
+        1,
+
+      zIndex:
+        0,
     },
-
 
     logo: {
-        width: 220,
-        height: 220,
+      width:
+        220,
 
-        marginTop: 50,
-        marginBottom: 60,
+      height:
+        220,
 
-        zIndex: 1
+      marginTop:
+        50,
+
+      marginBottom:
+        60,
+
+      zIndex:
+        1,
     },
-
 
     title: {
-        color: Colors.textPrimary,
+      color:
+        Colors.textPrimary,
 
-        fontSize: 32,
-        fontWeight: "800",
+      fontSize:
+        32,
 
-        textAlign: "center"
+      fontWeight:
+        "800",
+
+      textAlign:
+        "center",
     },
-
 
     subtitle: {
-        color: Colors.textSecondary,
+      color:
+        Colors.textSecondary,
 
-        fontSize: 18,
-        lineHeight: 24,
+      fontSize:
+        18,
 
-        textAlign: "center",
+      lineHeight:
+        24,
 
-        maxWidth: 320,
+      textAlign:
+        "center",
 
-        marginTop: 10,
-        marginBottom: 28,
+      maxWidth:
+        320,
 
-        zIndex: 1
+      marginTop:
+        10,
+
+      marginBottom:
+        28,
+
+      zIndex:
+        1,
     },
 
-
-    // ============================================================
+    // ========================================================
     // FORM
-    // ============================================================
+    // ========================================================
 
     form: {
-        width: "100%",
-        maxWidth: 370
-    },
+      width:
+        "100%",
 
+      maxWidth:
+        370,
+    },
 
     inputWrapper: {
-        minHeight: 64,
+      minHeight:
+        64,
 
-        flexDirection: "row",
-        alignItems: "center",
+      flexDirection:
+        "row",
 
-        gap: Spacing.md,
+      alignItems:
+        "center",
 
-        backgroundColor: Colors.surface,
+      gap:
+        Spacing.md,
 
-        borderWidth: 1,
-        borderColor: Colors.borderLight,
-        borderRadius: Radius.lg,
+      backgroundColor:
+        Colors.surface,
 
-        paddingHorizontal: 18,
+      borderWidth:
+        1,
 
-        marginBottom: 14,
+      borderColor:
+        Colors.borderLight,
 
-        shadowColor: Colors.textPrimary,
-        shadowOpacity: 0.08,
-        shadowRadius: 10,
-        shadowOffset: {
-            width: 0,
-            height: 4
-        },
+      borderRadius:
+        Radius.lg,
 
-        elevation: 2
+      paddingHorizontal:
+        18,
+
+      marginBottom:
+        14,
+
+      shadowColor:
+        Colors.textPrimary,
+
+      shadowOpacity:
+        0.08,
+
+      shadowRadius:
+        10,
+
+      shadowOffset: {
+        width:
+          0,
+
+        height:
+          4,
+      },
+
+      elevation:
+        2,
     },
-
 
     input: {
-        flex: 1,
+      flex:
+        1,
 
-        color: Colors.textPrimary,
+      color:
+        Colors.textPrimary,
 
-        fontSize: 18,
+      fontSize:
+        18,
 
-        outlineStyle: "none"
+      outlineStyle:
+        "none",
     } as any,
 
-
     errorText: {
-        color: Colors.danger,
+      color:
+        Colors.danger,
 
-        textAlign: "center",
+      textAlign:
+        "center",
 
-        fontSize: 14,
+      fontSize:
+        14,
 
-        marginBottom: 12
+      marginBottom:
+        12,
     },
 
-
-    // ============================================================
+    // ========================================================
     // LOGIN BUTTON
-    // ============================================================
+    // ========================================================
 
     loginButton: {
-        minHeight: 62,
+      minHeight:
+        62,
 
-        backgroundColor: Colors.primary,
+      backgroundColor:
+        Colors.primary,
 
-        borderRadius: Radius.lg,
+      borderRadius:
+        Radius.lg,
 
-        alignItems: "center",
-        justifyContent: "center",
+      alignItems:
+        "center",
 
-        marginTop: 4
+      justifyContent:
+        "center",
+
+      marginTop:
+        4,
     },
-
 
     loginButtonText: {
-        color: Colors.surface,
+      color:
+        Colors.surface,
 
-        fontSize: 20,
-        fontWeight: "800"
+      fontSize:
+        20,
+
+      fontWeight:
+        "800",
     },
-
 
     disabledButton: {
-        opacity: 0.6
+      opacity:
+        0.6,
     },
 
-
-    // ============================================================
-    // ENROLL FACE
-    // ============================================================
+    // ========================================================
+    // ENROLL
+    // ========================================================
 
     enrollButton: {
-        alignSelf: "center",
+      alignSelf:
+        "center",
 
-        marginTop: 22
+      marginTop:
+        22,
     },
-
 
     enrollLink: {
-        color: Colors.primary,
+      color:
+        Colors.primary,
 
-        fontSize: 19,
-        fontWeight: "700",
+      fontSize:
+        19,
 
-        textDecorationLine: "underline"
+      fontWeight:
+        "700",
+
+      textDecorationLine:
+        "underline",
     },
 
-
-    // ============================================================
-    // SECURITY FOOTER
-    // ============================================================
+    // ========================================================
+    // SECURITY
+    // ========================================================
 
     securitySection: {
-        width: "100%",
-        maxWidth: 420,
+      width:
+        "100%",
 
-        marginTop: 34,
+      maxWidth:
+        420,
 
-        alignItems: "center"
+      marginTop:
+        34,
+
+      alignItems:
+        "center",
     },
-
 
     securityDivider: {
-        width: "100%",
+      width:
+        "100%",
 
-        flexDirection: "row",
-        alignItems: "center",
+      flexDirection:
+        "row",
 
-        gap: 14
+      alignItems:
+        "center",
+
+      gap:
+        14,
     },
-
 
     dividerLine: {
-        flex: 1,
+      flex:
+        1,
 
-        height: 1,
+      height:
+        1,
 
-        backgroundColor: Colors.border
+      backgroundColor:
+        Colors.border,
     },
-
 
     securityIconCircle: {
-        width: 44,
-        height: 44,
+      width:
+        44,
 
-        alignItems: "center",
-        justifyContent: "center"
+      height:
+        44,
+
+      alignItems:
+        "center",
+
+      justifyContent:
+        "center",
     },
 
-
     securityText: {
-        color: Colors.textSecondary,
+      color:
+        Colors.textSecondary,
 
-        fontSize: 16,
-        lineHeight: 22,
+      fontSize:
+        16,
 
-        textAlign: "center",
+      lineHeight:
+        22,
 
-        maxWidth: 320,
+      textAlign:
+        "center",
 
-        marginTop: 10
-    }
+      maxWidth:
+        320,
 
-});
+      marginTop:
+        10,
+    },
+  });

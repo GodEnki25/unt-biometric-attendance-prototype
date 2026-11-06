@@ -7,11 +7,12 @@ import {
   ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
-import * as SecureStore from "expo-secure-store";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
 import { Colors, Radius } from "../constants/theme";
 import { useEffect, useState } from "react";
+
+import { getStoredItem } from "@/utils/storage";
 import { API_BASE } from "@/constants/api";
 
 // ============================================================
@@ -238,7 +239,7 @@ export default function AttendanceHistoryScreen() {
 
   async function loadCourses() {
     const token =
-      await SecureStore.getItemAsync(
+      await getStoredItem(
         "access_token"
       );
 
@@ -285,7 +286,7 @@ export default function AttendanceHistoryScreen() {
 
   async function loadAttendanceHistory() {
     const token =
-      await SecureStore.getItemAsync(
+      await getStoredItem(
         "access_token"
       );
 
