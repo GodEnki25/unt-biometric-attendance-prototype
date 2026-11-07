@@ -98,46 +98,19 @@ def frame_quality_ok(frame):
 
     return sharpness >= MIN_SHARPNESS
 
-
 def clear_enrollment(user_id):
     enrollment_manager.sessions.pop(user_id, None)
     _enrollment_started.pop(user_id, None)
 
 
 def clear_verification(user_id):
-    verifier = verification_sessions.pop(user_id, None)
+    verifier = verification_sessions.pop(
+        user_id,
+        None
+    )
 
     if verifier is not None:
-        close_method = getattr(verifier, "close", None)
-
-        if callable(close_method):
-            close_method()
-
-
-def revoke_verification(user_id):
-    verified_users.discard(user_id)
-    verified_at.pop(user_id, None)
-
-
-def consume_verification(user_id):
-    with _verification_lock:
-        completed_at = verified_at.get(user_id)
-
-        if (
-            completed_at is None
-            or user_id not in verified_users
-        ):
-            revoke_verification(user_id)
-            return False
-
-        valid = (
-            monotonic() - completed_at
-            <= VERIFICATION_VALID_SECONDS
-        )
-
-        revoke_verification(user_id)
-
-        return valid
+        verifier.close()
 
 
 @router.get("/biometric-test")
@@ -148,7 +121,6 @@ def biometric_test():
         "liveness_required": True,
         "verification_valid_seconds": VERIFICATION_VALID_SECONDS
     }
-
 
 @router.post("/enroll/start")
 def start_frame_enrollment(

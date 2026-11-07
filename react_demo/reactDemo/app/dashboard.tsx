@@ -287,14 +287,7 @@ export default function DashboardScreen() {
         });
     }
 
-    function openFaceEnrollment() {
-        router.push({
-            pathname: "/firstTimeEnroll",
-            params: {
-                userId: userId?.toString() ?? "",
-            },
-        });
-    }
+
 
     function openAttendanceHistory() {
         router.push(
@@ -355,20 +348,7 @@ export default function DashboardScreen() {
                 }
             >
 
-                <Pressable
-                    onPress={openFaceEnrollment}
-                    style={{
-                        backgroundColor: "#007BFF",
-                        padding: 14,
-                        borderRadius: 8,
-                        margin: 15,
-                        alignItems: "center",
-                    }}
-                >
-                    <Text style={{ color: "white", fontWeight: "bold" }}>
-                        Enroll Face
-                    </Text>
-                </Pressable>
+ 
 
                 {/* =====================================================
                     STUDENT INFO

@@ -42,6 +42,7 @@ type CheckinRecord = {
     face_verified: number;
     location_verified: number;
     status: string;
+    notes: string | null;
 };
 
 type StudentRow = {
@@ -52,6 +53,7 @@ type StudentRow = {
     exittime: string;
     totaltime: string; // 9/15/26 changes here
     status: string;
+    notes: string | null;
 };
 
 type GeofenceOption = {
@@ -245,11 +247,15 @@ export default function InstructorDashboard() {
             const token = localStorage.getItem("access_token");
 
             const response = await fetch(
-                `${API_BASE}/checkins`, {
-                headers: {
-                    Authorization: `Bearer ${token}`
+                `${API_BASE}/checkins${selectedCourse
+                    ? `?course_id=${selectedCourse.course_id}`
+                    : ""
+                }`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
                 }
-            }
             );
 
             if (!response.ok) {
@@ -304,7 +310,6 @@ export default function InstructorDashboard() {
                     firstentrytime: formatTime(
                         record.first_check_in_time
                     ),
-
                     entrytime: formatTime(
                         record.latest_entry_time ?? record.check_in_time
                     ),
@@ -313,11 +318,14 @@ export default function InstructorDashboard() {
                         record.latest_exit_time
                     ),
 
-                    totaltime: record.total_time ?? EMPTY_CELL, status: formatStatus(
-                        record.status
-                    )
-                }));
+                    totaltime: record.total_time ?? EMPTY_CELL,
 
+                    status: formatStatus(
+                        record.status
+                    ),
+
+                    notes: record.notes ?? EMPTY_CELL
+                }));
 
             setStudents(formattedStudents);
 
@@ -344,7 +352,10 @@ export default function InstructorDashboard() {
             const token = localStorage.getItem("access_token");
 
             const response = await fetch(
-                `${API_BASE}/geofence/session`,
+                `${API_BASE}/geofence/session${selectedCourse
+                    ? `?course_id=${selectedCourse.course_id}`
+                    : ""
+                }`,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,
@@ -380,9 +391,13 @@ export default function InstructorDashboard() {
         }
     };
 
+
+    useEffect(() => {
+        loadCourses();
+    }, []);
+
     useEffect(() => {
         loadCheckins(true);
-        loadCourses();
         loadActiveSession();
 
         const interval = setInterval(() => {
@@ -391,7 +406,8 @@ export default function InstructorDashboard() {
         }, 5000);
 
         return () => clearInterval(interval);
-    }, []);
+    }, [selectedCourse?.course_id]);
+
 
     const toggleDropdown = (
         dropdownNumber: number
@@ -580,12 +596,12 @@ export default function InstructorDashboard() {
         // Integrated backend attendance timestamps into the instructor dashboard CSV export.
         //Displaying the first entry time, latest entry time, latest exit time, and total time in class for each student in the exported CSV file.
         const header =
-            "Student,First Entry Time, Latest Entry Time,Latest Exit Time,Total Time in Class,Status\n";
+            "Student,First Entry Time, Latest Entry Time,Latest Exit Time,Total Time in Class,Status,Notes\n";
 
         const rows = students
             .map(
                 (student) => // 9/15/26 changes in the next line here
-                    `"${student.name}","${student.firstentrytime}","${student.entrytime}","${student.exittime}","${student.totaltime}","${student.status}"`
+                    `"${student.name}","${student.firstentrytime}","${student.entrytime}","${student.exittime}","${student.totaltime}","${student.status}","${student.notes}"`
             )
             .join("\n");
 

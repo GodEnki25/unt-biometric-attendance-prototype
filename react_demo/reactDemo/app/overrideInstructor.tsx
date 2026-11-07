@@ -1,4 +1,4 @@
-import {View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, TextInput, Platform, Alert, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, Image, ScrollView, TouchableOpacity, TextInput, Platform, Alert, ActivityIndicator } from "react-native";
 
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -39,23 +39,26 @@ type OverrideDetails = {
 
     attendance: {
         attendance_id:
-            number | null;
+        number | null;
 
         status:
-            string;
+        string;
+
+        notes:
+        string | null;
 
         check_in_time:
-            string | null;
+        string | null;
 
         face_verified:
-            boolean;
+        boolean;
 
         location_verified:
-            boolean;
+        boolean;
     };
 
     events:
-        OverrideEvent[];
+    OverrideEvent[];
 };
 
 
@@ -182,62 +185,129 @@ export default function InstructorOverride() {
     const loadOverrideData =
         async () => {
 
-        setLoading(
-            true
-        );
+            setLoading(
+                true
+            );
 
-        setError(
-            ""
-        );
-
-
-        try {
-
-            const token =
-                Platform.OS === "web"
-                    ? localStorage.getItem(
-                        "access_token"
-                    )
-                    : null;
+            setError(
+                ""
+            );
 
 
-            if (!token) {
+            try {
 
-                throw new Error(
-                    "Instructor is not logged in."
-                );
-
-            }
-
-
-            /*
-             * The instructor dashboard currently sends the
-             * student's name.
-             *
-             * If studentId is available later, we can skip
-             * the /checkins lookup entirely.
-             */
-
-            let resolvedStudentId =
-                studentId
-                    ? Number(
-                        studentId
-                    )
-                    : null;
+                const token =
+                    Platform.OS === "web"
+                        ? localStorage.getItem(
+                            "access_token"
+                        )
+                        : null;
 
 
-            // --------------------------------------------------------
-            // RESOLVE STUDENT ID FROM REAL CHECK-IN DATA
-            // --------------------------------------------------------
+                if (!token) {
 
-            if (
-                !resolvedStudentId
-                && student
-            ) {
+                    throw new Error(
+                        "Instructor is not logged in."
+                    );
 
-                const checkinResponse =
+                }
+
+
+                /*
+                 * The instructor dashboard currently sends the
+                 * student's name.
+                 *
+                 * If studentId is available later, we can skip
+                 * the /checkins lookup entirely.
+                 */
+
+                let resolvedStudentId =
+                    studentId
+                        ? Number(
+                            studentId
+                        )
+                        : null;
+
+
+                // --------------------------------------------------------
+                // RESOLVE STUDENT ID FROM REAL CHECK-IN DATA
+                // --------------------------------------------------------
+
+                if (
+                    !resolvedStudentId
+                    && student
+                ) {
+
+                    const checkinResponse =
+                        await fetch(
+                            `${API_BASE}/checkins`,
+                            {
+                                headers: {
+                                    Authorization:
+                                        `Bearer ${token}`
+                                }
+                            }
+                        );
+
+
+                    if (
+                        !checkinResponse.ok
+                    ) {
+
+                        throw new Error(
+                            "Unable to load student attendance."
+                        );
+
+                    }
+
+
+                    const records =
+                        await checkinResponse.json();
+
+
+                    const matchingStudent =
+                        records.find(
+                            (record: any) =>
+                                record.student_name ===
+                                student
+                        );
+
+
+                    if (
+                        !matchingStudent
+                    ) {
+
+                        throw new Error(
+                            "Student could not be found."
+                        );
+
+                    }
+
+
+                    resolvedStudentId =
+                        matchingStudent.student_id;
+
+                }
+
+
+                if (
+                    !resolvedStudentId
+                ) {
+
+                    throw new Error(
+                        "Student ID is missing."
+                    );
+
+                }
+
+
+                // --------------------------------------------------------
+                // LOAD OVERRIDE DETAILS
+                // --------------------------------------------------------
+
+                const response =
                     await fetch(
-                        `${API_BASE}/checkins`,
+                        `${API_BASE}/attendance/override/${resolvedStudentId}`,
                         {
                             headers: {
                                 Authorization:
@@ -247,127 +317,64 @@ export default function InstructorOverride() {
                     );
 
 
+                const data =
+                    await response.json();
+
+
                 if (
-                    !checkinResponse.ok
+                    !response.ok
+                    || !data.success
                 ) {
 
                     throw new Error(
-                        "Unable to load student attendance."
+                        data.message ||
+                        "Unable to load override information."
                     );
 
                 }
 
 
-                const records =
-                    await checkinResponse.json();
+                setDetails(
+                    data
+                );
 
 
-                const matchingStudent =
-                    records.find(
-                        (record: any) =>
-                            record.student_name ===
-                            student
-                    );
+                setSelectedStatus(
+                    normalizeStatus(
+                        data.attendance.status
+                    )
+                );
 
-
-                if (
-                    !matchingStudent
-                ) {
-
-                    throw new Error(
-                        "Student could not be found."
-                    );
-
-                }
-
-
-                resolvedStudentId =
-                    matchingStudent.student_id;
-
-            }
-
-
-            if (
-                !resolvedStudentId
-            ) {
-
-                throw new Error(
-                    "Student ID is missing."
+                setNotes(
+                    data.attendance.notes ?? ""
                 );
 
             }
 
+            catch (error: any) {
 
-            // --------------------------------------------------------
-            // LOAD OVERRIDE DETAILS
-            // --------------------------------------------------------
-
-            const response =
-                await fetch(
-                    `${API_BASE}/attendance/override/${resolvedStudentId}`,
-                    {
-                        headers: {
-                            Authorization:
-                                `Bearer ${token}`
-                        }
-                    }
+                console.error(
+                    "Override load failed:",
+                    error
                 );
 
 
-            const data =
-                await response.json();
-
-
-            if (
-                !response.ok
-                || !data.success
-            ) {
-
-                throw new Error(
-                    data.message ||
-                    "Unable to load override information."
+                setError(
+                    error.message ||
+                    "Unable to load attendance override."
                 );
 
             }
 
+            finally {
 
-            setDetails(
-                data
-            );
+                setLoading(
+                    false
+                );
 
+            }
 
-            setSelectedStatus(
-                normalizeStatus(
-                    data.attendance.status
-                )
-            );
-
-        }
-
-        catch (error: any) {
-
-            console.error(
-                "Override load failed:",
-                error
-            );
-
-
-            setError(
-                error.message ||
-                "Unable to load attendance override."
-            );
-
-        }
-
-        finally {
-
-            setLoading(
-                false
-            );
-
-        }
-
-    };
+        };
 
 
     // ============================================================
@@ -380,18 +387,18 @@ export default function InstructorOverride() {
                 string
         ) => {
 
-        if (!status) {
+            if (!status) {
 
-            return "absent";
+                return "absent";
 
-        }
+            }
 
 
-        return status
-            .trim()
-            .toLowerCase();
+            return status
+                .trim()
+                .toLowerCase();
 
-    };
+        };
 
 
     const formatStatus =
@@ -400,24 +407,24 @@ export default function InstructorOverride() {
                 string
         ) => {
 
-        if (!status) {
+            if (!status) {
 
-            return "Unknown";
+                return "Unknown";
 
-        }
+            }
 
 
-        return (
-            status
-                .charAt(0)
-                .toUpperCase()
-            +
-            status
-                .slice(1)
-                .toLowerCase()
-        );
+            return (
+                status
+                    .charAt(0)
+                    .toUpperCase()
+                +
+                status
+                    .slice(1)
+                    .toLowerCase()
+            );
 
-    };
+        };
 
 
     // ============================================================
@@ -430,46 +437,46 @@ export default function InstructorOverride() {
                 string
         ) => {
 
-        if (!dateValue) {
+            if (!dateValue) {
 
-            return "—";
+                return "—";
 
-        }
-
-
-        const date =
-            new Date(
-                `${dateValue}T12:00:00`
-            );
+            }
 
 
-        if (
-            Number.isNaN(
-                date.getTime()
-            )
-        ) {
-
-            return dateValue;
-
-        }
+            const date =
+                new Date(
+                    `${dateValue}T12:00:00`
+                );
 
 
-        return date
-            .toLocaleDateString(
-                "en-US",
-                {
-                    month:
-                        "short",
+            if (
+                Number.isNaN(
+                    date.getTime()
+                )
+            ) {
 
-                    day:
-                        "numeric",
+                return dateValue;
 
-                    year:
-                        "numeric"
-                }
-            );
+            }
 
-    };
+
+            return date
+                .toLocaleDateString(
+                    "en-US",
+                    {
+                        month:
+                            "short",
+
+                        day:
+                            "numeric",
+
+                        year:
+                            "numeric"
+                    }
+                );
+
+        };
 
 
     // ============================================================
@@ -482,69 +489,69 @@ export default function InstructorOverride() {
                 string
         ) => {
 
-        if (!dateTime) {
+            if (!dateTime) {
 
-            return "—";
+                return "—";
 
-        }
+            }
 
 
-        const parts =
-            dateTime.split(
-                " "
+            const parts =
+                dateTime.split(
+                    " "
+                );
+
+
+            if (
+                parts.length < 2
+            ) {
+
+                return dateTime;
+
+            }
+
+
+            const timeParts =
+                parts[1].split(
+                    ":"
+                );
+
+
+            if (
+                timeParts.length < 2
+            ) {
+
+                return dateTime;
+
+            }
+
+
+            const hour =
+                parseInt(
+                    timeParts[0],
+                    10
+                );
+
+
+            const minute =
+                timeParts[1];
+
+
+            const period =
+                hour >= 12
+                    ? "PM"
+                    : "AM";
+
+
+            const displayHour =
+                hour % 12 || 12;
+
+
+            return (
+                `${displayHour}:${minute} ${period}`
             );
 
-
-        if (
-            parts.length < 2
-        ) {
-
-            return dateTime;
-
-        }
-
-
-        const timeParts =
-            parts[1].split(
-                ":"
-            );
-
-
-        if (
-            timeParts.length < 2
-        ) {
-
-            return dateTime;
-
-        }
-
-
-        const hour =
-            parseInt(
-                timeParts[0],
-                10
-            );
-
-
-        const minute =
-            timeParts[1];
-
-
-        const period =
-            hour >= 12
-                ? "PM"
-                : "AM";
-
-
-        const displayHour =
-            hour % 12 || 12;
-
-
-        return (
-            `${displayHour}:${minute} ${period}`
-        );
-
-    };
+        };
 
 
     // ============================================================
@@ -554,131 +561,125 @@ export default function InstructorOverride() {
     const saveOverride =
         async () => {
 
-        if (
-            !details
-            || !selectedStatus
-        ) {
+            if (
+                !details
+                || !selectedStatus
+            ) {
 
-            return;
-
-        }
-
-
-        setSaving(
-            true
-        );
-
-
-        try {
-
-            const token =
-                Platform.OS === "web"
-                    ? localStorage.getItem(
-                        "access_token"
-                    )
-                    : null;
-
-
-            if (!token) {
-
-                throw new Error(
-                    "Instructor is not logged in."
-                );
+                return;
 
             }
 
 
-            const response =
-                await fetch(
-                    `${API_BASE}/attendance/override`,
-                    {
-                        method:
-                            "POST",
+            setSaving(
+                true
+            );
 
-                        headers: {
-                            "Content-Type":
-                                "application/json",
 
-                            Authorization:
-                                `Bearer ${token}`
-                        },
+            try {
 
-                        body:
-                            JSON.stringify({
-                                session_id:
-                                    details.session.session_id,
+                const token =
+                    Platform.OS === "web"
+                        ? localStorage.getItem(
+                            "access_token"
+                        )
+                        : null;
 
-                                student_id:
-                                    details.student.student_id,
 
-                                status:
-                                    selectedStatus
+                if (!token) {
 
-                                /*
-                                 * Notes intentionally are NOT
-                                 * being sent yet.
-                                 *
-                                 * The DB / audit schema does not
-                                 * currently have somewhere to
-                                 * persist them.
-                                 */
-                            })
-                    }
+                    throw new Error(
+                        "Instructor is not logged in."
+                    );
+
+                }
+
+
+                const response =
+                    await fetch(
+                        `${API_BASE}/attendance/override`,
+                        {
+                            method:
+                                "POST",
+
+                            headers: {
+                                "Content-Type":
+                                    "application/json",
+
+                                Authorization:
+                                    `Bearer ${token}`
+                            },
+
+                            body:
+                                JSON.stringify({
+                                    session_id:
+                                        details.session.session_id,
+
+                                    student_id:
+                                        details.student.student_id,
+
+                                    status:
+                                        selectedStatus,
+
+                                    notes:
+                                        notes || null
+                                })
+                        }
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (
+                    !response.ok
+                    || !data.success
+                ) {
+
+                    throw new Error(
+                        data.message ||
+                        "Unable to save attendance override."
+                    );
+
+                }
+
+
+                Alert.alert(
+                    "Override Saved",
+                    `${details.student.student_name}'s attendance is now ${formatStatus(selectedStatus)}.`
                 );
 
 
-            const data =
-                await response.json();
+                await loadOverrideData();
+
+            }
+
+            catch (error: any) {
+
+                console.error(
+                    "Override save failed:",
+                    error
+                );
 
 
-            if (
-                !response.ok
-                || !data.success
-            ) {
-
-                throw new Error(
-                    data.message ||
+                Alert.alert(
+                    "Save Failed",
+                    error.message ||
                     "Unable to save attendance override."
                 );
 
             }
 
+            finally {
 
-            Alert.alert(
-                "Override Saved",
-                `${details.student.student_name}'s attendance is now ${formatStatus(selectedStatus)}.`
-            );
+                setSaving(
+                    false
+                );
 
+            }
 
-            await loadOverrideData();
-
-        }
-
-        catch (error: any) {
-
-            console.error(
-                "Override save failed:",
-                error
-            );
-
-
-            Alert.alert(
-                "Save Failed",
-                error.message ||
-                "Unable to save attendance override."
-            );
-
-        }
-
-        finally {
-
-            setSaving(
-                false
-            );
-
-        }
-
-    };
+        };
 
 
     // ============================================================
@@ -688,27 +689,27 @@ export default function InstructorOverride() {
     const logout =
         () => {
 
-        if (
-            Platform.OS === "web"
-        ) {
+            if (
+                Platform.OS === "web"
+            ) {
 
-            localStorage.removeItem(
-                "access_token"
+                localStorage.removeItem(
+                    "access_token"
+                );
+
+
+                localStorage.removeItem(
+                    "user"
+                );
+
+            }
+
+
+            router.replace(
+                "/loginInstructor"
             );
 
-
-            localStorage.removeItem(
-                "user"
-            );
-
-        }
-
-
-        router.replace(
-            "/loginInstructor"
-        );
-
-    };
+        };
 
 
     // ============================================================
@@ -1003,7 +1004,7 @@ export default function InstructorOverride() {
 
                     {
                         !loading &&
-                        error ? (
+                            error ? (
 
                             <View
                                 style={
@@ -1246,17 +1247,17 @@ export default function InstructorOverride() {
                                                     ) === "present"
                                                         ? styles.presentBadge
 
-                                                    : normalizeStatus(
-                                                        details.attendance.status
-                                                    ) === "late"
-                                                        ? styles.lateBadge
+                                                        : normalizeStatus(
+                                                            details.attendance.status
+                                                        ) === "late"
+                                                            ? styles.lateBadge
 
-                                                    : normalizeStatus(
-                                                        details.attendance.status
-                                                    ) === "excused"
-                                                        ? styles.excusedBadge
+                                                            : normalizeStatus(
+                                                                details.attendance.status
+                                                            ) === "excused"
+                                                                ? styles.excusedBadge
 
-                                                    : styles.absentBadge
+                                                                : styles.absentBadge
                                                 ]}
                                             >
 
@@ -1269,17 +1270,17 @@ export default function InstructorOverride() {
                                                         ) === "present"
                                                             ? styles.presentText
 
-                                                        : normalizeStatus(
-                                                            details.attendance.status
-                                                        ) === "late"
-                                                            ? styles.lateText
+                                                            : normalizeStatus(
+                                                                details.attendance.status
+                                                            ) === "late"
+                                                                ? styles.lateText
 
-                                                        : normalizeStatus(
-                                                            details.attendance.status
-                                                        ) === "excused"
-                                                            ? styles.excusedText
+                                                                : normalizeStatus(
+                                                                    details.attendance.status
+                                                                ) === "excused"
+                                                                    ? styles.excusedText
 
-                                                        : styles.absentText
+                                                                    : styles.absentText
                                                     ]}
                                                 >
                                                     {
@@ -1381,7 +1382,7 @@ export default function InstructorOverride() {
 
                                         {
                                             details.events.length >
-                                            0 ? (
+                                                0 ? (
 
                                                 details.events.map(
                                                     (
@@ -1434,13 +1435,13 @@ export default function InstructorOverride() {
                                                                     event.event_type === "ENTER"
                                                                         ? "Entered classroom geofence"
 
-                                                                    : event.event_type === "EXIT"
-                                                                        ? "Exited classroom geofence"
+                                                                        : event.event_type === "EXIT"
+                                                                            ? "Exited classroom geofence"
 
-                                                                    : event.event_type === "REENTER"
-                                                                        ? "Re-entered classroom geofence"
+                                                                            : event.event_type === "REENTER"
+                                                                                ? "Re-entered classroom geofence"
 
-                                                                    : "Attendance event"
+                                                                                : "Attendance event"
                                                                 }
                                                             </Text>
 
@@ -1684,7 +1685,7 @@ export default function InstructorOverride() {
                                                 styles.notesNotice
                                             }
                                         >
-                                            Notes are not stored yet.
+                                            Notes are saved with the attendane override.
                                         </Text>
 
 

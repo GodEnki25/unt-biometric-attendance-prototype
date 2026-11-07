@@ -327,18 +327,22 @@ async def checkin(
         conn.close()
 
 
+# =========================
+# GET CHECK-INS
+# =========================
+
 @router.get("/checkins")
 def get_checkins(
+    course_id: int | None = None,
     current_user=Depends(require_instructor),
 ):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        if (
-            ACTIVE_SESSION["is_open"]
-            and ACTIVE_SESSION["id"] is not None
-        ):
+        # If a class is currently running, show attendance
+        # for that exact session.
+        if ACTIVE_SESSION["is_open"] and ACTIVE_SESSION["id"] is not None:
             session_id = int(ACTIVE_SESSION["id"])
 
         else:
@@ -350,13 +354,14 @@ def get_checkins(
                 LIMIT 1
                 """
             )
-
             session = cursor.fetchone()
 
             if not session:
                 return []
 
             session_id = session["session_id"]
+
+
 
         cursor.execute(
             """
@@ -384,6 +389,7 @@ def get_checkins(
                 ar.check_in_time,
                 ar.face_verified,
                 ar.location_verified,
+                ar.notes,
                 CASE
                     WHEN ar.attendance_id IS NULL THEN 'absent'
                     ELSE ar.status
@@ -543,6 +549,7 @@ def get_attendance_override_details(
                 ar.check_in_time,
                 ar.face_verified,
                 ar.location_verified,
+                
                 CASE
                     WHEN ar.attendance_id IS NULL THEN 'absent'
                     ELSE ar.status
@@ -613,6 +620,7 @@ def get_attendance_override_details(
             "attendance": {
                 "attendance_id": attendance_id,
                 "status": record["status"],
+
                 "check_in_time": record["check_in_time"],
                 "face_verified": (
                     bool(record["face_verified"])
@@ -643,7 +651,12 @@ def save_attendance_override(
     try:
         session_id = data.get("session_id")
         student_id = data.get("student_id")
-        status = (data.get("status") or "").lower()
+
+        status = ( data.get("status") or "" ).lower()
+
+        # --------------------------------------------------------
+        # VALIDATE REQUEST
+        # --------------------------------------------------------   
 
         if session_id is None or student_id is None:
             return {
@@ -699,13 +712,20 @@ def save_attendance_override(
             cursor.execute(
                 """
                 UPDATE attendance_records
-                SET status = ?
+                SET status = ?, notes = ?
                 WHERE attendance_id = ?
                 """,
-                (status, existing["attendance_id"]),
+                (
+                    status,
+                    existing["attendance_id"],
+                ),
             )
 
         elif status == "absent":
+            # No attendance row is required for a naturally
+            # absent student. /checkins already interprets
+            # a missing row as absent.
+
             conn.commit()
 
             return {
@@ -727,8 +747,10 @@ def save_attendance_override(
                     check_in_time,
                     face_verified,
                     location_verified,
-                    status
+                    status,
+                    notes
                 )
+                
                 VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -738,6 +760,7 @@ def save_attendance_override(
                     0,
                     0,
                     status,
+                    notes,
                 ),
             )
 

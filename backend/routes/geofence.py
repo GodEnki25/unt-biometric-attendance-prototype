@@ -180,9 +180,10 @@ class GeofenceCheckRequest(BaseModel):
 
 @router.get("/session")
 def get_active_geofence_session(
+    course_id: int | None = None,
     current_user=Depends(get_current_user),
 ):
-    if  ACTIVE_SESSION["id"] is None:
+    if ACTIVE_SESSION["id"] is None:
         return ACTIVE_SESSION
 
     conn = get_db_connection()
@@ -192,6 +193,7 @@ def get_active_geofence_session(
         cursor.execute(
             """
             SELECT
+                course_id,
                 session_date,
                 start_time,
                 end_time
@@ -206,8 +208,21 @@ def get_active_geofence_session(
         if not session:
             return ACTIVE_SESSION
 
+        if (
+            course_id is not None
+            and session["course_id"] != course_id
+        ):
+            return {
+                "id": None,
+                "center_lat": 0.0,
+                "center_lon": 0.0,
+                "radius_m": 15,
+                "is_open": False,
+            }
+
         return {
             **ACTIVE_SESSION,
+            "course_id": session["course_id"],
             "session_date": session["session_date"],
             "start_time": session["start_time"],
             "end_time": session["end_time"],
