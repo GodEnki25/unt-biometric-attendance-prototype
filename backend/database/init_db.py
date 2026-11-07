@@ -88,6 +88,19 @@ def init_db():
     );
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS admin_audit_logs (
+        log_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_id INTEGER NOT NULL,
+        action TEXT NOT NULL,
+        target_user_id INTEGER,
+        details TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (admin_id) REFERENCES users(user_id),
+        FOREIGN KEY (target_user_id) REFERENCES users(user_id)
+        );
+        """)
+
     conn.commit()
     conn.close()
 

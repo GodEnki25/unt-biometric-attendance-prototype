@@ -16,6 +16,9 @@ from backend.routes.geofence import (
 # Biometric router
 from biometrics.backend.api import router as biometric_router
 
+# Admin router
+from backend.routes.admin import router as admin_router
+
 
 # =========================
 # APPLICATION LIFESPAN
@@ -55,6 +58,7 @@ app.include_router(checkin_router)
 app.include_router(geofence_router)
 app.include_router(biometric_router)
 app.include_router(course_router)
+app.include_router(admin_router)
 
 
 # =========================

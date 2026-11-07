@@ -5,6 +5,15 @@ import jwt
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from backend.database.db import get_db_connection
+
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(
+    Path(__file__).resolve().parents[2] / ".env"
+)
+
 JWT_SECRET = os.environ.get("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
 TOKEN_HOURS = 8
@@ -91,10 +100,29 @@ def require_instructor(current_user=Depends(get_current_user)):
 
 def require_admin(current_user=Depends(get_current_user)):
 
-    if current_user["role"] != "admin":
-        raise HTTPException(
-            status_code=403,
-            detail="Admin access required",
-        )
+    conn = get_db_connection()
 
-    return current_user
+    try:
+        user = conn.execute(
+            """
+            SELECT role
+            FROM users
+            WHERE user_id = ?
+            """,
+
+            (current_user["user_id"],),
+        ).fetchone()
+
+        if not user or user["role"] != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Admin access required",
+            )
+
+        return {
+            **current_user,
+            "role": user["role"],
+        }
+
+    finally:
+        conn.close()
