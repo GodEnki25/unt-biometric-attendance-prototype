@@ -10,6 +10,7 @@ from backend.database.biometric_db import (
     get_face_embedding,
     get_periocular_embedding
 )
+from backend.database.db import get_db_connection
 from backend.services.token_service import get_current_user
 from biometrics.backend.enrollment.enrollment_layer import EnrollmentManager
 from biometrics.backend.verification.verification_layer import Verifier
@@ -145,6 +146,27 @@ def biometric_test():
     }
 
 
+def is_already_enrolled(user_id):
+    conn = get_db_connection()
+
+    try:
+        row = conn.execute(
+            """
+            SELECT 1
+            FROM face_profiles
+            WHERE user_id = ?
+              AND embedding_path IS NOT NULL
+            LIMIT 1
+            """,
+            (user_id,)
+        ).fetchone()
+
+        return row is not None
+
+    finally:
+        conn.close()
+
+
 @router.post("/enroll/start")
 def start_frame_enrollment(
     current_user=Depends(get_current_user)
@@ -152,6 +174,17 @@ def start_frame_enrollment(
     user_id = current_user["user_id"]
 
     with _enrollment_lock:
+        if is_already_enrolled(user_id):
+            clear_enrollment(user_id)
+
+            return {
+                "status": "already_enrolled",
+                "message": (
+                    "Face already enrolled. "
+                    "You cannot enroll again."
+                )
+            }
+
         clear_enrollment(user_id)
 
         enrollment_manager.sessions[user_id] = []
@@ -197,6 +230,17 @@ def enroll_frame(
             }
 
         with _enrollment_lock:
+            if is_already_enrolled(user_id):
+                clear_enrollment(user_id)
+
+                return {
+                    "status": "already_enrolled",
+                    "message": (
+                        "Face already enrolled. "
+                        "You cannot enroll again."
+                    )
+                }
+
             started = _enrollment_started.get(user_id)
 
             if started is None:

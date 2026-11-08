@@ -6,20 +6,21 @@ import {
   Pressable,
   ActivityIndicator,
   ScrollView,
+  Image,
 } from "react-native";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "expo-router";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { File } from "expo-file-system";
 import { fetch as expoFetch } from "expo/fetch";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { usePresenceTracking } from "@/hooks/usePresenceTracking";
-import { getStoredItem } from "../utils/storage";
+import { getStoredItem, setStoredItem } from "../utils/storage";
 
 import { API_BASE } from "../constants/api";
-import { Colors } from "../constants/theme";
+import { Colors, Radius, Spacing } from "../constants/theme";
 
 type Session = {
   id: string;
@@ -29,6 +30,7 @@ type Session = {
   is_open: boolean;
   session_date?: string;
   start_time?: string;
+  end_time?: string | null;
 };
 
 type VerificationResult = {
@@ -56,6 +58,10 @@ type AttendanceResult = {
 
 const MAX_SCAN_MS = 55000;
 const MAX_FRAMES = 120;
+const MAX_VERIFICATION_ATTEMPTS = 3;
+const VERIFICATION_LOCK_KEY = "geoface_verification_locked_token";
+const VERIFICATION_LOCK_MESSAGE =
+  "Face verification failed after 3 attempts. Camera access is locked. Log out and log in again to retry.";
 
 const actionLabel = (action?: string) => {
   switch (action) {
@@ -77,6 +83,9 @@ export default function CheckInScreen() {
   const insets = useSafeAreaInsets();
 
   const cameraRef = useRef<CameraView | null>(null);
+  const scrollRef = useRef<React.ElementRef<typeof ScrollView> | null>(null);
+  const faceCardY = useRef(0);
+  const pendingCameraScroll = useRef(false);
   const scanStopped = useRef(false);
   const scanningRef = useRef(false);
   const mountedRef = useRef(true);
@@ -99,6 +108,8 @@ export default function CheckInScreen() {
   const [showCamera, setShowCamera] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [verificationLocked, setVerificationLocked] = useState(false);
+  const verificationLockedRef = useRef(false);
 
   const [status, setStatus] = useState("Initializing...");
   const [error, setError] = useState("");
@@ -196,6 +207,16 @@ export default function CheckInScreen() {
       try {
         setLoading(true);
 
+        const token = await getToken();
+        const lockedToken = await getStoredItem(VERIFICATION_LOCK_KEY);
+        const locked = lockedToken === token;
+        verificationLockedRef.current = locked;
+        setVerificationLocked(locked);
+        if (locked) {
+          setError(VERIFICATION_LOCK_MESSAGE);
+          setStatus("Verification locked");
+        }
+
         const currentSession = await getSession();
         await loadAttendanceStatus();
 
@@ -221,6 +242,11 @@ export default function CheckInScreen() {
   }, []);
 
   useEffect(() => {
+    if (verificationLocked) {
+      setStatus("Verification locked — log out and log in to retry");
+      return;
+    }
+
     if (presencePermissionStatus === "denied") {
       setStatus("Location permission is required");
       return;
@@ -242,6 +268,7 @@ export default function CheckInScreen() {
     session?.is_open,
     location,
     inside,
+    verificationLocked,
   ]);
 
   useEffect(() => {
@@ -300,6 +327,12 @@ export default function CheckInScreen() {
   }
 
   async function openCamera() {
+    if (verificationLockedRef.current) {
+      setError(VERIFICATION_LOCK_MESSAGE);
+      setStatus("Verification locked");
+      return;
+    }
+
     if (!inside || !session?.is_open || checkedIn) {
       return;
     }
@@ -529,7 +562,8 @@ export default function CheckInScreen() {
       !cameraReady ||
       !inside ||
       !session?.is_open ||
-      checkedIn
+      checkedIn ||
+      verificationLockedRef.current
     ) {
       return;
     }
@@ -546,69 +580,118 @@ export default function CheckInScreen() {
     setStatus("Scanning your face...");
 
     try {
-      // A new attempt must start a new backend verifier.
-      await cancelVerification();
-
-      const started = Date.now();
-
       for (
-        let attempt = 0;
-        attempt < MAX_FRAMES && Date.now() - started < MAX_SCAN_MS;
-        attempt++
+        let verificationAttempt = 1;
+        verificationAttempt <= MAX_VERIFICATION_ATTEMPTS;
+        verificationAttempt++
       ) {
         if (scanStopped.current || !cameraRef.current) {
           break;
         }
 
-        let photoUri: string | undefined;
+        // Every retry starts a fresh biometric verifier and liveness challenge.
+        await cancelVerification();
+        resetVisualVerification();
+        setPhase("face");
+        setStatus(
+          `Scanning your face (attempt ${verificationAttempt}/${MAX_VERIFICATION_ATTEMPTS})...`
+        );
+
+        const started = Date.now();
+        let biometricVerified = false;
 
         try {
-          const image = await cameraRef.current.takePictureAsync({
-            quality: 0.55,
-            skipProcessing: false,
-            shutterSound: false,
-          });
+          for (
+            let frameIndex = 0;
+            frameIndex < MAX_FRAMES && Date.now() - started < MAX_SCAN_MS;
+            frameIndex++
+          ) {
+            if (scanStopped.current || !cameraRef.current) {
+              break;
+            }
 
-          photoUri = image?.uri;
+            let photoUri: string | undefined;
 
-          if (!photoUri) {
-            continue;
+            try {
+              const image = await cameraRef.current.takePictureAsync({
+                quality: 0.55,
+                skipProcessing: false,
+                shutterSound: false,
+              });
+
+              photoUri = image?.uri;
+
+              if (!photoUri) {
+                continue;
+              }
+
+              if (scanStopped.current) {
+                break;
+              }
+
+              const response = await sendVerificationFrame(photoUri);
+
+              if (scanStopped.current) {
+                break;
+              }
+
+              const outcome = processVerificationResult(response);
+
+              if (outcome === "verified") {
+                biometricVerified = true;
+                setStatus("Verification complete. Recording attendance...");
+
+                await submitAttendance(photoUri);
+
+                attendanceCompleted = true;
+                break;
+              }
+            } finally {
+              deletePhoto(photoUri);
+            }
           }
 
-          if (scanStopped.current) {
+          if (attendanceCompleted || scanStopped.current) {
             break;
           }
 
-          const response = await sendVerificationFrame(photoUri);
+          throw new Error("Verification timed out. Please try again.");
+        } catch (err: any) {
+          // Attendance/network/setup failures are not biometric retries.
+          const reason = err?.message || "Verification failed.";
+          const retryableBiometricFailure =
+            !biometricVerified &&
+            (reason.startsWith("Liveness failed:") ||
+              reason === "Verification timed out. Please try again.");
 
-          if (scanStopped.current) {
-            break;
+          if (!retryableBiometricFailure || scanStopped.current) {
+            throw err;
           }
 
-          const outcome = processVerificationResult(response);
-
-          if (outcome === "verified") {
-            setStatus("Verification complete. Recording attendance...");
-
-            await submitAttendance(photoUri);
-
-            attendanceCompleted = true;
-            break;
+          if (verificationAttempt === MAX_VERIFICATION_ATTEMPTS) {
+            // Persist the lock for this login token, including page refreshes.
+            // A new successful login provides a different token.
+            const token = await getToken();
+            await setStoredItem(VERIFICATION_LOCK_KEY, token);
+            verificationLockedRef.current = true;
+            setVerificationLocked(true);
+            setShowCamera(false);
+            setCameraReady(false);
+            throw new Error(VERIFICATION_LOCK_MESSAGE);
           }
-        } finally {
-          deletePhoto(photoUri);
+
+          setStatus(
+            `Verification failed (attempt ${verificationAttempt}/${MAX_VERIFICATION_ATTEMPTS}). ` +
+            `${MAX_VERIFICATION_ATTEMPTS - verificationAttempt} attempt(s) remaining. Retrying...`
+          );
         }
-      }
-
-      if (!attendanceCompleted && !scanStopped.current) {
-        throw new Error(
-          "Verification timed out. Please try again."
-        );
       }
     } catch (err: any) {
       if (!scanStopped.current) {
         setError(err?.message || "Verification failed.");
-        setStatus("Check-in failed");
+        setStatus(
+          verificationLockedRef.current ? "Verification locked" : "Check-in failed"
+        );
       }
     } finally {
       if (!attendanceCompleted) {
@@ -631,472 +714,845 @@ export default function CheckInScreen() {
     setCameraReady(false);
     setScanning(false);
     resetVisualVerification();
-    setStatus("Ready");
+    setStatus(
+      verificationLockedRef.current ? "Verification locked" : "Ready"
+    );
   }
 
   const canCheckIn =
     inside &&
     session?.is_open === true &&
-    !checkedIn;
+    !checkedIn &&
+    !verificationLocked;
 
-  const faceColor = faceDetected
-    ? "#27AE60"
-    : "#FFFFFF";
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.body}>Initializing GeoFace...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View
-      style={[
-        styles.screen,
-        { paddingTop: insets.top }
-      ]}
-    >
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()}>
-          <Ionicons
-            name="arrow-back"
-            size={25}
-            color={Colors.textPrimary}
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <View style={styles.centerContent}>
+          <ActivityIndicator
+            size="large"
+            color={Colors.primary}
           />
-        </Pressable>
 
-        <Text style={styles.headerTitle}>
-          GeoFace Check-In
-        </Text>
-
-        <View style={{ width: 25 }} />
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={styles.title}>Attendance Check-In</Text>
-        <Text style={styles.subtitle}>
-          Confirm your classroom location and verify your identity.
-        </Text>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Class Session</Text>
-
-          <Text style={styles.value}>
-            CSCE4999 - Capstone Testing
-          </Text>
-
-          <Text style={styles.muted}>
-            {session?.is_open
-              ? `Active session · ${session.radius_m} m radius`
-              : "No active instructor session"}
-          </Text>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <Ionicons
-              name="location-outline"
-              size={28}
-              color={inside ? "#27AE60" : "#E74C3C"}
-            />
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.cardTitle}>
-                Geofence Status
-              </Text>
-
-              <Text
-                style={[
-                  styles.status,
-                  { color: inside ? "#27AE60" : "#E74C3C" }
-                ]}
-              >
-                {inside ? "Inside Boundary" : "Outside Boundary"}
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.muted}>
+          <Text style={styles.statusText}>
             {status}
           </Text>
+        </View>
+      );
+    }
 
-          {location && (
-            <Text style={styles.small}>
-              GPS accuracy: ±{Math.round(location.accuracy)} m
-            </Text>
-          )}
+    if (presencePermissionStatus === "denied") {
+      return (
+        <View style={styles.permissionCard}>
+          <View style={styles.largeSoftIcon}>
+            <Ionicons
+              name="location-outline"
+              size={40}
+              color={Colors.primary}
+            />
+          </View>
+
+          <Text style={styles.permissionTitle}>
+            Location Access Required
+          </Text>
+
+          <Text style={styles.permissionText}>
+            Location access is required to verify that
+            you are inside the classroom geofence.
+          </Text>
 
           <Pressable
+            style={styles.primaryButton}
             onPress={() => void refreshPresence()}
-            disabled={presenceRefreshing || scanning}
-            style={styles.secondaryButton}
           >
-            <Text style={styles.secondaryButtonText}>
-              {presenceRefreshing ? "Refreshing..." : "Refresh Location"}
+            <Text style={styles.primaryButtonText}>
+              Try Again
             </Text>
           </Pressable>
         </View>
+      );
+    }
 
-        {checkedIn ? (
-          <View style={styles.card}>
-            <Ionicons
-              name="checkmark-circle"
-              size={60}
-              color="#27AE60"
-              style={{ alignSelf: "center" }}
-            />
+    if (!session || !location) {
+      return (
+        <View style={styles.centerContent}>
+          <ActivityIndicator
+            size="large"
+            color={Colors.primary}
+          />
 
-            <Text style={styles.successTitle}>
-              Attendance Recorded
-            </Text>
+          <Text style={styles.statusText}>
+            {status}
+          </Text>
+        </View>
+      );
+    }
 
-            <Text style={styles.mutedCenter}>
-              Your check-in was successfully recorded.
-            </Text>
-
-            {checkInTime && (
-              <Text style={styles.mutedCenter}>
-                {checkInTime.toLocaleString()}
-              </Text>
-            )}
-
-            <Pressable
-              style={styles.primaryButton}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.primaryButtonText}>
-                Done
-              </Text>
-            </Pressable>
+    if (checkedIn) {
+      return (
+        <ScrollView
+          contentContainerStyle={styles.successContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.successIconOuter}>
+            <View style={styles.successIconInner}>
+              <Ionicons
+                name="checkmark"
+                size={44}
+                color={Colors.success}
+              />
+            </View>
           </View>
-        ) : (
-          <View style={styles.card}>
+
+          <Text style={styles.successTitle}>
+            Checked in successfully
+          </Text>
+
+          <Text style={styles.successSubtitle}>
+            Your attendance has been recorded.
+          </Text>
+
+          <View style={styles.infoCard}>
             <Text style={styles.cardTitle}>
-              Biometric Verification
+              Session details
             </Text>
 
-            {!showCamera ? (
-              <>
-                <Text style={styles.muted}>
-                  Each check-in requires facial recognition and
-                  a new liveness test.
-                </Text>
+            <View style={styles.detailRow}>
+              <Ionicons
+                name="book-outline"
+                size={23}
+                color={Colors.textSecondary}
+              />
+              <Text style={styles.detailLabel}>
+                COURSE
+              </Text>
+              <Text style={styles.detailValue}>
+                CSCE 4901 - Capstone
+              </Text>
+            </View>
 
-                <Pressable
-                  onPress={() => void openCamera()}
-                  disabled={!canCheckIn}
+            <View style={styles.rowDivider} />
+
+            <View style={styles.detailRow}>
+              <Ionicons
+                name="location-outline"
+                size={23}
+                color={Colors.textSecondary}
+              />
+              <Text style={styles.detailLabel}>
+                ROOM
+              </Text>
+              <Text style={styles.detailValue}>
+                Classroom 266
+              </Text>
+            </View>
+
+            <View style={styles.rowDivider} />
+
+            <View style={styles.detailRow}>
+              <Ionicons
+                name="time-outline"
+                size={23}
+                color={Colors.textSecondary}
+              />
+              <Text style={styles.detailLabel}>
+                CHECK-IN TIME
+              </Text>
+              <Text style={styles.detailValue}>
+                {checkInTime ? checkInTime.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }) : "Current session"}
+              </Text>
+            </View>
+
+            <View style={styles.rowDivider} />
+
+            <View style={styles.detailRow}>
+              <Ionicons
+                name="person-outline"
+                size={23}
+                color={Colors.textSecondary}
+              />
+              <Text style={styles.detailLabel}>
+                STATUS
+              </Text>
+              <View style={styles.successBadge}>
+                <Text style={styles.successBadgeText}>
+                  Present
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.infoCard}>
+            <Text style={styles.cardTitle}>
+              Verification status
+            </Text>
+
+            <View style={styles.verifyRow}>
+              <View style={styles.smallSoftIcon}>
+                <Ionicons
+                  name="location-outline"
+                  size={23}
+                  color={Colors.primary}
+                />
+              </View>
+
+              <View style={styles.verifyTextWrap}>
+                <Text style={styles.detailLabel}>
+                  GEOFENCE STATUS
+                </Text>
+                <Text style={styles.verifyValue}>
+                  {inside ? "Inside boundary" : "Outside boundary"}
+                </Text>
+              </View>
+
+              <View style={styles.successBadge}>
+                <Text style={styles.successBadgeText}>
+                  Verified
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.rowDivider} />
+
+            <View style={styles.verifyRow}>
+              <View style={styles.smallSoftIcon}>
+                <MaterialCommunityIcons
+                  name="face-recognition"
+                  size={23}
+                  color={Colors.primary}
+                />
+              </View>
+
+              <View style={styles.verifyTextWrap}>
+                <Text style={styles.detailLabel}>
+                  FACE VERIFICATION
+                </Text>
+                <Text style={styles.verifyValue}>
+                  Complete
+                </Text>
+              </View>
+
+              <View style={styles.successBadge}>
+                <Text style={styles.successBadgeText}>
+                  Verified
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          <Pressable
+            style={styles.sessionDetailsButton}
+            onPress={() => {}}
+          >
+            <Text style={styles.sessionDetailButtonText}>
+              View Session Details
+            </Text>
+          </Pressable>
+
+          <Pressable
+            style={styles.doneButton}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.doneButtonText}>
+              Done
+            </Text>
+          </Pressable>
+        </ScrollView>
+      );
+    }
+
+    return (
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.preCheckInContent}
+        showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => {
+          if (pendingCameraScroll.current && showCamera) {
+            pendingCameraScroll.current = false;
+            scrollRef.current?.scrollTo({
+              y: Math.max(0, faceCardY.current - 16),
+              animated: true,
+            });
+          }
+        }}
+      >
+        <View style={styles.pageIntro}>
+          <Text style={styles.pageTitle}>Check In</Text>
+          <Text style={styles.pageSubtitle}>
+            Verify your presence in class.
+          </Text>
+        </View>
+
+        <View style={styles.infoCard}>
+          <Text style={styles.cardTitle}>Current Class</Text>
+          <Text style={styles.courseHero}>
+            CSCE 4901 - Capstone
+          </Text>
+
+          <View style={styles.currentClassRow}>
+            <Ionicons
+              name="book-outline"
+              size={27}
+              color={Colors.textSecondary}
+            />
+            <Text style={styles.currentClassLabel}>
+              Course
+            </Text>
+            <Text style={styles.currentClassValue}>
+              CSCE 4901 - Capstone
+            </Text>
+          </View>
+
+          <View style={styles.currentClassRow}>
+            <Ionicons
+              name="location-outline"
+              size={27}
+              color={Colors.textSecondary}
+            />
+            <Text style={styles.currentClassLabel}>
+              Room
+            </Text>
+            <Text style={styles.currentClassValue}>
+              Classroom 266
+            </Text>
+          </View>
+
+          <View style={styles.currentClassRow}>
+            <Ionicons
+              name="time-outline"
+              size={27}
+              color={Colors.textSecondary}
+            />
+            <Text style={styles.currentClassLabel}>
+              Session Time
+            </Text>
+
+            <View style={styles.sessionTimeWrap}>
+              <Text style={styles.currentClassValue}>
+                {session.session_date ?? "Current session"}
+              </Text>
+              <Text style={styles.sessionSubValue}>
+                {session.is_open
+                  ? `Started ${session.start_time ?? "Active"}`
+                  : `Ended ${"Closed"}`}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.infoCard}>
+          <Text style={styles.cardTitle}>Location Status</Text>
+
+          <View style={styles.statusCardRow}>
+            <View
+              style={[
+                styles.largeSoftIcon,
+                inside
+                  ? styles.successSoftBackground
+                  : styles.dangerSoftBackground,
+              ]}
+            >
+              <Ionicons
+                name="location-outline"
+                size={46}
+                color={inside ? Colors.success : Colors.danger}
+              />
+            </View>
+
+            <View style={styles.statusTextWrap}>
+              <Text
+                style={[
+                  styles.statusHeadline,
+                  { color: inside ? Colors.success : Colors.danger },
+                ]}
+              >
+                {inside
+                  ? "You are inside the classroom boundary"
+                  : "You are outside the classroom boundary"}
+              </Text>
+
+              <Text style={styles.statusMeta}>
+                Lat: {location.lat.toFixed(6)}, {location.lon.toFixed(6)}
+              </Text>
+
+              <Text style={styles.statusMeta}>
+                Accuracy: ±{Math.round(location.accuracy)} m
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        <View
+          style={styles.infoCard}
+          onLayout={(event) => {
+            faceCardY.current = event.nativeEvent.layout.y;
+          }}
+        >
+          <Text style={styles.cardTitle}>Face Verification</Text>
+
+          {!showCamera ? (
+            <View style={styles.statusCardRow}>
+              <View style={styles.largeSoftIcon}>
+                <MaterialCommunityIcons
+                  name="face-recognition"
+                  size={44}
+                  color={Colors.primary}
+                />
+              </View>
+
+              <View style={styles.statusTextWrap}>
+                <Text
                   style={[
-                    styles.primaryButton,
-                    !canCheckIn && styles.disabledButton
+                    styles.faceReadyTitle,
+                    verificationLocked && { color: Colors.danger },
                   ]}
                 >
-                  <Text style={styles.primaryButtonText}>
-                    Start Face Verification
-                  </Text>
-                </Pressable>
-              </>
-            ) : (
-              <>
-                <View style={styles.cameraFrame}>
-                  <CameraView
-                    ref={cameraRef}
-                    facing="front"
-                    mode="picture"
-                    animateShutter={false}
-                    style={styles.camera}
-                    onCameraReady={() => {
-                      setCameraReady(true);
-                      setStatus("Camera ready");
-                    }}
-                  />
+                  {verificationLocked ? "Verification locked" : "Ready to verify"}
+                </Text>
 
-                  <View
-                    pointerEvents="none"
-                    style={[
-                      styles.faceOval,
-                      { borderColor: faceColor }
-                    ]}
-                  />
+                <Text style={styles.faceReadyText}>
+                  {verificationLocked
+                    ? "You have used all 3 verification attempts. Log out and log in again to retry."
+                    : "Your face will be matched for attendance when you start check-in."}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.cameraHelper}>
+                Keep your face centered and follow the instructions that appear below.
+              </Text>
 
-                  {phase === "countdown" && countdown !== null && (
-                    <View
-                      pointerEvents="none"
-                      style={styles.countdownOverlay}
-                    >
-                      <Ionicons
-                        name="shield-checkmark-outline"
-                        size={38}
-                        color="#FFFFFF"
-                      />
+              <View style={styles.cameraFrame}>
+                <CameraView
+                  ref={cameraRef}
+                  style={styles.camera}
+                  facing="front"
+                  mode="picture"
+                  animateShutter={false}
+                  onCameraReady={() => {
+                    setCameraReady(true);
+                    console.log("CAMERA READY");
+                    setStatus("Camera ready");
+                  }}
+                />
+                {phase === "countdown" && countdown !== null && (
+                  <View pointerEvents="none" style={styles.livenessCameraOverlay}>
+                    <Text style={styles.livenessTitle}>Face matched successfully</Text>
+                    <Text style={styles.livenessSubtitle}>Liveness test starts in</Text>
+                    <Text style={styles.livenessCountdown}>{countdown}</Text>
+                    <Text style={styles.livenessSubtitle}>Keep your face inside the frame</Text>
+                  </View>
+                )}
 
-                      <Text style={styles.overlayTitle}>
-                        Face Matched Successfully
-                      </Text>
+                {phase === "liveness" && (
+                  <View pointerEvents="none" style={styles.challengeCameraOverlay}>
+                    <Text style={styles.challengeCameraText}>{challenge}</Text>
+                  </View>
+                )}
 
-                      <Text style={styles.overlaySubtitle}>
-                        Liveness test starts in
-                      </Text>
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.faceGuideOverlay,
+                    { borderColor: faceDetected ? Colors.success : Colors.surface },
+                  ]}
+                />
+              </View>
 
-                      <Text style={styles.countdownNumber}>
-                        {countdown}
-                      </Text>
-
-                      <Text style={styles.overlaySubtitle}>
-                        Keep your face centered and get ready
-                      </Text>
-                    </View>
+              <View style={styles.scanInstructionCard}>
+                <View style={styles.scanFeedback}>
+                  {(scanning) && (
+                    <ActivityIndicator size="small" color={Colors.primary} />
                   )}
-
-                  {phase === "liveness" && (
-                    <View
-                      pointerEvents="none"
-                      style={styles.challengeOverlay}
-                    >
-                      <Text style={styles.challengeTitle}>
-                        Liveness Test
-                      </Text>
-
-                      <Text style={styles.challengeAction}>
-                        {challenge}
-                      </Text>
-
-                      <Text style={styles.challengeMeta}>
-                        Step {challengeStep}/{challengeTotal}
-                        {" · "}
-                        {challengeRemaining}s
-                      </Text>
-                    </View>
-                  )}
-
-                  {phase === "confirm" && (
-                    <View
-                      pointerEvents="none"
-                      style={styles.challengeOverlay}
-                    >
-                      <Text style={styles.challengeAction}>
-                        Liveness Passed
-                      </Text>
-
-                      <Text style={styles.challengeMeta}>
-                        Final face confirmation:
-                        {" "}
-                        {matches}/{requiredMatches}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                <View style={styles.feedback}>
-                  {scanning && (
-                    <ActivityIndicator
-                      size="small"
-                      color={Colors.primary}
-                    />
-                  )}
-
-                  <Text style={styles.feedbackText}>
+                  <Text style={styles.scanFeedbackText}>
                     {status}
                   </Text>
                 </View>
+                {phase === "liveness" && !!challenge && (
+                  <View style={styles.challengeRow}>
+                    <Ionicons
+                      name="scan-outline"
+                      size={22}
+                      color={Colors.primary}
+                    />
+                    <Text style={styles.challengeInstruction}>
+                      {challenge}
+                    </Text>
+                  </View>
+                )}
+              </View>
 
-                <Pressable
-                  onPress={() => void scanAndCheckIn()}
-                  disabled={!cameraReady || scanning}
-                  style={[
-                    styles.primaryButton,
-                    (!cameraReady || scanning) &&
-                      styles.disabledButton
-                  ]}
-                >
-                  <Text style={styles.primaryButtonText}>
-                    {scanning
-                      ? "Verifying..."
-                      : "Verify Face & Check In"}
-                  </Text>
-                </Pressable>
+              <Pressable
+                onPress={() => void scanAndCheckIn()}
+                disabled={!cameraReady || scanning}
+                style={[
+                  styles.primaryButton,
+                  (scanning) &&
+                    styles.disabledButton,
+                ]}
+              >
+                <Text style={styles.primaryButtonText}>
+                  {scanning
+                    ? "Verifying..."
+                    : "Verify Face & Check In"}
+                </Text>
+              </Pressable>
 
-                <Pressable
-                  onPress={() => void closeCamera()}
-                  style={styles.secondaryButton}
-                >
-                  <Text style={styles.secondaryButtonText}>
-                    Close Camera
-                  </Text>
-                </Pressable>
-              </>
-            )}
-          </View>
+              <Pressable
+                onPress={() => void closeCamera()}
+                style={styles.secondaryButton}
+              >
+                <Text style={styles.secondaryButtonText}>
+                  Close Camera
+                </Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+
+        {!showCamera && (
+          <Pressable
+            onPress={() => void openCamera()}
+            disabled={!canCheckIn || scanning}
+            style={[
+              styles.startButton,
+              (!canCheckIn || scanning) && styles.startButtonDisabled,
+            ]}
+          >
+            <Text style={styles.startButtonText}>
+              Start Check-In
+            </Text>
+            <Ionicons
+              name="arrow-forward"
+              size={28}
+              color={Colors.surface}
+            />
+          </Pressable>
         )}
+
+        <View style={styles.privacyRow}>
+          <Ionicons
+            name="information-circle-outline"
+            size={22}
+            color={Colors.textSecondary}
+          />
+          <Text style={styles.privacyText}>
+            Location is only checked during active class sessions.
+          </Text>
+        </View>
 
         {!!error && (
           <View style={styles.errorCard}>
             <Ionicons
               name="alert-circle-outline"
-              size={25}
-              color="#C0392B"
+              size={24}
+              color={Colors.danger}
             />
 
-            <Text style={styles.errorText}>
-              {error}
-            </Text>
+            <View style={styles.errorTextWrap}>
+              <Text style={styles.errorTitle}>
+                Check-in unsuccessful
+              </Text>
+
+              <Text style={styles.errorText}>
+                {error}
+              </Text>
+            </View>
           </View>
         )}
 
-        <Text style={styles.privacyText}>
-          Location is checked once when you start check-in.
-          Periodic presence tracking begins only after successful
-          check-in and stops when the class session ends. Verification
-          frames are processed temporarily and removed from the phone's
-          application cache after use.
-        </Text>
+        {!!error && !verificationLocked && (
+          <Pressable
+            style={[styles.startButton, { marginTop: 12, backgroundColor: "#4DA65A", justifyContent: "center" }]}
+            onPress={() => router.push("/faceEnroll")}
+          >
+            <Text style={styles.startButtonText}>Enroll Face</Text>
+          </Pressable>
+        )}
       </ScrollView>
+    );
+  };
+
+  return (
+    <View style={styles.container}>
+      <View style={[styles.header, { paddingTop: insets.top }]}>
+        <Image
+          source={require("../assets/logo.png")}
+          style={styles.headerLogo}
+          resizeMode="contain"
+        />
+        <View style={{ height: 40, width: 1, backgroundColor: Colors.borderLight, marginHorizontal: 16 }} />
+        <Text style={[styles.headerTitle, { textAlign: "left" }]}>
+          {checkedIn ? "Attendance Status" : "Check In"}
+        </Text>
+        <Pressable onPress={() => router.back()} style={styles.headerBack} accessibilityLabel="Go back">
+          <Ionicons name="person-outline" size={29} color={Colors.textSecondary} />
+        </Pressable>
+      </View>
+
+      <View style={styles.content}>
+        {renderContent()}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  container: {
     flex: 1,
-    backgroundColor: "#F5F7FB",
+    backgroundColor: Colors.background,
   },
-  center: {
+
+  content: {
+    flex: 1,
+  },
+
+  centerContent: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    padding: 24,
+    paddingHorizontal: Spacing.lg,
+    gap: Spacing.md,
   },
+
+  statusText: {
+    color: Colors.textSecondary,
+    fontSize: 15,
+    textAlign: "center",
+  },
+
   header: {
-    height: 60,
+    minHeight: 80,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: Spacing.lg,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 22,
-    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E7EB",
+    borderBottomColor: Colors.borderLight,
+  },
+  headerBack: {
+    width: 48,
+    height: 48,
+    justifyContent: "center",
+    alignItems: "flex-start",
+  },
+  headerLogo: {
+    width: 48,
+    height: 48,
   },
   headerTitle: {
-    fontSize: 19,
-    fontWeight: "800",
+    flex: 1,
     color: Colors.textPrimary,
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 60,
-  },
-  title: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "800",
-    color: Colors.textPrimary,
+    textAlign: "center",
   },
-  subtitle: {
-    fontSize: 15,
+  preCheckInContent: {
+    paddingHorizontal: 22,
+    paddingTop: 28,
+    paddingBottom: 30,
+  },
+
+  pageIntro: {
+    marginBottom: Spacing.lg,
+  },
+
+  pageTitle: {
+    color: Colors.textPrimary,
+    fontSize: 40,
+    fontWeight: "800",
+  },
+
+  pageSubtitle: {
     color: Colors.textSecondary,
-    marginTop: 8,
-    marginBottom: 20,
-    lineHeight: 22,
+    fontSize: 20,
+    marginTop: Spacing.sm,
   },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 18,
+
+  infoCard: {
+    width: "100%",
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    marginBottom: 16,
+    borderColor: Colors.borderLight,
+    borderRadius: Radius.lg,
+    paddingHorizontal: 22,
+    paddingVertical: 22,
+    marginBottom: 18,
   },
+
   cardTitle: {
-    fontSize: 18,
+    color: Colors.textPrimary,
+    fontSize: 24,
     fontWeight: "800",
-    color: Colors.textPrimary,
-    marginBottom: 10,
+    marginBottom: 22,
   },
-  value: {
-    fontSize: 17,
+
+  courseHero: {
+    color: Colors.textPrimary,
+    fontSize: 27,
     fontWeight: "700",
-    color: Colors.textPrimary,
+    marginBottom: 18,
   },
-  row: {
+
+  currentClassRow: {
+    minHeight: 58,
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
   },
-  body: {
+
+  currentClassLabel: {
+    width: 120,
     color: Colors.textSecondary,
     fontSize: 16,
-    marginTop: 16,
   },
-  muted: {
+
+  currentClassValue: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "500",
+  },
+
+  sessionRow: {
+    alignItems: "flex-start",
+    paddingTop: 10,
+  },
+
+  sessionTimeWrap: {
+    flex: 1,
+  },
+
+  sessionSubValue: {
     color: Colors.textSecondary,
-    fontSize: 14,
-    lineHeight: 21,
-    marginTop: 8,
+    fontSize: 16,
+    marginTop: 5,
   },
-  mutedCenter: {
+
+  statusCardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 18,
+  },
+
+  largeSoftIcon: {
+    width: 94,
+    height: 94,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.featureIconBackground,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  successSoftBackground: {
+    backgroundColor: Colors.successSoft,
+  },
+
+  dangerSoftBackground: {
+    backgroundColor: Colors.dangerSoft,
+  },
+
+  statusTextWrap: {
+    flex: 1,
+  },
+
+  statusHeadline: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "800",
+    marginBottom: Spacing.sm,
+  },
+
+  statusMeta: {
     color: Colors.textSecondary,
     fontSize: 15,
-    textAlign: "center",
-    marginTop: 8,
+    lineHeight: 22,
   },
-  small: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    marginTop: 10,
-  },
-  status: {
-    fontSize: 17,
-    fontWeight: "800",
-  },
-  primaryButton: {
-    backgroundColor: Colors.primary,
-    minHeight: 56,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 18,
-    paddingHorizontal: 16,
-  },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  secondaryButton: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    minHeight: 50,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 12,
-    paddingHorizontal: 14,
-  },
-  secondaryButtonText: {
+
+  faceReadyTitle: {
     color: Colors.primary,
+    fontSize: 19,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+
+  faceReadyText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    lineHeight: 22,
+  },
+
+  cameraHelper: {
+    color: Colors.textSecondary,
     fontSize: 15,
-    fontWeight: "700",
+    lineHeight: 21,
+    marginBottom: 14,
   },
-  disabledButton: {
-    opacity: 0.5,
-  },
+
   cameraFrame: {
     width: "100%",
     aspectRatio: 1,
-    borderRadius: 14,
     overflow: "hidden",
-    backgroundColor: "#111111",
-    marginTop: 12,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.textPrimary,
+    marginBottom: Spacing.md,
   },
+
   camera: {
     flex: 1,
   },
-  faceOval: {
+
+  livenessCameraOverlay: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+    backgroundColor: "rgba(0,0,0,0.57)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 16,
+  },
+  livenessTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    textAlign: "center",
+  },
+  livenessSubtitle: {
+    fontSize: 14,
+    color: "#FFFFFF",
+    textAlign: "center",
+    marginTop: 8,
+  },
+  livenessCountdown: {
+    fontSize: 82,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    marginVertical: 8,
+  },
+  challengeCameraOverlay: {
+    position: "absolute",
+    top: 12,
+    left: 10,
+    right: 10,
+    zIndex: 10,
+    backgroundColor: "rgba(0,0,0,0.70)",
+    borderRadius: 12,
+    padding: 12,
+    alignItems: "center",
+  },
+  challengeCameraText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  faceGuideOverlay: {
     position: "absolute",
     top: "9%",
     bottom: "9%",
@@ -1105,107 +1561,344 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderRadius: 160,
   },
-  countdownOverlay: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    backgroundColor: "rgba(0,0,0,0.60)",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 16,
-  },
-  overlayTitle: {
-    color: "#FFFFFF",
-    fontSize: 19,
-    fontWeight: "800",
-    textAlign: "center",
-    marginTop: 12,
-  },
-  overlaySubtitle: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    textAlign: "center",
-    marginTop: 10,
-  },
-  countdownNumber: {
-    color: "#FFFFFF",
-    fontSize: 86,
-    fontWeight: "900",
-    marginVertical: 8,
-  },
-  challengeOverlay: {
-    position: "absolute",
-    top: 8,
-    left: 8,
-    right: 8,
-    zIndex: 10,
-    backgroundColor: "rgba(0,0,0,0.75)",
-    borderRadius: 12,
-    padding: 14,
-    alignItems: "center",
-  },
-  challengeTitle: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 6,
-  },
-  challengeAction: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "800",
-    textAlign: "center",
-  },
-  challengeMeta: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    marginTop: 8,
-  },
-  feedback: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    minHeight: 48,
-    gap: 10,
-  },
-  feedbackText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    textAlign: "center",
-    flexShrink: 1,
-  },
-  successTitle: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#27AE60",
-    textAlign: "center",
-    marginTop: 12,
-  },
-  errorCard: {
-    backgroundColor: "#FFF1F0",
-    borderRadius: 12,
+
+  scanInstructionCard: {
+    backgroundColor: Colors.surface,
     borderWidth: 1,
-    borderColor: "#F5C6CB",
+    borderColor: Colors.borderLight,
+    borderRadius: Radius.md,
     padding: 14,
+    marginBottom: Spacing.md,
+  },
+
+  challengeRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginTop: 10,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+
+  challengeInstruction: {
+    flex: 1,
+    fontSize: 16,
+    lineHeight: 23,
+    fontWeight: "700",
+    color: Colors.textPrimary,
+  },
+
+  scanFeedback: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    marginBottom: 16,
+    justifyContent: "center",
+    gap: 10,
+    minHeight: 24,
   },
-  errorText: {
-    color: "#C0392B",
+
+  scanFeedbackText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    flexShrink: 1,
+    textAlign: "center",
+  },
+
+  startButton: {
+    minHeight: 64,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+    marginTop: 2,
+  },
+
+  startButtonDisabled: {
+    backgroundColor: Colors.disabled,
+  },
+
+  startButtonText: {
     flex: 1,
+    color: Colors.surface,
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+    marginLeft: 28,
+  },
+
+  privacyRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    paddingTop: 20,
+    paddingHorizontal: 14,
+  },
+
+  privacyText: {
+    flex: 1,
+    color: Colors.textSecondary,
     fontSize: 14,
     lineHeight: 20,
-  },
-  privacyText: {
     textAlign: "center",
+  },
+
+  successContent: {
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 22,
+    alignItems: "center",
+  },
+
+  successIconOuter: {
+    width: 96,
+    height: 96,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.successSoft,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
+  },
+
+  successIconInner: {
+    width: 70,
+    height: 70,
+    borderRadius: Radius.pill,
+    borderWidth: 3,
+    borderColor: Colors.success,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  successTitle: {
+    color: Colors.textPrimary,
+    fontSize: 26,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+
+  successSubtitle: {
     color: Colors.textSecondary,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 8,
+    fontSize: 16,
+    textAlign: "center",
+    marginTop: 6,
+    marginBottom: 22,
+  },
+
+  detailRow: {
+    minHeight: 58,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+
+  detailLabel: {
+    width: 116,
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  detailValue: {
+    flex: 1,
+    color: Colors.textPrimary,
+    fontSize: 16,
+    fontWeight: "500",
+  },
+
+  rowDivider: {
+    height: 1,
+    backgroundColor: Colors.borderLight,
+  },
+
+  successBadge: {
+    backgroundColor: Colors.successSoft,
+    borderRadius: Radius.pill,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+
+  successBadgeText: {
+    color: Colors.success,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+
+  verifyRow: {
+    minHeight: 76,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+
+  smallSoftIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.featureIconBackground,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  verifyTextWrap: {
+    flex: 1,
+  },
+
+  verifyLabel: {
+    color: Colors.textSecondary,
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+
+  verifyValue: {
+    color: Colors.textPrimary,
+    fontSize: 17,
+    fontWeight: "500",
+  },
+
+  primaryButton: {
+    width: "100%",
+    minHeight: 58,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+    marginTop: 4,
+  },
+
+  primaryButtonText: {
+    color: Colors.surface,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  secondaryButton: {
+    width: "100%",
+    minHeight: 54,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+  },
+
+  secondaryButtonText: {
+    color: Colors.primary,
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  outlineButton: {
+    width: "100%",
+    minHeight: 58,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+
+  outlineButtonText: {
+    color: Colors.primary,
+    fontSize: 18,
+    fontWeight: "800",
+  },
+
+  sessionDetailsButton: {
+    width: "100%",
+    minHeight: 56,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 2,
+  },
+
+  sessionDetailButtonText: {
+    color: Colors.surface,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+
+  doneButton: {
+    width: "100%",
+    minHeight: 56,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 12,
+  },
+
+  doneButtonText: {
+    color: Colors.primary,
+    fontSize: 17,
+    fontWeight: "800",
+  },
+
+  disabledButton: {
+    opacity: 0.5,
+  },
+
+  permissionCard: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
+  },
+
+  permissionTitle: {
+    color: Colors.textPrimary,
+    fontSize: 27,
+    fontWeight: "800",
+    textAlign: "center",
+    marginTop: 18,
+  },
+
+  permissionText: {
+    color: Colors.textSecondary,
+    fontSize: 16,
+    lineHeight: 22,
+    textAlign: "center",
+    marginTop: 10,
+    marginBottom: 22,
+  },
+
+  errorCard: {
+    flexDirection: "row",
+    gap: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.dangerSoft,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: 18,
+  },
+
+  errorTextWrap: {
+    flex: 1,
+  },
+
+  errorTitle: {
+    color: Colors.danger,
+    fontSize: 16,
+    fontWeight: "800",
+  },
+
+  errorText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 19,
+    marginTop: 3,
   },
 });
