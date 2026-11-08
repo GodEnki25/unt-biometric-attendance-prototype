@@ -9,7 +9,7 @@ import * as SecureStore from "expo-secure-store";
 //   iOS / Android -> Expo SecureStore
 //
 // Web / Windows web build:
-//   browser localStorage
+//   browser sessionStorage
 //
 // Every screen should use these functions instead of importing
 // SecureStore directly.
@@ -22,12 +22,12 @@ export async function getStoredItem(
     if (Platform.OS === "web") {
       if (
         typeof window === "undefined" ||
-        !window.localStorage
+        !window.sessionStorage
       ) {
         return null;
       }
 
-      return window.localStorage.getItem(
+      return window.sessionStorage.getItem(
         key
       );
     }
@@ -53,14 +53,14 @@ export async function setStoredItem(
     if (Platform.OS === "web") {
       if (
         typeof window === "undefined" ||
-        !window.localStorage
+        !window.sessionStorage
       ) {
         throw new Error(
-          "Browser localStorage is unavailable"
+          "Browser sessionStorage is unavailable"
         );
       }
 
-      window.localStorage.setItem(
+      window.sessionStorage.setItem(
         key,
         value
       );
@@ -89,9 +89,9 @@ export async function deleteStoredItem(
     if (Platform.OS === "web") {
       if (
         typeof window !== "undefined" &&
-        window.localStorage
+        window.sessionStorage
       ) {
-        window.localStorage.removeItem(
+        window.sessionStorage.removeItem(
           key
         );
       }

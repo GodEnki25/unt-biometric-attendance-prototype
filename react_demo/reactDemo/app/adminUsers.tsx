@@ -100,7 +100,7 @@ export default function AdminUsersScreen() {
             return null;
         }
 
-        return localStorage.getItem("access_token");
+        return sessionStorage.getItem("access_token");
     };
 
 
@@ -131,8 +131,8 @@ export default function AdminUsersScreen() {
 
         if (response.status === 401) {
             if (Platform.OS === "web") {
-                localStorage.removeItem("access_token");
-                localStorage.removeItem("user");
+                sessionStorage.removeItem("access_token");
+                sessionStorage.removeItem("user");
             }
 
             router.replace("/adminlogin");

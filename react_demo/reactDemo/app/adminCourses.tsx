@@ -81,7 +81,7 @@ export default function AdminCoursesScreen() {
     ) => {
 
         const token = Platform.OS === "web"
-            ? localStorage.getItem("access_token")
+            ? sessionStorage.getItem("access_token")
             : null;
 
         if (!token) {

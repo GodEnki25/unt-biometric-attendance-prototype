@@ -92,7 +92,7 @@ export default function InstructorOverride() {
 
     const storedUser =
         Platform.OS === "web"
-            ? localStorage.getItem(
+            ? sessionStorage.getItem(
                 "user"
             )
             : null;
@@ -195,7 +195,7 @@ export default function InstructorOverride() {
 
             const token =
                 Platform.OS === "web"
-                    ? localStorage.getItem(
+                    ? sessionStorage.getItem(
                         "access_token"
                     )
                     : null;
@@ -573,7 +573,7 @@ export default function InstructorOverride() {
 
             const token =
                 Platform.OS === "web"
-                    ? localStorage.getItem(
+                    ? sessionStorage.getItem(
                         "access_token"
                     )
                     : null;
@@ -692,12 +692,12 @@ export default function InstructorOverride() {
             Platform.OS === "web"
         ) {
 
-            localStorage.removeItem(
+            sessionStorage.removeItem(
                 "access_token"
             );
 
 
-            localStorage.removeItem(
+            sessionStorage.removeItem(
                 "user"
             );
 

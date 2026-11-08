@@ -73,7 +73,7 @@ export default function InstructorDashboard() {
 
     const storedUser =
         Platform.OS === "web" && typeof window !== "undefined"
-            ? window.localStorage.getItem("user")
+            ? window.sessionStorage.getItem("user")
             : null;
     const currentUser = storedUser ? JSON.parse(storedUser) : null;
 
@@ -202,7 +202,7 @@ export default function InstructorDashboard() {
 
     const loadCourses = async () => {
         try {
-            const token = localStorage.getItem("access_token");
+            const token = sessionStorage.getItem("access_token");
 
             const response = await fetch(
                 `${API_BASE}/courses`,
@@ -242,7 +242,7 @@ export default function InstructorDashboard() {
                 setLoading(true);
             }
 
-            const token = localStorage.getItem("access_token");
+            const token = sessionStorage.getItem("access_token");
 
             const response = await fetch(
                 `${API_BASE}/checkins`, {
@@ -341,7 +341,7 @@ export default function InstructorDashboard() {
 
     const loadActiveSession = async () => {
         try {
-            const token = localStorage.getItem("access_token");
+            const token = sessionStorage.getItem("access_token");
 
             const response = await fetch(
                 `${API_BASE}/geofence/session`,
@@ -477,7 +477,7 @@ export default function InstructorDashboard() {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
-                        Authorization: `Bearer ${localStorage.getItem("access_token")}`
+                        Authorization: `Bearer ${sessionStorage.getItem("access_token")}`
                     },
                     body: JSON.stringify({
                         course_id: selectedCourse.course_id,
@@ -527,7 +527,7 @@ export default function InstructorDashboard() {
                 {
                     method: "POST",
                     headers: {
-                        Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+                        Authorization: `Bearer ${sessionStorage.getItem("access_token")}`,
                     }
                 }
             );
@@ -669,8 +669,8 @@ export default function InstructorDashboard() {
 
                         <TouchableOpacity
                             onPress={() => {
-                                localStorage.removeItem("access_token");
-                                localStorage.removeItem("user");
+                                sessionStorage.removeItem("access_token");
+                                sessionStorage.removeItem("user");
                                 router.replace("/loginInstructor");
                             }}
                         >

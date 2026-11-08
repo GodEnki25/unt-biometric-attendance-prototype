@@ -75,8 +75,9 @@ export default function AdminDashboardScreen() {
     // ============================================================
 
     const storedUser =
-        Platform.OS === "web"
-            ? localStorage.getItem(
+        Platform.OS === "web" &&
+        typeof window !== "undefined"
+            ? window.sessionStorage.getItem(
                 "user"
             )
             : null;
@@ -136,8 +137,41 @@ export default function AdminDashboardScreen() {
     // ============================================================
 
     useEffect(() => {
+        const verifyAdmin = async () => {
+            const token = Platform.OS === "web"
+                ? sessionStorage.getItem("access_token")
+                : null;
 
-        checkBackendStatus();
+            if(!token){
+                router.replace("/adminlogin");
+                return;
+            }
+
+            try {
+                const response = await fetch(
+                    `${API_BASE}/admin/me`,
+                    {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    }
+                );
+
+                if(!response.ok) {
+                    router.replace("/adminlogin");
+                    return;
+                }
+
+                await checkBackendStatus();
+            }
+
+            catch (error) {
+                console.error("Admin verification failed:", error);
+                router.replace("/adminlogin");
+            }
+        };
+
+        void verifyAdmin();
 
     }, []);
 
@@ -214,11 +248,11 @@ export default function AdminDashboardScreen() {
             Platform.OS === "web"
         ) {
 
-            localStorage.removeItem(
+            sessionStorage.removeItem(
                 "access_token"
             );
 
-            localStorage.removeItem(
+            sessionStorage.removeItem(
                 "user"
             );
 

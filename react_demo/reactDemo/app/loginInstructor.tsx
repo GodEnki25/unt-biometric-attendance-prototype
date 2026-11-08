@@ -58,8 +58,8 @@ export default function LoginScreen() {
             }
 
             if (Platform.OS === "web") {
-                localStorage.setItem("access_token", data.access_token);
-                localStorage.setItem("user", JSON.stringify(data.user));
+                sessionStorage.setItem("access_token", data.access_token);
+                sessionStorage.setItem("user", JSON.stringify(data.user));
             } else {
                 await SecureStore.setItemAsync("access_token", data.access_token);
                 await SecureStore.setItemAsync("user", JSON.stringify(data.user));

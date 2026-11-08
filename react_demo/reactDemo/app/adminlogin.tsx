@@ -66,13 +66,13 @@ export default function AdminLoginScreen()
             }
 
 
-            localStorage.setItem(
+            sessionStorage.setItem(
                 "access_token",
                 data.access_token
             );
 
 
-            localStorage.setItem(
+            sessionStorage.setItem(
                 "user",
                 JSON.stringify(data.user)
             );
