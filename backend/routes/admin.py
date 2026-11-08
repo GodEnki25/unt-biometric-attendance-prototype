@@ -52,7 +52,7 @@ def get_users():
 # ============================================================
 class AdminCreateUser(BaseModel):
     full_name: str = Field(min_length=1, max_length=150)
-    eamil: EmailStr
+    email: EmailStr
     password: str = Field(min_length=8)
     role: Literal["student", "instructor"]
     student_id: str | None = None
@@ -62,7 +62,7 @@ class AdminCreateUser(BaseModel):
 def create_admin_user(data: AdminCreateUser):
     if data.role == "student" and not data.student_id:
         raise HTTPException(
-            status_code=442,
+            status_code=422,
             detail="Student ID is required for students",
         )
 
@@ -82,7 +82,7 @@ def create_admin_user(data: AdminCreateUser):
             """,
             (
                 data.full_name.strip(),
-                str(data.eamil).lower(),
+                str(data.email).lower(),
                 hash_password(data.password),
                 data.role,
                 data.student_id if data.role == "student" else None,

@@ -288,12 +288,7 @@ export default function AdminDashboardScreen() {
 
     const handleUserManagement =
         () => {
-
-        showComingSoon(
-            "User Management",
-            "Administrative user and role management tools have not been implemented yet."
-        );
-
+            router.push("/adminUsers");
     };
 
 
