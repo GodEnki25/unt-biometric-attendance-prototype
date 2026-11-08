@@ -74,9 +74,14 @@ def login_user(email, password):
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT * FROM users WHERE email = ?",
+           """
+           SELECT *
+           FROM users
+           WHERE email = ?
+            AND is_active = 1
+        """,
         (email,)
-    )
+        )
 
     user = cursor.fetchone()
 

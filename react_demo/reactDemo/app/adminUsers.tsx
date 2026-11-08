@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
     ActivityIndicator,
+    Alert,
     Image,
     Platform,
     ScrollView,
@@ -35,13 +36,15 @@ type AdminUser = {
     role: UserRole;
     student_id: string | null;
     created_at: string;
+    is_active: number;
+    is_root_admin: number;
 };
 
 type UserForm = {
     full_name: string;
     email: string;
     password: string;
-    role: "student" | "instructor";
+    role: UserRole;
     student_id: string;
 };
 
@@ -65,6 +68,7 @@ export default function AdminUsersScreen() {
     const { width } = useWindowDimensions();
 
     const isMobile = width < 700;
+    const [actionBusy, setActionBusy] = useState<number | null>(null);
 
     const [users, setUsers] = useState<AdminUser[]>([]);
     const [search, setSearch] = useState("");
@@ -80,6 +84,11 @@ export default function AdminUsersScreen() {
 
     const [error, setError] = useState("");
     const [message, setMessage] = useState("");
+
+    const [currentAdmin, setCurrentAdmin] = useState<{
+        user_id: number;
+        is_root_admin: boolean;
+    } | null>(null);
 
 
     // ============================================================
@@ -107,6 +116,7 @@ export default function AdminUsersScreen() {
         const token = getToken();
 
         if (!token) {
+            router.replace("/adminlogin");
             throw new Error("Authentication required.");
         }
 
@@ -130,13 +140,15 @@ export default function AdminUsersScreen() {
             throw new Error("Your session expired. Please sign in.");
         }
 
+        const data = await response.json();
+
         if (response.status === 403) {
             throw new Error(
-                "You do not have permission to perform this action."
+                typeof data.detail === "string"
+                    ? data.detail
+                    : "You do not have permission to perform this action."
             );
         }
-
-        const data = await response.json();
 
         if (!response.ok) {
             const detail = data.detail;
@@ -160,12 +172,15 @@ export default function AdminUsersScreen() {
     const loadUsers = useCallback(async () => {
 
         setLoading(true);
-        setError("");
 
         try {
-            const data = await adminRequest("/admin/users");
+            const [data, profile] = await Promise.all([
+                adminRequest("/admin/users"),
+                adminRequest("/admin/me"),
+            ]);
 
             setUsers(data.users ?? []);
+            setCurrentAdmin(profile);
         }
 
         catch (err) {
@@ -228,6 +243,10 @@ export default function AdminUsersScreen() {
 
     const openCreateForm = () => {
 
+        if (!currentAdmin) {
+            setError("Administrator permissions have not loaded yet.");
+            return;
+        }
         setEditingUser(null);
         setForm({ ...EMPTY_FORM });
 
@@ -240,8 +259,9 @@ export default function AdminUsersScreen() {
 
     const openEditForm = (user: AdminUser) => {
 
-        if (user.role === "admin") {
-            setError("Administrator accounts cannot be edited here.");
+        if (!currentAdmin || user.is_root_admin ||
+            (user.role === "admin" && !currentAdmin.is_root_admin)) {
+            setError("Root administrator privileges required.");
             return;
         }
 
@@ -277,7 +297,14 @@ export default function AdminUsersScreen() {
     // ============================================================
 
     const handleSave = async () => {
-
+        if (!currentAdmin) {
+            setError("Administrator permissions have not loaded yet.");
+            return;
+        }
+        if (!currentAdmin.is_root_admin && form.role === "admin") {
+            setError("Only root can manage administrator accounts.");
+            return;
+        }
         const full_name = form.full_name.trim();
         const email = form.email.trim().toLowerCase();
         const student_id = form.student_id.trim();
@@ -315,6 +342,7 @@ export default function AdminUsersScreen() {
                         body: JSON.stringify({
                             full_name,
                             email,
+                            role: form.role,
                             student_id:
                                 form.role === "student"
                                     ? student_id
@@ -364,6 +392,66 @@ export default function AdminUsersScreen() {
             setSaving(false);
         }
 
+    };
+
+
+    // ============================================================
+    // REMOVE / RESTORE USER
+    // ============================================================
+
+    const canManageUser = (user: AdminUser) =>
+        Boolean(currentAdmin) &&
+        !user.is_root_admin &&
+        (user.role !== "admin" || Boolean(currentAdmin?.is_root_admin));
+
+    const changeUserStatus = async (user: AdminUser, restore: boolean) => {
+        if (!canManageUser(user)) {
+            setError("You do not have permission to manage this account.");
+            return;
+        }
+
+        setActionBusy(user.user_id);
+        setError("");
+        setMessage("");
+
+        try {
+            if (restore) {
+                await adminRequest(`/admin/users/${user.user_id}`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ is_active: true }),
+                });
+            } else {
+                await adminRequest(`/admin/users/${user.user_id}`, {
+                    method: "DELETE",
+                });
+            }
+            await loadUsers();
+            setMessage(restore
+                ? `${user.full_name} has been restored.`
+                : `${user.full_name} has been deactivated.`);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Unable to update account.");
+        } finally {
+            setActionBusy(null);
+        }
+    };
+
+    const handleRemoveUser = (user: AdminUser) => {
+        if (!canManageUser(user)) {
+            setError("Root administrator privileges required.");
+            return;
+        }
+
+        const message = `Deactivate ${user.full_name}? Their attendance history will be preserved.`;
+        if (Platform.OS === "web") {
+            if (window.confirm(message)) void changeUserStatus(user, false);
+            return;
+        }
+        Alert.alert("Deactivate User", message, [
+            { text: "Cancel", style: "cancel" },
+            { text: "Deactivate", style: "destructive",
+              onPress: () => { void changeUserStatus(user, false); } },
+        ]);
     };
 
 
@@ -440,7 +528,7 @@ export default function AdminUsersScreen() {
                 </Text>
 
                 <Text style={styles.subtitle}>
-                    Manage student and instructor accounts.
+                    Manage student, instructor, and administrator accounts.
                 </Text>
 
 
@@ -499,6 +587,7 @@ export default function AdminUsersScreen() {
                         <TouchableOpacity
                             style={styles.primaryButton}
                             onPress={openCreateForm}
+                            disabled={!currentAdmin || saving}
                         >
                             <Ionicons
                                 name="add-outline"
@@ -555,60 +644,46 @@ export default function AdminUsersScreen() {
                             />
 
                             {!editingUser && (
-
                                 <>
                                     <Text style={styles.inputLabel}>
                                         Password
                                     </Text>
-
                                     <TextInput
                                         style={styles.input}
                                         value={form.password}
-                                        onChangeText={value =>
-                                            updateField("password", value)
-                                        }
+                                        onChangeText={value => updateField("password", value)}
                                         placeholder="Minimum 8 characters"
                                         secureTextEntry
                                     />
-
-                                    <Text style={styles.inputLabel}>
-                                        Role
-                                    </Text>
-
-                                    <View style={styles.roleRow}>
-
-                                        {(["student", "instructor"] as const)
-                                            .map(role => (
-
-                                                <TouchableOpacity
-                                                    key={role}
-                                                    style={[
-                                                        styles.roleButton,
-                                                        form.role === role &&
-                                                            styles.selectedRole,
-                                                    ]}
-                                                    onPress={() =>
-                                                        updateField("role", role)
-                                                    }
-                                                >
-                                                    <Text
-                                                        style={[
-                                                            styles.roleText,
-                                                            form.role === role &&
-                                                                styles.selectedRoleText,
-                                                        ]}
-                                                    >
-                                                        {role === "student"
-                                                            ? "Student"
-                                                            : "Instructor"}
-                                                    </Text>
-                                                </TouchableOpacity>
-
-                                            ))}
-
-                                    </View>
                                 </>
                             )}
+
+                            <Text style={styles.inputLabel}>Role</Text>
+                            <View style={styles.roleRow}>
+                                {(
+                                    currentAdmin?.is_root_admin
+                                        ? (["student", "instructor", "admin"] as const)
+                                        : (["student", "instructor"] as const)
+                                ).map(role => (
+                                    <TouchableOpacity
+                                        key={role}
+                                        style={[
+                                            styles.roleButton,
+                                            form.role === role && styles.selectedRole,
+                                        ]}
+                                        onPress={() => updateField("role", role)}
+                                        disabled={saving}
+                                    >
+                                        <Text style={[
+                                            styles.roleText,
+                                            form.role === role && styles.selectedRoleText,
+                                        ]}>
+                                            {role === "student" ? "Student" :
+                                             role === "instructor" ? "Instructor" : "Admin"}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
 
                             {form.role === "student" && (
 
@@ -714,24 +789,64 @@ export default function AdminUsersScreen() {
                                                 ? `  •  ${user.student_id}`
                                                 : ""}
                                         </Text>
-
+                                        {!user.is_active && (
+                                            <Text style={styles.inactiveText}>INACTIVE</Text>
+                                        )}
                                     </View>
 
-                                    {user.role !== "admin" && (
-                                        <TouchableOpacity
-                                            style={styles.editButton}
-                                            onPress={() => openEditForm(user)}
-                                        >
-                                            <Ionicons
-                                                name="create-outline"
-                                                size={17}
-                                                color={Colors.primary}
-                                            />
+                                    {user.is_root_admin ? (
+                                        <Text style={styles.protectedText}>
+                                            ROOT ADMIN • PROTECTED
+                                        </Text>
+                                    ) : !canManageUser(user) ? (
+                                        <Text style={styles.protectedText}>
+                                            ROOT ACCESS REQUIRED
+                                        </Text>
+                                    ) : (
+                                        <View style={styles.userActions}>
+                                            <TouchableOpacity
+                                                style={styles.editButton}
+                                                onPress={() => openEditForm(user)}
+                                                disabled={actionBusy !== null || saving}
+                                            >
+                                                <Ionicons
+                                                    name="create-outline"
+                                                    size={17}
+                                                    color={Colors.primary}
+                                                />
+                                                <Text style={styles.editText}>Edit</Text>
+                                            </TouchableOpacity>
 
-                                            <Text style={styles.editText}>
-                                                Edit
-                                            </Text>
-                                        </TouchableOpacity>
+                                            {user.is_active ? (
+                                                <TouchableOpacity
+                                                    style={[styles.editButton, styles.removeButton]}
+                                                    onPress={() => handleRemoveUser(user)}
+                                                    disabled={actionBusy !== null || saving}
+                                                >
+                                                    {actionBusy === user.user_id ? (
+                                                        <ActivityIndicator color={Colors.danger} />
+                                                    ) : (
+                                                        <Ionicons name="person-remove-outline"
+                                                            size={17} color={Colors.danger} />
+                                                    )}
+                                                    <Text style={styles.removeText}>Remove</Text>
+                                                </TouchableOpacity>
+                                            ) : (
+                                                <TouchableOpacity
+                                                    style={styles.editButton}
+                                                    onPress={() => void changeUserStatus(user, true)}
+                                                    disabled={actionBusy !== null || saving}
+                                                >
+                                                    {actionBusy === user.user_id ? (
+                                                        <ActivityIndicator color={Colors.primary} />
+                                                    ) : (
+                                                        <Ionicons name="refresh-outline"
+                                                            size={17} color={Colors.primary} />
+                                                    )}
+                                                    <Text style={styles.editText}>Restore</Text>
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
                                     )}
 
                                 </View>
@@ -944,6 +1059,35 @@ const styles = StyleSheet.create({
         marginTop: Spacing.sm,
     },
 
+    userActions: {
+        flexDirection: "row",
+        alignItems: "center",
+        flexWrap: "wrap",
+        gap: Spacing.sm,
+    },
+
+    protectedText: {
+        color: Colors.textSecondary,
+        fontWeight: "600",
+        fontSize: 12,
+    },
+
+    inactiveText: {
+        color: Colors.danger,
+        fontWeight: "700",
+        fontSize: 12,
+        marginTop: Spacing.xs,
+    },
+
+    removeButton: {
+        borderColor: Colors.danger,
+    },
+
+    removeText: {
+        color: Colors.danger,
+        fontWeight: "600",
+    },
+
     editButton: {
         borderWidth: 1,
         borderColor: Colors.primary,
@@ -999,6 +1143,7 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         gap: Spacing.sm,
         marginBottom: Spacing.md,
+        flexWrap: "wrap",
     },
 
     roleButton: {

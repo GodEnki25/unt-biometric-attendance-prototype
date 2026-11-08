@@ -21,6 +21,7 @@ def get_courses(current_user=Depends(require_instructor),):
                 course_name,
                 instructor_id
             FROM courses
+            WHERE is_active = 1
             ORDER BY course_code
             """
         )
@@ -68,6 +69,7 @@ def get_student_courses(
             JOIN courses c
                 ON c.course_id = ce.course_id
             WHERE ce.student_id = ?
+                AND c.is_active = 1
             ORDER BY c.course_code
             """,
             (user_id,),

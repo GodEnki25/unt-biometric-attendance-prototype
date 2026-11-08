@@ -101,6 +101,65 @@ def init_db():
         );
         """)
 
+    cursor.execute("PRAGMA table_info(users)")
+    user_columns = {
+        row[1] for row in cursor.fetchall()
+    }
+
+    if "is_active" not in user_columns:
+        cursor.execute("""
+            ALTER TABLE users
+            ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1
+        """)
+
+    if "is_root_admin" not in user_columns:
+        cursor.execute("""
+            ALTER TABLE users
+            ADD COLUMN is_root_admin INTEGER NOT NULL DEFAULT 0
+        """)
+
+    cursor.execute("PRAGMA table_info(courses)")
+    course_columns = {
+        row[1] for row in cursor.fetchall()
+    }
+
+    if "is_active" not in course_columns:
+        cursor.execute("""
+            ALTER TABLE courses
+            ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1
+        """)
+
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS
+        idx_single_root_admin
+        ON users(is_root_admin)
+        WHERE is_root_admin = 1
+    """)
+
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS protect_root_update
+        BEFORE UPDATE ON users
+        WHEN OLD.is_root_admin = 1
+        BEGIN
+            SELECT RAISE(
+                ABORT,
+                'Root administrator is protected'
+            );
+        END
+    """)
+
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS protect_root_delete
+        BEFORE DELETE ON users
+        WHEN OLD.is_root_admin = 1
+        BEGIN
+            SELECT RAISE(
+                ABORT,
+                'Root administrator cannot be deleted'
+            );
+        END
+    """)
+
     conn.commit()
     conn.close()
 

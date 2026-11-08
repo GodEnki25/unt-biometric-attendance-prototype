@@ -25,6 +25,7 @@ export default function Layout() {
         <Stack.Screen name="overrideInstructor" options={{ headerShown: false }} />
         <Stack.Screen name="faceEnroll" options={{ headerShown: false }} />
         <Stack.Screen name="auditInstructor" options={{ headerShown: false }} />
+        <Stack.Screen name="adminCourses" options={{ headerShown: false }}  />
       </Stack>
     </PresenceProvider>
   );

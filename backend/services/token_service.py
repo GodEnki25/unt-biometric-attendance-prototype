@@ -38,11 +38,9 @@ def create_access_token(user_id: int, role: str):
         algorithm=JWT_ALGORITHM,
     )
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
-):
-    token = credentials.credentials
 
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security)):
     if not JWT_SECRET:
         raise HTTPException(
             status_code=500,
@@ -51,24 +49,12 @@ def get_current_user(
 
     try:
         payload = jwt.decode(
-            token,
+            credentials.credentials,
             JWT_SECRET,
             algorithms=[JWT_ALGORITHM],
         )
 
-        user_id = payload.get("sub")
-        role = payload.get("role")
-
-        if not user_id or not role:
-            raise HTTPException(
-                status_code=401,
-                detail="Invalid token payload",
-            )
-
-        return {
-            "user_id": int(user_id),
-            "role": role,
-        }
+        user_id = int(payload["sub"])
 
     except jwt.ExpiredSignatureError:
         raise HTTPException(
@@ -76,17 +62,64 @@ def get_current_user(
             detail="Token expired",
         )
 
-    except jwt.InvalidTokenError:
+    except (jwt.InvalidTokenError, ValueError, KeyError, TypeError):
         raise HTTPException(
             status_code=401,
             detail="Invalid authentication token",
         )
 
-    except (ValueError, TypeError):
+    conn = get_db_connection()
+
+    try:
+        user = conn.execute(
+            """
+            SELECT
+                user_id,
+                role,
+                is_active,
+                is_root_admin
+            FROM users
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+
+        if not user or not user["is_active"]:
+            raise HTTPException(
+                status_code=401,
+                detail="Account is inactive or no longer exists",
+            )
+
+        return {
+            "user_id": user["user_id"],
+            "role": user["role"],
+            "is_root_admin": bool(user["is_root_admin"]),
+        }
+
+    finally:
+        conn.close()
+
+def require_instructor(
+    current_user=Depends(get_current_user)):
+    if current_user["role"] not in ("instructor", "admin"):
         raise HTTPException(
-            status_code=401,
-            detail="Invalid token payload",
+            status_code=403,
+            detail="Instructor access required",
         )
+
+    return current_user
+
+
+def require_admin(
+    current_user=Depends(get_current_user)):
+    if current_user["role"] != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admin access required",
+        )
+
+    return current_user
+
 
 def require_instructor(current_user=Depends(get_current_user)):
 

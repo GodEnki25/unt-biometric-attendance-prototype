@@ -49,7 +49,8 @@ type AdminTool = {
         | "refresh-circle-outline"
         | "document-text-outline"
         | "clipboard-outline"
-        | "settings-outline";
+        | "settings-outline"
+        | "book-outline";
 
     action: () => void;
 };
@@ -351,6 +352,12 @@ export default function AdminDashboardScreen() {
 
     };
 
+    // ============================================================
+    // Course Management
+    // ============================================================
+    const handleCourseManagement = () => {
+        router.push("/adminCourses");
+    };
 
     // ============================================================
     // ADMIN TOOLS
@@ -417,6 +424,22 @@ export default function AdminDashboardScreen() {
 
             action:
                 handleUserManagement
+        },
+
+        {
+            id: "courses",
+
+            title: "Course Management",
+
+            description:
+                "Create courses, assign instructors, and manage student enrollment.",
+
+            buttonText: "Manage Courses",
+
+            icon: "book-outline",
+
+            action: handleCourseManagement
+
         },
 
         {
