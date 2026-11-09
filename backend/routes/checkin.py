@@ -340,44 +340,29 @@ def get_checkins(
     cursor = conn.cursor()
 
     try:
-        # If a class is currently running, show attendance
-        # for that exact session.
-        if ACTIVE_SESSION["is_open"] and ACTIVE_SESSION["id"] is not None:
-            session_id = int(ACTIVE_SESSION["id"])
-
-        else:
-            cursor.execute(
-                """
-                SELECT session_id
-                FROM attendance_sessions
-                ORDER BY session_id DESC
-                LIMIT 1
-                """
-            )
-            session = cursor.fetchone()
-
-            if not session:
-                return []
-
-            session_id = session["session_id"]
-
-
+        #======================================================
+        # GET LATEST SESSION FOR THE SELECTED COURSE
+        #======================================================
+        if course_id is None:
+            return []
 
         cursor.execute(
             """
-            SELECT course_id
+            SELECT session_id
             FROM attendance_sessions
-            WHERE session_id = ?
+            WHERE course_id = ?
+            ORDER BY session_id DESC
+            LIMIT 1
             """,
-            (session_id,),
+            (course_id,),
         )
 
-        session_course = cursor.fetchone()
+        session = cursor.fetchone()
 
-        if not session_course:
+        if not session:
             return []
 
-        course_id = session_course["course_id"]
+        session_id = session["session_id"]
 
         cursor.execute(
             """
@@ -653,6 +638,7 @@ def save_attendance_override(
         student_id = data.get("student_id")
 
         status = ( data.get("status") or "" ).lower()
+        notes = (data.get("notes") or "").strip() or None
 
         # --------------------------------------------------------
         # VALIDATE REQUEST
@@ -717,6 +703,7 @@ def save_attendance_override(
                 """,
                 (
                     status,
+                    notes,
                     existing["attendance_id"],
                 ),
             )
@@ -751,7 +738,7 @@ def save_attendance_override(
                     notes
                 )
                 
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,

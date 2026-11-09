@@ -16,10 +16,12 @@ def create_user(
     role,
     student_id
 ):
+
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
+
         cursor.execute(
             """
             INSERT INTO users (
@@ -40,22 +42,9 @@ def create_user(
             )
         )
 
-        user_id = cursor.lastrowid
-
-        # Automatically enroll new students in CSCE 4901
-        if role == "student":
-            cursor.execute(
-                """
-                INSERT INTO course_enrollments (
-                    course_id,
-                    student_id
-                )
-                VALUES (?, ?)
-                """,
-                (1, user_id)
-            )
-
         conn.commit()
+
+        user_id = cursor.lastrowid
 
         return {
             "success": True,
@@ -63,16 +52,19 @@ def create_user(
         }
 
     except sqlite3.IntegrityError as error:
-        conn.rollback()
 
-        print("Create user error:", error)
+        print(
+            "Create user error:",
+            error
+        )
 
         return {
             "success": False,
-            "message": "Account creation failed. Check student details or course enrollment."
+            "message": "Email or student ID already exists"
         }
 
     finally:
+
         conn.close()
 
 
@@ -82,9 +74,14 @@ def login_user(email, password):
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT * FROM users WHERE email = ?",
+           """
+           SELECT *
+           FROM users
+           WHERE email = ?
+            AND is_active = 1
+        """,
         (email,)
-    )
+        )
 
     user = cursor.fetchone()
 

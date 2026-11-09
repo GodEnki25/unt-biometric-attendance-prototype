@@ -8,3 +8,4 @@ python-multipart
 mediapipe
 argon2-cffi
 PyJWT
+pydantic[email]

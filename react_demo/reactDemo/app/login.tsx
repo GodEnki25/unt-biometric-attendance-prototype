@@ -65,7 +65,7 @@ export default function LoginScreen() {
       // Remove any stale token/user before creating a new
       // authenticated session.
       //
-      // This prevents Web localStorage from retaining an old
+      // This prevents Web sessionStorage from retaining an old
       // student's JWT while the UI displays another student.
       // ------------------------------------------------------
 
@@ -74,6 +74,9 @@ export default function LoginScreen() {
       // ------------------------------------------------------
       // LOGIN REQUEST
       // ------------------------------------------------------
+
+      console.log("STUDENT LOGIN API:", `${API_BASE}/login`);
+      console.log("PLATFORM:", Platform.OS);
 
       const response =
         await fetch(
@@ -166,7 +169,7 @@ export default function LoginScreen() {
       //   SecureStore
       //
       // Web:
-      //   localStorage
+      //   sessionStorage
       // ------------------------------------------------------
 
       await setStoredItem(

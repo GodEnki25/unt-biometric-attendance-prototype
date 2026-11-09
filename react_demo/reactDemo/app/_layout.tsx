@@ -15,6 +15,7 @@ export default function Layout() {
         <Stack.Screen name="loginInstructor" options={{ headerShown: false }} />
         <Stack.Screen name="adminlogin" options={{ headerShown: false }} />
         <Stack.Screen name="adminDashboard" options={{ headerShown: false }} />
+        <Stack.Screen name="adminUsers" options={{ headerShown: false}} />
         <Stack.Screen name="dashboard" options={{ headerShown: false }} />
         <Stack.Screen name="dashboardInstructor" options={{ headerShown: false }} />
         <Stack.Screen name="firstTimeEnroll" options={{ headerShown: false }} />
@@ -24,6 +25,7 @@ export default function Layout() {
         <Stack.Screen name="overrideInstructor" options={{ headerShown: false }} />
         <Stack.Screen name="faceEnroll" options={{ headerShown: false }} />
         <Stack.Screen name="auditInstructor" options={{ headerShown: false }} />
+        <Stack.Screen name="adminCourses" options={{ headerShown: false }}  />
       </Stack>
     </PresenceProvider>
   );

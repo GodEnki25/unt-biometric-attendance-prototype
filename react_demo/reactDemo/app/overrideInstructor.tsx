@@ -81,11 +81,13 @@ export default function InstructorOverride() {
 
     const {
         student,
-        studentId
+        student_id,
+        course_id,
     } =
         useLocalSearchParams<{
             student?: string;
-            studentId?: string;
+            student_id?: string;
+            course_id?: string;
         }>();
 
 
@@ -94,8 +96,9 @@ export default function InstructorOverride() {
     // ============================================================
 
     const storedUser =
-        Platform.OS === "web"
-            ? localStorage.getItem(
+        Platform.OS === "web" &&
+        typeof window !== "undefined"
+            ? sessionStorage.getItem(
                 "user"
             )
             : null;
@@ -182,199 +185,71 @@ export default function InstructorOverride() {
     // LOAD CURRENT STUDENT / SESSION
     // ============================================================
 
-    const loadOverrideData =
-        async () => {
+    const loadOverrideData = async () => {
+        setLoading(true);
+        setError("");
 
-            setLoading(
-                true
-            );
+        try {
+            const token =
+                Platform.OS === "web" &&
+                typeof window !== "undefined"
+                    ? window.sessionStorage.getItem("access_token")
+                    : null;
 
-            setError(
-                ""
-            );
-
-
-            try {
-
-                const token =
-                    Platform.OS === "web"
-                        ? localStorage.getItem(
-                            "access_token"
-                        )
-                        : null;
-
-
-                if (!token) {
-
-                    throw new Error(
-                        "Instructor is not logged in."
-                    );
-
-                }
-
-
-                /*
-                 * The instructor dashboard currently sends the
-                 * student's name.
-                 *
-                 * If studentId is available later, we can skip
-                 * the /checkins lookup entirely.
-                 */
-
-                let resolvedStudentId =
-                    studentId
-                        ? Number(
-                            studentId
-                        )
-                        : null;
-
-
-                // --------------------------------------------------------
-                // RESOLVE STUDENT ID FROM REAL CHECK-IN DATA
-                // --------------------------------------------------------
-
-                if (
-                    !resolvedStudentId
-                    && student
-                ) {
-
-                    const checkinResponse =
-                        await fetch(
-                            `${API_BASE}/checkins`,
-                            {
-                                headers: {
-                                    Authorization:
-                                        `Bearer ${token}`
-                                }
-                            }
-                        );
-
-
-                    if (
-                        !checkinResponse.ok
-                    ) {
-
-                        throw new Error(
-                            "Unable to load student attendance."
-                        );
-
-                    }
-
-
-                    const records =
-                        await checkinResponse.json();
-
-
-                    const matchingStudent =
-                        records.find(
-                            (record: any) =>
-                                record.student_name ===
-                                student
-                        );
-
-
-                    if (
-                        !matchingStudent
-                    ) {
-
-                        throw new Error(
-                            "Student could not be found."
-                        );
-
-                    }
-
-
-                    resolvedStudentId =
-                        matchingStudent.student_id;
-
-                }
-
-
-                if (
-                    !resolvedStudentId
-                ) {
-
-                    throw new Error(
-                        "Student ID is missing."
-                    );
-
-                }
-
-
-                // --------------------------------------------------------
-                // LOAD OVERRIDE DETAILS
-                // --------------------------------------------------------
-
-                const response =
-                    await fetch(
-                        `${API_BASE}/attendance/override/${resolvedStudentId}`,
-                        {
-                            headers: {
-                                Authorization:
-                                    `Bearer ${token}`
-                            }
-                        }
-                    );
-
-
-                const data =
-                    await response.json();
-
-
-                if (
-                    !response.ok
-                    || !data.success
-                ) {
-
-                    throw new Error(
-                        data.message ||
-                        "Unable to load override information."
-                    );
-
-                }
-
-
-                setDetails(
-                    data
-                );
-
-
-                setSelectedStatus(
-                    normalizeStatus(
-                        data.attendance.status
-                    )
-                );
-
-                setNotes(
-                    data.attendance.notes ?? ""
-                );
-
+            if (!token) {
+                throw new Error("Instructor is not logged in.");
             }
 
-            catch (error: any) {
+            const resolvedStudentId = Number(student_id);
+            const resolvedCourseId = Number(course_id);
 
-                console.error(
-                    "Override load failed:",
-                    error
+            if (
+                !student_id ||
+                !course_id ||
+                !Number.isInteger(resolvedStudentId) ||
+                !Number.isInteger(resolvedCourseId) ||
+                resolvedStudentId <= 0 ||
+                resolvedCourseId <= 0
+            ) {
+                throw new Error(
+                    "Valid student and course IDs are required."
                 );
+            }
 
+            const response = await fetch(
+                `${API_BASE}/attendance/override/${resolvedStudentId}?course_id=${resolvedCourseId}`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                }
+            );
 
-                setError(
-                    error.message ||
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                throw new Error(
+                    data.message ||
                     "Unable to load attendance override."
                 );
-
             }
 
-            finally {
+            setDetails(data);
+            setSelectedStatus(
+                normalizeStatus(data.attendance.status)
+            );
+            setNotes(data.attendance.notes ?? "");
 
-                setLoading(
-                    false
-                );
-
-            }
-
-        };
+        } catch (error: any) {
+            console.error("Override load failed:", error);
+            setError(
+                error.message ||
+                "Unable to load attendance override."
+            );
+        } finally {
+            setLoading(false);
+        }
+    };
 
 
     // ============================================================
@@ -580,7 +455,7 @@ export default function InstructorOverride() {
 
                 const token =
                     Platform.OS === "web"
-                        ? localStorage.getItem(
+                        ? sessionStorage.getItem(
                             "access_token"
                         )
                         : null;
@@ -693,12 +568,12 @@ export default function InstructorOverride() {
                 Platform.OS === "web"
             ) {
 
-                localStorage.removeItem(
+                sessionStorage.removeItem(
                     "access_token"
                 );
 
 
-                localStorage.removeItem(
+                sessionStorage.removeItem(
                     "user"
                 );
 
@@ -907,9 +782,10 @@ export default function InstructorOverride() {
                             styles.backLink
                         }
                         onPress={() =>
-                            router.replace(
-                                "/dashboardInstructor"
-                            )
+                            router.replace({
+        pathname: "/dashboardInstructor",
+        params: { course_id: String(course_id ?? "") },
+    })
                         }
                     >
 
@@ -1744,9 +1620,10 @@ export default function InstructorOverride() {
                                                     styles.cancelButton
                                                 }
                                                 onPress={() =>
-                                                    router.replace(
-                                                        "/dashboardInstructor"
-                                                    )
+                                                    router.replace({
+        pathname: "/dashboardInstructor",
+        params: { course_id: String(course_id ?? "") },
+    })
                                                 }
                                             >
 
