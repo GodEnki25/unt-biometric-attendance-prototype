@@ -676,10 +676,10 @@ export default function DashboardScreen() {
                         }
                     />
 
-                    <View
-                        style={
-                            styles.courseTabs
-                        }
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={styles.courseTabs}
                     >
                         {courses.map(
                             (course) => (
@@ -706,6 +706,7 @@ export default function DashboardScreen() {
                                                 ? styles.courseTabActiveText
                                                 : styles.courseTabText
                                         }
+                                        numberOfLines={1}
                                     >
                                         {
                                             course.course_code
@@ -714,7 +715,7 @@ export default function DashboardScreen() {
                                 </Pressable>
                             )
                         )}
-                    </View>
+                    </ScrollView>
                 </View>
 
                 {/* =====================================================
@@ -1174,10 +1175,11 @@ const styles = StyleSheet.create({
     courseTabs: {
         flexDirection: "row",
         gap: 10,
+        paddingRight: 4,
     },
 
     courseTabActive: {
-        flex: 1,
+        minWidth: 112,
         minHeight: 46,
         borderWidth: 1.5,
         borderColor:
@@ -1198,7 +1200,7 @@ const styles = StyleSheet.create({
     },
 
     courseTab: {
-        flex: 1,
+        minWidth: 112,
         minHeight: 46,
         borderRadius:
             Radius.md,
