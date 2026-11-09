@@ -5,6 +5,7 @@ import {
     Image,
     Pressable,
     ScrollView,
+    RefreshControl,
 } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,82 +13,99 @@ import { Colors, Radius, Spacing } from "../constants/theme";
 import { useEffect, useState } from "react";
 import { usePresenceTracking } from "@/hooks/usePresenceTracking";
 import { API_BASE } from "@/constants/api";
-import { getStoredItem } from "../utils/storage";
+import { clearAuthStorage, getStoredItem } from "../utils/storage";
+
+import Svg, { Circle } from "react-native-svg";
 
 // ============================================================
 // ATTENDANCE PERCENTAGE RING
 // ============================================================
 
 function AttendanceRing({
-    percentage,
+  percentage,
 }: {
-    percentage: number;
+  percentage: number;
 }) {
-    const size = 92;
-    const safePercentage =
-        Math.min(
-            Math.max(percentage, 0),
-            100
-        );
+  const size = 92;
+  const strokeWidth = 10;
 
-    const dotCount = 36;
-    const dotRadius = 36;
-    const activeDotCount = Math.round(
-        (safePercentage / 100) * dotCount
+  const radius =
+    (size - strokeWidth) / 2;
+
+  const circumference =
+    2 * Math.PI * radius;
+
+  const safePercentage =
+    Math.min(
+      Math.max(percentage, 0),
+      100
     );
 
-    return (
-        <View
-            style={[
-                styles.percentageRingContainer,
-                {
-                    width: size,
-                    height: size,
-                },
-            ]}
+  const strokeDashoffset =
+    circumference -
+    (safePercentage / 100) *
+      circumference;
+
+  return (
+    <View
+      style={[
+        styles.percentageRingContainer,
+        {
+          width: size,
+          height: size,
+        },
+      ]}
+    >
+      <Svg
+        width={size}
+        height={size}
+        style={
+          styles.percentageRingSvg
+        }
+      >
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={Colors.borderLight}
+          strokeWidth={strokeWidth}
+          fill="none"
+        />
+
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={Colors.primary}
+          strokeWidth={strokeWidth}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={[
+            circumference,
+            circumference,
+          ]}
+          strokeDashoffset={
+            strokeDashoffset
+          }
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </Svg>
+
+      <View
+        style={
+          styles.percentageRingText
+        }
+      >
+        <Text
+          style={
+            styles.percentageValue
+          }
         >
-            {Array.from({ length: dotCount }, (_, index) => {
-                const angle =
-                    (index / dotCount) * 2 * Math.PI - Math.PI / 2;
-                const x =
-                    size / 2 + dotRadius * Math.cos(angle) - 2;
-                const y =
-                    size / 2 + dotRadius * Math.sin(angle) - 2;
-
-                return (
-                    <View
-                        key={index}
-                        style={{
-                            position: "absolute",
-                            left: x,
-                            top: y,
-                            width: 4,
-                            height: 4,
-                            borderRadius: 2,
-                            backgroundColor:
-                                index < activeDotCount
-                                    ? Colors.primary
-                                    : Colors.borderLight,
-                        }}
-                    />
-                );
-            })}
-
-            <View
-                style={
-                    styles.percentageRingText
-                }
-            >
-                <Text
-                    style={
-                        styles.percentageValue
-                    }
-                >
-                    {safePercentage}%
-                </Text>
-            </View>
-        </View>
-    );
+          {safePercentage}%
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 export default function DashboardScreen() {
@@ -103,6 +121,7 @@ export default function DashboardScreen() {
     const [activeSession, setActiveSession] = useState<any | null>(null);
     const [selectedCourseId, setSelectedCourseId] = useState<number | null>(null);
     const [studentName, setStudentName] = useState("Student");
+    const [refreshing, setRefreshing] = useState(false);
     const {
         result: presenceResult,
         confirmedInside,
@@ -249,29 +268,89 @@ export default function DashboardScreen() {
             return;
         }
 
-        const res = await fetch(
-            `${API_BASE}/courses/student/${selectedCourseId}/attendance-summary`,
-            {
-                headers: {
-                    Authorization:
-                        `Bearer ${token}`,
-                },
+        try {
+            const res = await fetch(
+                `${API_BASE}/courses/student/attendance-history?course_id=${selectedCourseId}`,
+                {
+                    headers: {
+                        Authorization:
+                            `Bearer ${token}`,
+                    },
+                }
+            );
+
+            if (!res.ok) {
+                console.error(
+                    "Failed to load attendance summary:",
+                    res.status
+                )
+                return;
             }
-        );
 
-        if (!res.ok) {
-            return;
-        }
+            const data = await res.json();
 
-        const data = await res.json();
-
-        setAttendanceSummary({
-            present: data.present || 0,
-            late: data.late || 0,
-            absent: data.absent || 0,
-            percentage: data.percentage || 0,
+            setAttendanceSummary({
+                present: data.summary?.present || 0,
+                late: data.summary?.late || 0,
+                absent: data.summary?.absent || 0,
+                percentage: data.summary?.percentage || 0,
         });
     }
+
+    catch (error) {
+        console.error(
+            "Failed to load attendance summary:",
+            error
+        );
+    }
+    }
+
+
+    // ============================================================
+    // LOGOUT
+    // ============================================================
+    async function handleLougout() {
+        try {
+            await clearAuthStorage();
+
+            router.replace("/login");
+        }
+
+        catch (error) {
+            console.error("Logout failed:", error);
+            router.replace("/login");
+        }
+        
+    }
+
+    // ============================================================
+    // PAGE REFRESH
+    // ============================================================
+    async function refreshDashboard() {
+        try {
+            setRefreshing(true);
+
+            await Promise.all ([
+                loadStudent(),
+                loadClasses(),
+            ]);
+
+            if(selectedCourseId !== null) {
+                await loadAttendanceSummary
+            }
+        }
+
+        catch(error){
+            console.error("Dashboard refresh failed:", error);
+
+        }
+
+        finally {
+            setRefreshing(false);
+        }
+    
+    }
+
 
     // ============================================================
     // NAVIGATION
@@ -305,9 +384,10 @@ export default function DashboardScreen() {
             <View style={styles.header}>
                 <Pressable
                     onPress={() =>
-                        router.back()
+                        void handleLougout()
                     }
                     style={styles.headerSide}
+                    accessibilityLabel="Log out"
                 >
                     <Ionicons
                         name="chevron-back"
@@ -345,6 +425,16 @@ export default function DashboardScreen() {
                 }
                 showsVerticalScrollIndicator={
                     false
+                }
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => 
+                            void refreshDashboard()
+                        }
+                        tintColor={Colors.primary}
+                        colors={[Colors.primary,]}
+                    />
                 }
             >
 
@@ -1209,6 +1299,12 @@ const styles = StyleSheet.create({
         position: "relative",
         alignItems: "center",
         justifyContent: "center",
+    },
+
+    percentageRingSvg: {
+        position: "absolute",
+        top: 0,
+        left: 0,
     },
 
     percentageRingText: {

@@ -273,12 +273,15 @@ class Verifier:
             "periocular_confidence": eye_score
         }
 
-        if face_score < self.threshold:
-            if self.phase in (
+        
+        if (
+            self.phase in (
                 "face_matching",
                 "final_confirmation"
-            ):
-                self.counter = 0
+            )
+            and face_score < self.threshold
+        ):
+            self.counter = 0
 
             return {
                 "status": "scanning",

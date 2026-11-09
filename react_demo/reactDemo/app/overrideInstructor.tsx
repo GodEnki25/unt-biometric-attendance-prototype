@@ -1677,7 +1677,7 @@ export default function InstructorOverride() {
                                             styles.footerText
                                         }
                                     >
-                                        Biometric Attendance
+                                        GeoFace
                                     </Text>
 
                                 </View>

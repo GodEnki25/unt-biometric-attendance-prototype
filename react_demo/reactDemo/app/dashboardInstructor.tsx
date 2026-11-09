@@ -9,7 +9,7 @@ import {
     Alert
 } from "react-native";
 
-import { Color, useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useEffect, useState } from "react";
 import { Ionicons, Feather } from "@expo/vector-icons";
@@ -72,6 +72,11 @@ type Course = {
 export default function InstructorDashboard() {
     const router = useRouter();
     const insets = useSafeAreaInsets();
+
+    const { course_id } =
+        useLocalSearchParams<{
+            course_id?:string;
+        }>();
 
     const storedUser =
         Platform.OS === "web" && typeof window !== "undefined"
@@ -228,6 +233,19 @@ export default function InstructorDashboard() {
 
             setCourses(data);
 
+            if (course_id) {
+                const requestedCourseId = Number(course_id);
+
+                const restoredCourse = data.find(
+                    (course) =>
+                        course.course_id === requestedCourseId
+                );
+
+                if (restoredCourse) {
+                    setSelectedCourse(restoredCourse);
+                }
+            }
+
         }
 
         catch (error) {
@@ -374,13 +392,43 @@ export default function InstructorDashboard() {
             setSessionActive(data.is_open === true);
 
             if (data.is_open) {
-                setSessionStatus(
-                    `Session ${data.id} active`
-                );
-            } else {
-                setSessionStatus(
-                    "No active session"
-                );
+                setSessionStatus(`Session ${data.id} active`);
+
+                if (
+                    typeof data.center_lat === "number" &&
+                    typeof data.center_lon === "number"
+                ) {
+                    setSelectedGeofence({
+                        name: "Active session location",
+                        lat: data.center_lat,
+                        lon: data.center_lon,
+                    });
+
+                    setLocationStatus("Using active session location");
+                }
+
+                if (typeof data.radius_m === "number") {
+                    setRadiusM(data.radius_m);
+                }
+
+                const savedAccuracy = sessionStorage.getItem("instructor_location_accuracy");
+
+                if(savedAccuracy !== null) {
+                    const parsedAccuracy = Number(savedAccuracy);
+
+                    if(Number.isFinite(parsedAccuracy)) {
+                        setLocationAccuracy(
+                            parsedAccuracy
+                        );
+
+                        setLocationStatus(`Location acquired ±${Math.round(parsedAccuracy)} m`)
+                    }
+                }
+
+            }
+
+            else {
+                setSessionStatus("No active session");
             }
 
         } catch (error) {
@@ -451,6 +499,9 @@ export default function InstructorDashboard() {
             });
 
             setLocationAccuracy(accuracy);
+
+            sessionStorage.setItem("instructor_location_accuracy",
+                String(accuracy));
 
             setLocationStatus(`Location acquired ±${Math.round(accuracy)} m`);
         },
@@ -1354,7 +1405,7 @@ export default function InstructorDashboard() {
                         </Text>
 
                         <Text style={styles.footerText}>
-                            Biometric Attendance
+                            GeoFace
                         </Text>
 
                     </View>

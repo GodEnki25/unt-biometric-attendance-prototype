@@ -76,7 +76,10 @@ type PresenceContextType = {
 
   isRefreshing: boolean;
 
+  
   refreshPresence: () => Promise<void>;
+
+  startCheckedInTracking: () => Promise<void>;
 };
 
 // ============================================================
@@ -351,7 +354,7 @@ export function PresenceProvider({
       // Normal periodic tracking should NOT need this because
       // watchPositionAsync keeps latestLocationRef current.
       if (
-        !currentLoc &&
+       
         forceLocation
       ) {
         console.log(
@@ -559,6 +562,13 @@ export function PresenceProvider({
     await sendPresenceCheck(
       true
     );
+  }
+
+  async function startCheckedInTracking() {
+    console.log ("PRESENSE: successful check-in confirmed; starting presence tracking");
+
+    await startLocationTracking();
+    await sendPresenceCheck(true);
   }
 
   // ==========================================================
@@ -777,7 +787,7 @@ export function PresenceProvider({
             return;
           }
 
-          void sendPresenceCheck();
+          void sendPresenceCheck(true);
         },
 
         PRESENCE_CHECK_INTERVAL_MS
@@ -852,18 +862,13 @@ export function PresenceProvider({
     <PresenceContext.Provider
       value={{
         location,
-
         result,
-
         rawInside,
-
         confirmedInside,
-
         permissionStatus,
-
         isRefreshing,
-
         refreshPresence,
+        startCheckedInTracking,
       }}
     >
       {children}
