@@ -15,7 +15,7 @@ export default function IndexScreen() {
         <View style={styles.container}>
 
             <Text style={styles.title}>
-                UNT Biometric Attendance
+               GeoFace
             </Text>
 
 

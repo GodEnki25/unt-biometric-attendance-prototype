@@ -125,7 +125,7 @@ export default function LoginScreen() {
                     <View style={styles.leftAccent} />
 
                     <Text style={styles.heroTitle}>
-                        Biometric Attendance
+                        GeoFace
                     </Text>
 
                     <Text style={styles.heroSubtitle}>
@@ -214,7 +214,7 @@ export default function LoginScreen() {
                     </Text>
 
                     <Text style={styles.loginSubtitle}>
-                        Faculty access to the Biometric Attendance dashboard.
+                        Faculty access to the GeoFace dashboard.
                     </Text>
 
 
@@ -282,12 +282,12 @@ export default function LoginScreen() {
                     </View>
 
 
-                    {/* Forgot password */}
-                    <Pressable>
+                    {/* Login help */}
+                    
                         <Text style={styles.forgotPassword}>
-                            Forgot password?
+                            Need help signing in? Contact your administrator.
                         </Text>
-                    </Pressable>
+                    
 
 
                     {/* Error */}
@@ -450,14 +450,16 @@ const styles = StyleSheet.create({
         paddingBottom: 70,
 
         position: "relative",
-        overflow: "visible"
+        overflow: "visible",
+
+        transform: [{translateY: -20}]
     },
 
     fingerprintBackground: {
         position: "absolute",
 
         left: -320,
-        bottom: -320,
+        bottom: -330,
 
         width: 640,
         height: 640,

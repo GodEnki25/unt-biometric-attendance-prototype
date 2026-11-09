@@ -23,6 +23,7 @@ import { Colors, Radius, Spacing } from "../constants/theme";
 
 type Session = {
   id: string;
+  course_id?: number;
   center_lat: number;
   center_lon: number;
   radius_m: number;
@@ -1046,7 +1047,19 @@ export default function CheckInScreen() {
 
           <Pressable
             style={styles.sessionDetailsButton}
-            onPress={() => {}}
+            onPress={() => {
+              if (!session?.id) {
+                return;
+              }
+
+              router.push({
+                pathname: "/attendanceHistory",
+                params: {
+                  session_id: String(session.id),
+                  course_id: String(session.course_id ?? ""),
+                },
+              });
+            }}
           >
             <Text style={styles.sessionDetailButtonText}>
               View Session Details

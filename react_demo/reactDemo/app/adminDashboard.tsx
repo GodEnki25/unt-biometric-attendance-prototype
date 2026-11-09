@@ -1157,7 +1157,7 @@ export default function AdminDashboardScreen() {
                         </Text>
 
                         <Text style={styles.footerText}>
-                            Biometric Attendance
+                            GeoFace
                         </Text>
 
                     </View>

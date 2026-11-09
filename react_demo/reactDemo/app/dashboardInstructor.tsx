@@ -150,8 +150,6 @@ export default function InstructorDashboard() {
 
     ];
 
-    const allowed_radii = Array.from({ length: 16 }, (_, index) => index + 10);
-
     const getStatusStyle = (status: string) => {
         if (status === "Present") {
             return styles.presentText;
@@ -630,6 +628,48 @@ export default function InstructorDashboard() {
         }
     };
 
+    const updateActiveRadius = async (
+    newRadius: number
+    ) => {
+        try {
+            const response = await fetch(
+                `${API_BASE}/geofence/session`,
+                {
+                    method: "PATCH",
+
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization:
+                            `Bearer ${sessionStorage.getItem("access_token")}`,
+                    },
+
+                    body: JSON.stringify({
+                        radius_m: newRadius,
+                    }),
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(
+                    `Server returned ${response.status}`
+                );
+            }
+
+            setRadiusM(newRadius);
+
+        } catch (error) {
+            console.error(
+                "Failed to update active geofence:",
+                error
+            );
+
+            Alert.alert(
+                "Update Failed",
+                "Could not update the active geofence radius."
+            );
+        }
+    };
+
 
     const downloadCSVFile = () => {
         if (Platform.OS !== "web") {
@@ -958,46 +998,86 @@ export default function InstructorDashboard() {
                                     Radius
                                 </Text>
 
-                                <TouchableOpacity
-                                    style={styles.dropdownButton}
-                                    onPress={() => toggleDropdown(5)}
-                                >
-                                    <Text
-                                        style={styles.buttonText}
-                                        numberOfLines={1}
+                                <View style={styles.radiusControl}>
+
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.radiusStepButton,
+                                            radiusM <= 10 &&
+                                            styles.radiusStepButtonDisabled
+                                        ]}
+                                        disabled={radiusM <= 10}
+                                        onPress={() => {
+                                            const newRadius = 
+                                                Math.max(10, radiusM - 1);
+
+                                            if(sessionActive) {
+                                                void updateActiveRadius(
+                                                    newRadius
+                                                );
+                                            }
+                                            else {
+                                                setRadiusM(newRadius)
+                                            }
+                                        }}
                                     >
-                                        {radiusM} m / {Math.round(radiusM * 3.28084)} ft
-                                    </Text>
+                                        <Ionicons
+                                            name="remove"
+                                            size={22}
+                                            color={
+                                                radiusM <= 10
+                                                    ? Colors.disabled
+                                                    : Colors.primary
+                                            }
+                                        />
+                                    </TouchableOpacity>
 
-                                    <Ionicons
-                                        name="chevron-down"
-                                        size={17}
-                                        color={Colors.textSecondary}
-                                    />
-                                </TouchableOpacity>
+                                    <View style={styles.radiusValueBox}>
 
-                                {openDropdown === 5 && (
-                                    <View style={styles.dropdownMenu}>
+                                        <Text style={styles.radiusValue}>
+                                            {radiusM} m
+                                        </Text>
 
-                                        {allowed_radii.map((radius) => (
-
-                                            <TouchableOpacity
-                                                key={radius}
-                                                style={styles.dropdownItem}
-                                                onPress={() => {
-                                                    setRadiusM(radius);
-                                                    setOpenDropdown(null);
-                                                }}
-                                            >
-                                                <Text style={styles.itemText}>
-                                                    {radius} m / {Math.round(radius * 3.28084)} ft
-                                                </Text>
-                                            </TouchableOpacity>
-
-                                        ))}
+                                        <Text style={styles.radiusFeet}>
+                                            {Math.round(radiusM * 3.28084)} ft
+                                        </Text>
 
                                     </View>
-                                )}
+
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.radiusStepButton,
+                                            radiusM >= 25 &&
+                                            styles.radiusStepButtonDisabled
+                                        ]}
+                                        disabled={radiusM >= 25}
+                                        onPress={() => {
+                                            const newRadius = 
+                                                Math.min(25, radiusM + 1);
+
+                                            if(sessionActive) {
+                                                void updateActiveRadius(
+                                                    newRadius
+                                                );
+                                            }
+
+                                            else {
+                                                setRadiusM(newRadius);
+                                            }
+                                        }}
+                                    >
+                                        <Ionicons
+                                            name="add"
+                                            size={22}
+                                            color={
+                                                radiusM >= 25
+                                                    ? Colors.disabled
+                                                    : Colors.primary
+                                            }
+                                        />
+                                    </TouchableOpacity>
+
+                                </View>
 
                             </View>
 
@@ -1650,6 +1730,68 @@ const styles = StyleSheet.create({
     itemText: {
         color: Colors.textPrimary,
         fontSize: 14
+    },
+
+
+    // ============================================================
+    // RADIUS
+    // ============================================================
+
+    radiusControl: {
+        height: 48,
+
+        flexDirection: "row",
+        alignItems: "center",
+
+        backgroundColor: Colors.surface,
+
+        borderWidth: 1,
+        borderColor: Colors.border,
+        borderRadius: Radius.sm,
+
+        overflow: "hidden"
+    },
+
+    radiusStepButton: {
+        width: 48,
+        height: "100%",
+
+        alignItems: "center",
+        justifyContent: "center",
+
+        backgroundColor: Colors.surface
+    },
+
+    radiusStepButtonDisabled: {
+        backgroundColor: Colors.disabledSurface
+    },
+
+    radiusValueBox: {
+        flex: 1,
+
+        height: "100%",
+
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+
+        gap: 6,
+
+        borderLeftWidth: 1,
+        borderRightWidth: 1,
+        borderColor: Colors.borderLight
+    },
+
+    radiusValue: {
+        color: Colors.textPrimary,
+        fontSize: 16,
+        fontWeight: "700"
+    },
+
+    radiusFeet: {
+        color: Colors.textSecondary,
+        fontSize: 13,
+        fontWeight: "500"
     },
 
 

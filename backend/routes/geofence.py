@@ -165,6 +165,9 @@ class StartGeofenceSessionRequest(BaseModel):
     # approximately 32 ft and 82 ft.
     radius_m: float = Field(ge=10, le=25)
 
+class UpdateGeofenceSessionRequest(BaseModel):
+    radius_m: float = Field(ge=10, le=25)
+
 
 class GeofenceCheckRequest(BaseModel):
     lat: float
@@ -318,6 +321,84 @@ def start_geofence_session(
 
     return {
         "message": "Geofence session started",
+        "session": ACTIVE_SESSION,
+        "engine": "tile38",
+    }
+
+# =========================
+# UPDATE ACTIVE SESSION
+# =========================
+
+@router.patch("/session")
+def update_geofence_session(
+    payload: UpdateGeofenceSessionRequest,
+    current_user=Depends(require_instructor),
+):
+    if (
+        not ACTIVE_SESSION["is_open"]
+        or ACTIVE_SESSION["id"] is None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="No active session to update",
+        )
+
+    session_id = int(ACTIVE_SESSION["id"])
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        cursor.execute(
+            """
+            UPDATE attendance_sessions
+            SET geofence_radius = ?
+            WHERE session_id = ?
+            """,
+            (
+                payload.radius_m,
+                session_id,
+            ),
+        )
+
+        if cursor.rowcount == 0:
+            raise HTTPException(
+                status_code=404,
+                detail="Attendance session not found",
+            )
+
+        conn.commit()
+
+    except HTTPException:
+        conn.rollback()
+        raise
+
+    except Exception as error:
+        conn.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Could not update geofence: {str(error)}",
+        )
+
+    finally:
+        conn.close()
+
+    ACTIVE_SESSION["radius_m"] = payload.radius_m
+
+    # Reset temporary debounce candidates because the
+    # geofence boundary itself has changed.
+    tracker_keys_to_remove = [
+        key
+        for key in PRESENCE_TRACKER.keys()
+        if key[0] == session_id
+    ]
+
+    for key in tracker_keys_to_remove:
+        del PRESENCE_TRACKER[key]
+
+    return {
+        "message": "Geofence updated",
         "session": ACTIVE_SESSION,
         "engine": "tile38",
     }

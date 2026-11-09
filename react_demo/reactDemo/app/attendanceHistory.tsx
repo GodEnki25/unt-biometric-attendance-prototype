@@ -6,7 +6,7 @@ import {
   Pressable,
   ScrollView,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import Svg, { Circle } from "react-native-svg";
 import { Colors, Radius } from "../constants/theme";
@@ -165,6 +165,9 @@ function AttendanceRing({
 export default function AttendanceHistoryScreen() {
   const router = useRouter();
 
+  const {course_id, session_id} =
+    useLocalSearchParams<{course_id?: string, session_id: string}>();
+
   // ============================================================
   // SCREEN STATE
   // ============================================================
@@ -176,9 +179,17 @@ export default function AttendanceHistoryScreen() {
     selectedCourseId,
     setSelectedCourseId,
   ] =
-    useState<number | null>(
-      null
-    );
+    useState<number | null>(() => {
+      if (!course_id) {
+        return null;
+      }
+
+      const parsed = Number(course_id);
+
+      return Number.isInteger(parsed)
+        ? parsed
+        : null;
+    });
 
   const [
     attendanceRecords,
@@ -209,9 +220,17 @@ export default function AttendanceHistoryScreen() {
     expandedSessionId,
     setExpandedSessionId,
   ] =
-    useState<number | null>(
-      null
-    );
+    useState<number | null>(() => {
+      if(!session_id) {
+        return null;
+      }
+
+      const parsed = Number(session_id);
+
+      return Number.isInteger(parsed)
+        ? parsed
+        : null;
+    });
 
   // ============================================================
   // SELECTED COURSE
@@ -346,9 +365,27 @@ export default function AttendanceHistoryScreen() {
             ?.percentage || 0,
       });
 
-      setExpandedSessionId(
-        null
-      );
+      if (session_id) {
+        const requestedSessionId = 
+          Number(session_id);
+
+        const sessionExists = 
+          (data.records || []).some(
+            (record: AttendanceRecord) =>
+              record.session_id ===
+              requestedSessionId
+          );
+
+        setExpandedSessionId(
+          sessionExists
+            ? requestedSessionId
+            : null
+        );
+      }
+
+      else {
+        setExpandedSessionId(null);
+      }
 
     } catch (error) {
       console.error(

@@ -158,8 +158,8 @@ export default function AdminLoginScreen()
 
 
                     <Text style={styles.heroSubtitle}>
-                        Administrative access to the Biometric
-                        Attendance system.
+                        Administrative access to the 
+                        GeoFace system.
                     </Text>
 
 
@@ -266,7 +266,7 @@ export default function AdminLoginScreen()
 
 
                     <Text style={styles.loginSubtitle}>
-                        Administrator access to the Biometric Attendance system.
+                        Administrator access to the GeoFace system.
                     </Text>
 
 
@@ -333,16 +333,11 @@ export default function AdminLoginScreen()
 
                     </View>
 
-
-                    {/* Forgot Password */}
-
-                    <Pressable>
+                    {/* Login help */}
 
                         <Text style={styles.forgotPassword}>
-                            Forgot password?
+                            Need help signing in? Contact system administrator.
                         </Text>
-
-                    </Pressable>
 
 
                     {/* Error */}

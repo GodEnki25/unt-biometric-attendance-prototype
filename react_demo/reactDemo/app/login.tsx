@@ -301,7 +301,7 @@ export default function LoginScreen() {
               styles.subtitle
             }
           >
-            Use your UNT credentials to access biometric attendance.
+            Use your UNT credentials to access GeoFace.
           </Text>
         </View>
 
@@ -514,7 +514,7 @@ export default function LoginScreen() {
               styles.securityText
             }
           >
-            Use your UNT credentials to access biometric attendance.
+            Use your UNT credentials to access GeoFace.
           </Text>
         </View>
       </ScrollView>
