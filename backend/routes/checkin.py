@@ -367,7 +367,8 @@ def get_checkins(
         cursor.execute(
             """
             SELECT
-                u.user_id AS student_id,
+                u.user_id AS user_id,
+                u.student_id AS student_id,
                 u.full_name AS student_name,
                 ar.attendance_id,
                 ar.session_id,
@@ -528,7 +529,8 @@ def get_attendance_override_details(
                 c.course_id,
                 c.course_code,
                 c.course_name,
-                u.user_id AS student_id,
+                u.user_id AS user_id,
+                u.student_id AS student_id,
                 u.full_name AS student_name,
                 ar.attendance_id,
                 ar.check_in_time,
@@ -590,6 +592,7 @@ def get_attendance_override_details(
         return {
             "success": True,
             "student": {
+                "user_id": record["user_id"],
                 "student_id": record["student_id"],
                 "student_name": record["student_name"],
             },

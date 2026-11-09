@@ -22,7 +22,8 @@ type OverrideEvent = {
 type OverrideDetails = {
 
     student: {
-        student_id: number;
+        user_id: number;
+        student_id: string;
         student_name: string;
     };
 
