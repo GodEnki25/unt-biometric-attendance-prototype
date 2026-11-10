@@ -41,6 +41,7 @@ type PresenceResult = {
   radius_m?: number;
   accuracy_buffer_m?: number;
   allowed_radius_m?: number;
+  distance_m?: number;
 
   engine?: string;
 };
@@ -89,6 +90,8 @@ type PresenceContextType = {
 const PRESENCE_CHECK_INTERVAL_MS = 10_000;
 
 const SESSION_CHECK_INTERVAL_MS = 5_000;
+
+const DISTANCE_PAUSE_THRESHOLD_M = 100;
 
 // ============================================================
 // CONTEXT
@@ -148,6 +151,9 @@ export function PresenceProvider({
     useRef(false);
 
   const sendingRef =
+    useRef(false);
+
+  const pausedForDistanceRef = 
     useRef(false);
 
   // ==========================================================
@@ -489,6 +495,24 @@ export function PresenceProvider({
         data
       );
 
+      if (
+        data.presence_tracking === true &&
+        data.confirmed_state === "OUTSIDE" &&
+        typeof data.distance_m === "number" &&
+        data.distance_m >= DISTANCE_PAUSE_THRESHOLD_M
+      ) {
+        pausedForDistanceRef.current = true;
+
+        console.log("PRESENCE: confirmed outside beyond privacy cutoff; pausing GPS",
+          {
+            distance_m: data.distance_m,
+            cutoff_m: DISTANCE_PAUSE_THRESHOLD_M,
+          }
+        );
+
+        stopLocationTracking();
+      }
+
       console.log(
         "PRESENCE UPDATE:",
         {
@@ -559,6 +583,10 @@ export function PresenceProvider({
   // ==========================================================
 
   async function refreshPresence() {
+    // Intentional refresh is allowed to wake presnce tracking
+    // back up after 100m privacy cutoff.
+    pausedForDistanceRef.current = false;
+
     await sendPresenceCheck(
       true
     );
@@ -605,6 +633,7 @@ export function PresenceProvider({
         // ----------------------------------------------------
 
         if (!token) {
+          pausedForDistanceRef.current = false;
           stopLocationTracking();
           setResult(null);
           return;
@@ -661,6 +690,7 @@ export function PresenceProvider({
             console.log ("PRESENCE: no active class session");
           }
 
+          pausedForDistanceRef.current = false;
           stopLocationTracking();
           setResult(null);
 
@@ -708,6 +738,9 @@ export function PresenceProvider({
           checkInStatus?.checked_in !==
           true
         ) {
+          
+          pausedForDistanceRef.current = false;
+
           if (
             trackingActiveRef.current
           ) {
@@ -728,9 +761,17 @@ export function PresenceProvider({
         // ----------------------------------------------------
 
         if (
+          pausedForDistanceRef.current
+        ) {
+          //Student is still checked in, but GPS was intentionally
+          // Stopped becuase they were confirmed outside and >100m away
+          return;
+        }
+
+        if(
           !trackingActiveRef.current
         ) {
-          console.log (
+          console.log(
             "PRESENCE: checked-in student detected; starting periodic tracking"
           );
 

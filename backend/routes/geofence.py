@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from math import radians, sin, cos, sqrt, atan2
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -39,6 +40,31 @@ ACTIVE_SESSION = {
 PRESENCE_TRACKER = {}
 
 CONFIRMATION_CHECKS = 3
+
+def distance_between_meters(
+        lat1: float,
+        lon1: float,
+        lat2: float,
+        lon2: float,
+) -> float:
+    # Straight-line distance between two GPS points in meters.
+    earth_radius_m = 6371000.0
+
+    lat1_rad = radians(lat1)
+    lat2_rad = radians(lat2)
+    delta_lat = radians(lat2 - lat1)
+    delta_lon = radians(lon2 - lon1)
+
+    a = (
+        sin(delta_lat / 2) ** 2
+        + cos(lat1_rad)
+        * cos(lat2_rad)
+        * sin(delta_lon / 2) ** 2
+    )
+
+    c = 2 * atan2(sqrt(a), sqrt(1-a))
+
+    return earth_radius_m * c
 
 def get_confirmed_presence_state(attendance_id: int):
     conn = get_db_connection()
@@ -512,6 +538,13 @@ def check_student_location(
         ACTIVE_SESSION["radius_m"] + accuracy_buffer_m
     )
 
+    distance_m = distance_between_meters(
+        payload.lat,
+        payload.lon,
+        ACTIVE_SESSION["center_lat"],
+        ACTIVE_SESSION["center_lon"],
+    )
+
     # Tile38 is the authoritative geofence engine.
     # The frontend only receives the resulting
     # inside/outside decision.
@@ -566,6 +599,7 @@ def check_student_location(
             "radius_m": ACTIVE_SESSION["radius_m"],
             "accuracy_buffer_m": accuracy_buffer_m,
             "allowed_radius_m": allowed_radius_m,
+            "distance_m": distance_m,
             "presence_tracking": False,
             "engine": "tile38",
         }
@@ -680,6 +714,7 @@ def check_student_location(
         "radius_m": ACTIVE_SESSION["radius_m"],
         "accuracy_buffer_m": accuracy_buffer_m,
         "allowed_radius_m": allowed_radius_m,
+        "distance_m": distance_m,
         "presence_tracking": True,
         "engine": "tile38",
     }
