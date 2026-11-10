@@ -32,7 +32,8 @@ import { Colors, Spacing, Radius } from "../constants/theme";
 type CheckinRecord = {
     attendance_id: number;
     session_id: number;
-    student_id: number;
+    user_id: number;
+    student_id: string;
     student_name: string;
     first_check_in_time: string | null;
     latest_entry_time: string | null;
@@ -46,7 +47,8 @@ type CheckinRecord = {
 };
 
 type StudentRow = {
-    student_id: number;
+    user_id: number;
+    student_id: string;
     name: string;
     firstentrytime: string | null; // 9/15/26 changes here
     entrytime: string;
@@ -298,7 +300,7 @@ export default function InstructorDashboard() {
             records.forEach((record) => {
                 const existing =
                     latestByStudent.get(
-                        record.student_id
+                        record.user_id
                     );
 
                 if (
@@ -307,7 +309,7 @@ export default function InstructorDashboard() {
                     existing.attendance_id
                 ) {
                     latestByStudent.set(
-                        record.student_id,
+                        record.user_id,
                         record
                     );
                 }
@@ -318,6 +320,7 @@ export default function InstructorDashboard() {
                 Array.from(
                     latestByStudent.values()
                 ).map((record) => ({
+                    user_id: record.user_id,
                     student_id: record.student_id,
                     name:
                         record.student_name ??
@@ -1447,7 +1450,7 @@ export default function InstructorDashboard() {
                                                     pathname: "/overrideInstructor",
                                                     params: {
                                                         course_id: String(selectedCourse?.course_id ?? ""),
-                                                        student_id: String(student.student_id),
+                                                        student_id: String(student.user_id),
                                                         student: student.name,
                                                         room: selectedItem2,
                                                         date: selectedItem3,
