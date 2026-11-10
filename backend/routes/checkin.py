@@ -489,17 +489,33 @@ def get_checkin_status(
 @router.get("/attendance/override/{student_id}")
 def get_attendance_override_details(
     student_id: int,
+    course_id: int,
     current_user=Depends(require_instructor),
 ):
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        if (
-            ACTIVE_SESSION["is_open"]
-            and ACTIVE_SESSION["id"] is not None
-        ):
-            session_id = int(ACTIVE_SESSION["id"])
+        cursor.execute(
+            """
+            SELECT session_id
+            FROM attendance_sessions
+            WHERE course_id = ?
+            ORDER BY session_id DESC
+            LIMIT 1
+            """,
+            (course_id),
+        )
+
+        session = cursor.fetchone()
+
+        if not session:
+            return {
+                "success": False,
+                "message": "No attendance session found for this course.",
+            }
+
+            session_id = session["session_id"]
 
         else:
             cursor.execute(
