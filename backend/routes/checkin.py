@@ -504,7 +504,7 @@ def get_attendance_override_details(
             ORDER BY session_id DESC
             LIMIT 1
             """,
-            (course_id),
+            (course_id,),
         )
 
         session = cursor.fetchone()
