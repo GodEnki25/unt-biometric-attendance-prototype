@@ -644,7 +644,7 @@ export default function DashboardScreen() {
                                 styles.classInfoText
                             }
                         >
-                            Room 266
+                            Room 420
                         </Text>
                     </View>
 

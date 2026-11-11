@@ -492,7 +492,7 @@ export default function InstructorOverride() {
                                         details.session.session_id,
 
                                     student_id:
-                                        details.student.student_id,
+                                        details.student.user_id,
 
                                     status:
                                         selectedStatus,
@@ -1211,7 +1211,7 @@ export default function InstructorOverride() {
                                                 styles.sectionSubtitle
                                             }
                                         >
-                                            Biometric check-in/out events for this session.
+                                            Check-in/out events for this session.
                                         </Text>
 
 
