@@ -1,622 +1,3080 @@
+import {
+    View,
+    Text,
+    StyleSheet,
+    Image,
+    ScrollView,
+    TouchableOpacity,
+    Platform,
+    Alert,
+    ActivityIndicator,
+} from "react-native";
 
-import { View, Text, StyleSheet, Image, Pressable, ImageBackground, ScrollView, TouchableOpacity, TextInput, Platform, Alert } from "react-native";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import React, { useState } from "react";
+import {
+    useLocalSearchParams,
+    useRouter,
+} from "expo-router";
+
+import {
+    useSafeAreaInsets,
+} from "react-native-safe-area-context";
+
+import React, {
+    useEffect,
+    useMemo,
+    useState,
+} from "react";
+
+import {
+    Ionicons,
+    Feather,
+} from "@expo/vector-icons";
+
+import {
+    API_BASE,
+} from "../constants/api";
+
+import {
+    Colors,
+    Spacing,
+    Radius,
+} from "../constants/theme";
 
 
-const API_BASE =
-    Platform.OS === "web"
-        ? "http://127.0.0.1:8000"
-        : "http://192.168.1.213:8000";
-
-type CheckinRecord = {
-    attendance_id: number;
+type SessionHistoryRow = {
     session_id: number;
-    student_id: number;
+
+    course_id: number;
+
+    course_code: string;
+    course_name: string;
+
+    room: string | null;
+
+    session_date: string;
+    start_time: string | null;
+    end_time: string | null;
+
+    duration: string | null;
+
+    attendance_count: number;
+    enrolled_count: number;
+
+    status:
+        | "active"
+        | "completed"
+        | "incomplete";
+};
+
+
+type SessionStudent = {
+    user_id: number;
+    student_id: string | null;
     student_name: string;
-    first_check_in_time: string; // 9/15/26 changes here
-    total_time: string; // 9/15/26 changes here
-    check_in_time: string;
-    face_verified: number;
-    location_verified: number;
+
     status: string;
+
+    check_in_time: string | null;
+
+    first_check_in_time: string | null;
+    latest_entry_time: string | null;
+    latest_exit_time: string | null;
+    total_time: string | null;
+
+    face_verified: boolean;
+    location_verified: boolean;
+
+    notes: string | null;
 };
 
-type StudentRow = {
-    name: string;
-    firstentrytime: string; // 9/15/26 changes here
-    entrytime: string;
-    exittime: string;
-    totaltime: string; // 9/15/26 changes here
-    status: string;
+
+type SessionDetailsResponse = {
+    success: boolean;
+
+    message?: string;
+
+    session?: {
+        session_id: number;
+        course_id: number;
+
+        course_code: string;
+        course_name: string;
+
+        room: string | null;
+
+        session_date: string;
+        start_time: string | null;
+        end_time: string | null;
+
+        duration: string | null;
+    };
+
+    students?: SessionStudent[];
 };
 
-export default function AuditInstructor()
-{
-    const router = useRouter();
-    const insets = useSafeAreaInsets();
-    const students = [
-        { name: "Sorel A.", entrytime: "9:01am",  exittime: "-", status: "Present" },
-        { name: "Andrew K", entrytime: "9:05am", exittime: "-", status: "Present" },
-        { name: "Andres M.", entrytime: "-", exittime: "-", status: "Absent" },
-        { name: "Shayan K.", entrytime: "9:58am", exittime: "-", status: "Late" }
-    ];
-     const { course, room, date, studentName, status } = useLocalSearchParams<{
-            course?: string;
-            room?: string;
-            date?: string;
-            studentName?: string;
-            status?: string;
 
+type CourseFilter = {
+    course_id: number;
+    label: string;
+};
+
+
+export default function AuditInstructor() {
+
+    const router =
+        useRouter();
+
+    const insets =
+        useSafeAreaInsets();
+
+    const {
+        course_id,
+    } =
+        useLocalSearchParams<{
+            course_id?: string;
         }>();
-    const statusOptions = ["Present", "Absent", "Late"];
-    const [selectedStatus, setSelectedStatus] = useState(
-        status && statusOptions.includes(status) ? status : "Present"
+
+
+    const storedUser =
+        Platform.OS === "web" &&
+        typeof window !== "undefined"
+            ? sessionStorage.getItem(
+                "user"
+            )
+            : null;
+
+
+    const currentUser =
+        storedUser
+            ? JSON.parse(
+                storedUser
+            )
+            : null;
+
+
+    const [
+        sessions,
+        setSessions
+    ] =
+        useState<
+            SessionHistoryRow[]
+        >(
+            []
+        );
+
+
+    const [
+        loading,
+        setLoading
+    ] =
+        useState(
+            true
+        );
+
+
+    const [
+        error,
+        setError
+    ] =
+        useState(
+            ""
+        );
+
+
+    const [
+        selectedCourseId,
+        setSelectedCourseId
+    ] =
+        useState<
+            number | null
+        >(
+            course_id
+                ? Number(course_id)
+                : null
+        );
+
+
+    const [
+        selectedStatus,
+        setSelectedStatus
+    ] =
+        useState<
+            "all"
+            | "active"
+            | "completed"
+            | "incomplete"
+        >(
+            "all"
+        );
+
+
+    const [
+        selectedRange,
+        setSelectedRange
+    ] =
+        useState<
+            "all"
+            | "30"
+            | "90"
+        >(
+            "all"
+        );
+
+
+    const [
+        appliedCourseId,
+        setAppliedCourseId
+    ] =
+        useState<
+            number | null
+        >(
+            course_id
+                ? Number(course_id)
+                : null
+        );
+
+
+    const [
+        appliedStatus,
+        setAppliedStatus
+    ] =
+        useState<
+            "all"
+            | "active"
+            | "completed"
+            | "incomplete"
+        >(
+            "all"
+        );
+
+
+    const [
+        appliedRange,
+        setAppliedRange
+    ] =
+        useState<
+            "all"
+            | "30"
+            | "90"
+        >(
+            "all"
+        );
+
+
+    const [
+        openDropdown,
+        setOpenDropdown
+    ] =
+        useState<
+            "course"
+            | "range"
+            | "status"
+            | null
+        >(
+            null
+        );
+
+
+    const loadSessions =
+        async () => {
+
+            setLoading(
+                true
+            );
+
+            setError(
+                ""
+            );
+
+            try {
+
+                const token =
+                    Platform.OS ===
+                        "web"
+                        ? sessionStorage.getItem(
+                            "access_token"
+                        )
+                        : null;
+
+
+                if (!token) {
+
+                    throw new Error(
+                        "Instructor is not logged in."
+                    );
+
+                }
+
+
+                const response =
+                    await fetch(
+                        `${API_BASE}/attendance/session-history`,
+                        {
+                            headers: {
+                                Authorization:
+                                    `Bearer ${token}`,
+                            },
+                        }
+                    );
+
+
+                const data =
+                    await response.json();
+
+
+                if (
+                    !response.ok
+                ) {
+
+                    throw new Error(
+                        data?.detail ||
+                        data?.message ||
+                        "Unable to load session history."
+                    );
+
+                }
+
+
+                setSessions(
+                    Array.isArray(data)
+                        ? data
+                        : []
+                );
+
+            }
+
+            catch (
+                error: any
+            ) {
+
+                console.error(
+                    "Session history load failed:",
+                    error
+                );
+
+
+                setError(
+                    error.message ||
+                    "Unable to load session history."
+                );
+
+            }
+
+            finally {
+
+                setLoading(
+                    false
+                );
+
+            }
+
+        };
+
+
+    useEffect(
+        () => {
+
+            loadSessions();
+
+        },
+        []
     );
-    const [reason, setReason] = useState("");
-    const [statusMenuOpen, setStatusMenuOpen] = useState(false);
 
-    const getStatusStyle = (status: string) =>
-    {
-        if (status === "Present")
-        {
-            return styles.presentText;
-        }
-        if (status === "Absent")
-        {
-            return styles.absentText;
-        }
-        if (status === "Late")
-        {
-            return styles.lateText;
-        }
 
-        return styles.defaultStatusText;
-    };
-    const [openDropdown, setOpenDropdown] = useState<number | null>(null);
-    const [selectedItem1, setSelectedItem1] = useState('Choose Course'); 
-    const [selectedItem2, setSelectedItem2] = useState('Room Number');
-    const [selectedItem3, setSelectedItem3] = useState('Date');//track selected item
-    //most likely have multiple copies of this to choose classes and all the other stuff instead of just having select an item.
-    const [isOpen, setIsOpen] = useState(false); //track if dropdown menu open
-    const allowed_courses = ['CSCE 4901.501', 'CSCE 4902.501', 'CSCE 4902.502']; //example list of dropdown
-    const allowed_rooms = ['266', '267', '420', '67'];
-    const allowed_dates = ['09/01/26', '08/31/26', '08/28/26'];
-    const toggleDropdown = (dropdownNumber: number) => {
-        if (openDropdown === dropdownNumber) {
-            setOpenDropdown(null);
-        } else {
-            setOpenDropdown(dropdownNumber);
-        }
-    };
+    const courses =
+        useMemo<
+            CourseFilter[]
+        >(
+            () => {
 
-    const refreshPage = () => {
-        window.location.reload();
-    };
-    const downloadCSVFile = () => { // should be for downloading the csv file need update
-        const text = 'apple'; // text for now. will need to update later
-        const blob = new Blob([text], {
-            type: 'text/plain',
-        });
-        const url = URL.createObjectURL(blob);// Create a temporary URL for the file
-        const link = document.createElement('a'); // Create a temporary HTML download link
-        link.href = url;// Set the link to the temporary file
-        link.download = 'test.txt';// Set the filename
-        document.body.appendChild(link);// Add the link to the webpage
-        link.click();// Automatically click the link to start the download
-        document.body.removeChild(link);// Remove the temporary link
-        URL.revokeObjectURL(url); // Clean up the temporary URL
-    };
+                const map =
+                    new Map<
+                        number,
+                        CourseFilter
+                    >();
+
+
+                sessions.forEach(
+                    (
+                        session
+                    ) => {
+
+                        map.set(
+                            session.course_id,
+                            {
+                                course_id:
+                                    session.course_id,
+
+                                label:
+                                    `${session.course_code} — ${session.course_name}`,
+                            }
+                        );
+
+                    }
+                );
+
+
+                return Array.from(
+                    map.values()
+                );
+
+            },
+            [
+                sessions
+            ]
+        );
+
+
+    const filteredSessions =
+        useMemo(
+            () => {
+
+                return sessions.filter(
+                    (
+                        session
+                    ) => {
+
+                        if (
+                            appliedCourseId !==
+                                null &&
+                            session.course_id !==
+                                appliedCourseId
+                        ) {
+
+                            return false;
+
+                        }
+
+
+                        if (
+                            appliedStatus !==
+                                "all" &&
+                            session.status !==
+                                appliedStatus
+                        ) {
+
+                            return false;
+
+                        }
+
+
+                        if (
+                            appliedRange !==
+                            "all"
+                        ) {
+
+                            const days =
+                                Number(
+                                    appliedRange
+                                );
+
+
+                            const sessionDate =
+                                new Date(
+                                    `${session.session_date}T12:00:00`
+                                );
+
+
+                            const cutoff =
+                                new Date();
+
+
+                            cutoff.setDate(
+                                cutoff.getDate() -
+                                days
+                            );
+
+
+                            if (
+                                sessionDate <
+                                cutoff
+                            ) {
+
+                                return false;
+
+                            }
+
+                        }
+
+
+                        return true;
+
+                    }
+                );
+
+            },
+            [
+                sessions,
+                appliedCourseId,
+                appliedStatus,
+                appliedRange,
+            ]
+        );
+
+
+    const selectedCourseLabel =
+        selectedCourseId ===
+        null
+            ? "All courses"
+            : courses.find(
+                (
+                    course
+                ) =>
+                    course.course_id ===
+                    selectedCourseId
+            )?.label ??
+            "All courses";
+
+
+    const selectedRangeLabel =
+        selectedRange ===
+            "30"
+            ? "Last 30 days"
+            : selectedRange ===
+                "90"
+                ? "Last 90 days"
+                : "All dates";
+
+
+    const selectedStatusLabel =
+        selectedStatus === "active"
+            ? "Active sessions"
+            : selectedStatus === "completed"
+                ? "Completed sessions"
+                : selectedStatus === "incomplete"
+                    ? "Incomplete sessions"
+                    : "All seesions";
+
+    const formatDate =
+        (
+            value:
+                string
+        ) => {
+
+            if (!value) {
+
+                return "—";
+
+            }
+
+
+            const date =
+                new Date(
+                    `${value}T12:00:00`
+                );
+
+
+            if (
+                Number.isNaN(
+                    date.getTime()
+                )
+            ) {
+
+                return value;
+
+            }
+
+
+            return date
+                .toLocaleDateString(
+                    "en-US",
+                    {
+                        month:
+                            "short",
+
+                        day:
+                            "numeric",
+
+                        year:
+                            "numeric",
+                    }
+                );
+
+        };
+
+
+    const formatTime =
+        (
+            value:
+                string | null
+        ) => {
+
+            if (!value) {
+
+                return "—";
+
+            }
+
+
+            const pieces =
+                value.split(
+                    ":"
+                );
+
+
+            if (
+                pieces.length < 2
+            ) {
+
+                return value;
+
+            }
+
+
+            const hour =
+                Number(
+                    pieces[0]
+                );
+
+
+            const minute =
+                pieces[1];
+
+
+            const period =
+                hour >= 12
+                    ? "PM"
+                    : "AM";
+
+
+            const displayHour =
+                hour % 12 || 12;
+
+
+            return `${displayHour}:${minute} ${period}`;
+
+        };
+
+
+    const escapeCSV =
+        (
+            value:
+                unknown
+        ) => {
+
+            const text =
+                value ===
+                    null ||
+                value ===
+                    undefined
+                    ? ""
+                    : String(
+                        value
+                    );
+
+
+            return `"${text.replace(
+                /"/g,
+                '""'
+            )}"`;
+
+        };
+
+
+    const downloadCSV =
+        (
+            filename:
+                string,
+            content:
+                string
+        ) => {
+
+            if (
+                Platform.OS !==
+                "web"
+            ) {
+
+                Alert.alert(
+                    "Export CSV",
+                    "CSV export is currently available from the instructor web dashboard."
+                );
+
+                return;
+
+            }
+
+
+            const blob =
+                new Blob(
+                    [
+                        content
+                    ],
+                    {
+                        type:
+                            "text/csv;charset=utf-8;",
+                    }
+                );
+
+
+            const url =
+                URL.createObjectURL(
+                    blob
+                );
+
+
+            const link =
+                document.createElement(
+                    "a"
+                );
+
+
+            link.href =
+                url;
+
+
+            link.download =
+                filename;
+
+
+            document.body
+                .appendChild(
+                    link
+                );
+
+
+            link.click();
+
+
+            document.body
+                .removeChild(
+                    link
+                );
+
+
+            URL.revokeObjectURL(
+                url
+            );
+
+        };
+
+
+    const exportSummary =
+        () => {
+
+            const header =
+                [
+                    "Session ID",
+                    "Course",
+                    "Room",
+                    "Date",
+                    "Start Time",
+                    "End Time",
+                    "Duration",
+                    "Attendance Count",
+                    "Enrolled",
+                    "Status",
+                ]
+                    .map(
+                        escapeCSV
+                    )
+                    .join(
+                        ","
+                    );
+
+
+            const rows =
+                filteredSessions.map(
+                    (
+                        session
+                    ) => {
+
+                        return [
+                            session.session_id,
+
+                            `${session.course_code} — ${session.course_name}`,
+
+                            session.room ??
+                            "—",
+
+                            session.session_date,
+
+                            session.start_time ??
+                            "",
+
+                            session.end_time ??
+                            "",
+
+                            session.duration ??
+                            "",
+
+                            session.attendance_count,
+
+                            session.enrolled_count,
+
+                            session.status,
+                        ]
+                            .map(
+                                escapeCSV
+                            )
+                            .join(
+                                ","
+                            );
+
+                    }
+                );
+
+
+            downloadCSV(
+                "geoface-session-summary.csv",
+                [
+                    header,
+                    ...rows,
+                ].join(
+                    "\n"
+                )
+            );
+
+        };
+
+
+    const exportSession =
+        async (
+            session:
+                SessionHistoryRow
+        ) => {
+
+            try {
+
+                const token =
+                    Platform.OS ===
+                        "web"
+                        ? sessionStorage.getItem(
+                            "access_token"
+                        )
+                        : null;
+
+
+                if (!token) {
+
+                    throw new Error(
+                        "Instructor is not logged in."
+                    );
+
+                }
+
+
+                const response =
+                    await fetch(
+                        `${API_BASE}/attendance/session-history/${session.session_id}`,
+                        {
+                            headers: {
+                                Authorization:
+                                    `Bearer ${token}`,
+                            },
+                        }
+                    );
+
+
+                const data:
+                    SessionDetailsResponse =
+                    await response.json();
+
+
+                if (
+                    !response.ok ||
+                    !data.success ||
+                    !data.students
+                ) {
+
+                    throw new Error(
+                        data.message ||
+                        "Unable to export session."
+                    );
+
+                }
+
+
+                const header =
+                    [
+                        "Student",
+                        "Student ID",
+                        "Status",
+                        "First Entry",
+                        "Latest Entry",
+                        "Latest Exit",
+                        "Total Time",
+                        "Face Verified",
+                        "Location Verified",
+                        "Notes",
+                    ]
+                        .map(
+                            escapeCSV
+                        )
+                        .join(
+                            ","
+                        );
+
+
+                const rows =
+                    data.students.map(
+                        (
+                            student
+                        ) => {
+
+                            return [
+                                student.student_name,
+
+                                student.student_id ??
+                                "",
+
+                                student.status,
+
+                                student.first_check_in_time ??
+                                "",
+
+                                student.latest_entry_time ??
+                                "",
+
+                                student.latest_exit_time ??
+                                "",
+
+                                student.total_time ??
+                                "",
+
+                                student.face_verified
+                                    ? "Yes"
+                                    : "No",
+
+                                student.location_verified
+                                    ? "Yes"
+                                    : "No",
+
+                                student.notes ??
+                                "",
+                            ]
+                                .map(
+                                    escapeCSV
+                                )
+                                .join(
+                                    ","
+                                );
+
+                        }
+                    );
+
+
+                downloadCSV(
+                    `geoface-session-${session.session_id}.csv`,
+                    [
+                        header,
+                        ...rows,
+                    ].join(
+                        "\n"
+                    )
+                );
+
+            }
+
+            catch (
+                error: any
+            ) {
+
+                console.error(
+                    "Session export failed:",
+                    error
+                );
+
+
+                Alert.alert(
+                    "Export Failed",
+                    error.message ||
+                    "Unable to export this session."
+                );
+
+            }
+
+        };
+
+
+    const applyFilters =
+        () => {
+
+            setAppliedCourseId(
+                selectedCourseId
+            );
+
+            setAppliedStatus(
+                selectedStatus
+            );
+
+            setAppliedRange(
+                selectedRange
+            );
+
+            setOpenDropdown(
+                null
+            );
+
+        };
+
+
+    const clearFilters =
+        () => {
+
+            setSelectedCourseId(
+                null
+            );
+
+            setSelectedStatus(
+                "all"
+            );
+
+            setSelectedRange(
+                "all"
+            );
+
+            setAppliedCourseId(
+                null
+            );
+
+            setAppliedStatus(
+                "all"
+            );
+
+            setAppliedRange(
+                "all"
+            );
+
+            setOpenDropdown(
+                null
+            );
+
+        };
+
+
+    const logout =
+        () => {
+
+            if (
+                Platform.OS ===
+                "web"
+            ) {
+
+                sessionStorage.removeItem(
+                    "access_token"
+                );
+
+                sessionStorage.removeItem(
+                    "user"
+                );
+
+            }
+
+
+            router.replace(
+                "/loginInstructor"
+            );
+
+        };
+
 
     return (
-        <View style={[styles.safe, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
-            <View style={styles.container}>
-                {/* Top Header */}
-                <View style={styles.topHeader}>
-                    <Image
-                        source={require("../assets/logo.png")}
-                        style={styles.logoBox}
-                    />
 
-                    <Text style={styles.dashboardTitle}>Override</Text>
+        <View
+            style={[
+                styles.safe,
+                {
+                    paddingTop:
+                        insets.top,
 
-                    <View style={styles.profileBox}>
-                        <Text style={styles.profileText}>Professor Emptynow</Text>
+                    paddingBottom:
+                        insets.bottom,
+                },
+            ]}
+        >
+
+            <View
+                style={
+                    styles.container
+                }
+            >
+
+                <View
+                    style={
+                        styles.topHeader
+                    }
+                >
+
+                    <View
+                        style={
+                            styles.brandBox
+                        }
+                    >
+
                         <Image
-                            source={require("../assets/empty.png")}
-                            style={styles.profileIcon}
+                            source={
+                                require(
+                                    "../assets/logo.png"
+                                )
+                            }
+                            style={
+                                styles.logoBox
+                            }
+                            resizeMode="contain"
                         />
-                    </View>
-                </View>
 
-                {/* Course / Room / Date Bar */}
-                <View style={styles.infoBar}>
-                    <View style={styles.infoField}>
-                        <Text style={styles.infoText}>
-                            <Text style={styles.bold}>Course: </Text>
-                            {!course || course === "Choose Course"
-                                ? "Not selected"
-                                : course}
-                        </Text>
-                    </View>
 
-                    <View style={styles.infoField}>
-                        <Text style={styles.infoText}>
-                            <Text style={styles.bold}>Room: </Text>
-                            {!room || room === "Room Number"
-                                ? "Not selected"
-                                : room}
-                        </Text>
-                    </View>
+                        <View
+                            style={
+                                styles.brandDivider
+                            }
+                        />
 
-                    <View style={styles.infoField}>
-                        <Text style={styles.infoText}>
-                            <Text style={styles.bold}>Date: </Text>
-                            {!date || date === "Date"
-                                ? "Not selected"
-                                : date}
-                        </Text>
-                    </View>
-                </View>
-
-                {/* Main Content */}
-                <ScrollView contentContainerStyle={styles.mainContent}>
-                    {/* Student Table */}
-                    <View style={styles.tableContainer}>
-                        <View style={styles.formLine}>
-                            <Text style={styles.formLabel}>Student:</Text>
-                            <Text style={styles.studentName}>
-                                {typeof studentName === "string" ? studentName : "Unknown student"}
-                            </Text>
-                        </View>
-
-                        <View style={styles.formLine}>
-                            <Text style={styles.formLabel}>Status:</Text>
-                            <View style={styles.statusField}>
-                                <TouchableOpacity
-                                    style={styles.statusDropdown}
-                                    onPress={() => setStatusMenuOpen((open) => !open)}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={`Status: ${selectedStatus}`}
-                                >
-                                    <Text style={[styles.statusDropdownText, getStatusStyle(selectedStatus)]}>
-                                        {selectedStatus}
-                                    </Text>
-                                    <Text style={styles.dropdownArrow}>{statusMenuOpen ? "▲" : "▼"}</Text>
-                                </TouchableOpacity>
-                                {statusMenuOpen && (
-                                    <View style={styles.statusMenu}>
-                                        {statusOptions.map((option) => (
-                                            <TouchableOpacity
-                                                key={option}
-                                                style={[
-                                                    styles.statusOption,
-                                                    option === selectedStatus && styles.selectedStatusOption
-                                                ]}
-                                                accessibilityRole="button"
-                                                accessibilityState={{ selected: option === selectedStatus }}
-                                                onPress={() => {
-                                                    setSelectedStatus(option);
-                                                    setStatusMenuOpen(false);
-                                                }}
-                                            >
-                                                <Text style={[
-                                                    styles.statusOptionText,
-                                                    getStatusStyle(option),
-                                                    option === selectedStatus && styles.selectedStatusOptionText
-                                                ]}>
-                                                    {option}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </View>
-                                )}
-                            </View>
-                        </View>
 
                         <Text
-                            pointerEvents="none"
-                            style={[styles.formLabel, styles.reasonLabel]}
+                            style={
+                                styles.brandText
+                            }
                         >
-                            Reason:
+                            Attendance
                         </Text>
-                        <TextInput
-                            style={styles.reasonInput}
-                            value={reason}
-                            onChangeText={setReason}
-                            placeholder="Reason Given..."
-                            placeholderTextColor="rgba(0, 0, 0, 0.65)"
-                            multiline
-                            textAlignVertical="top"
+
+                    </View>
+
+
+                    <View
+                        style={
+                            styles.profileBox
+                        }
+                    >
+
+                        <Text
+                            style={
+                                styles.profileText
+                            }
+                        >
+                            {
+                                currentUser?.name ||
+                                "Instructor"
+                            }
+                        </Text>
+
+
+                        <View
+                            style={
+                                styles.profileDivider
+                            }
                         />
 
-                        <View style={styles.formButtons}>
-                            <TouchableOpacity
-                                style={[styles.smallButton, styles.cancelButton]}
-                                onPress={() => router.push("/overrideInstructor")}
+
+                        <Ionicons
+                            name="person-outline"
+                            size={23}
+                            color={
+                                Colors.textSecondary
+                            }
+                        />
+
+
+                        <TouchableOpacity
+                            onPress={
+                                logout
+                            }
+                        >
+
+                            <Text
+                                style={
+                                    styles.logoutText
+                                }
                             >
-                                <Text style={styles.smallButtonText}>Cancel</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.smallButton, styles.saveButton]}
-                                onPress={() => router.push("/dashboardInstructor")}
-                            >
-                                <Text style={styles.smallButtonText}>Save Changes</Text>
-                            </TouchableOpacity>
-                        </View>
+                                Logout
+                            </Text>
+
+                        </TouchableOpacity>
+
                     </View>
+
+                </View>
+
+
+                <ScrollView
+                    contentContainerStyle={
+                        styles.pageContent
+                    }
+                >
+
+                    <TouchableOpacity
+                        style={
+                            styles.backLink
+                        }
+                        onPress={
+                            () =>
+                                router.replace(
+                                    "/dashboardInstructor"
+                                )
+                        }
+                    >
+
+                        <Ionicons
+                            name="arrow-back"
+                            size={20}
+                            color={
+                                Colors.primary
+                            }
+                        />
+
+
+                        <Text
+                            style={
+                                styles.backLinkText
+                            }
+                        >
+                            Back to Instructor Dashboard
+                        </Text>
+
+                    </TouchableOpacity>
+
+
+                    <View
+                        style={
+                            styles.pageHeading
+                        }
+                    >
+
+                        <Text
+                            style={
+                                styles.pageTitle
+                            }
+                        >
+                            Session History
+                        </Text>
+
+
+                        <Text
+                            style={
+                                styles.pageSubtitle
+                            }
+                        >
+                            View and manage your past attendance sessions.
+                        </Text>
+
+                    </View>
+
+
+                    <View
+                        style={
+                            styles.filterCard
+                        }
+                    >
+
+                        <Text
+                            style={
+                                styles.sectionTitle
+                            }
+                        >
+                            Filters
+                        </Text>
+
+
+                        <Text
+                            style={
+                                styles.sectionSubtitle
+                            }
+                        >
+                            Narrow down your session history.
+                        </Text>
+
+
+                        <View
+                            style={
+                                styles.filterRow
+                            }
+                        >
+
+                            <View
+                                style={
+                                    styles.filterField
+                                }
+                            >
+
+                                <Text
+                                    style={
+                                        styles.fieldLabel
+                                    }
+                                >
+                                    Course
+                                </Text>
+
+
+                                <TouchableOpacity
+                                    style={
+                                        styles.dropdownButton
+                                    }
+                                    onPress={
+                                        () =>
+                                            setOpenDropdown(
+                                                openDropdown ===
+                                                    "course"
+                                                    ? null
+                                                    : "course"
+                                            )
+                                    }
+                                >
+
+                                    <Text
+                                        style={
+                                            styles.dropdownText
+                                        }
+                                        numberOfLines={1}
+                                    >
+                                        {
+                                            selectedCourseLabel
+                                        }
+                                    </Text>
+
+
+                                    <Ionicons
+                                        name="chevron-down"
+                                        size={18}
+                                        color={
+                                            Colors.textSecondary
+                                        }
+                                    />
+
+                                </TouchableOpacity>
+
+
+                                {
+                                    openDropdown ===
+                                    "course" && (
+
+                                        <View
+                                            style={
+                                                styles.dropdownMenu
+                                            }
+                                        >
+
+                                            <TouchableOpacity
+                                                style={
+                                                    styles.dropdownItem
+                                                }
+                                                onPress={
+                                                    () => {
+                                                        setSelectedCourseId(
+                                                            null
+                                                        );
+
+                                                        setOpenDropdown(
+                                                            null
+                                                        );
+                                                    }
+                                                }
+                                            >
+
+                                                <Text
+                                                    style={
+                                                        styles.dropdownItemText
+                                                    }
+                                                >
+                                                    All courses
+                                                </Text>
+
+                                            </TouchableOpacity>
+
+
+                                            {
+                                                courses.map(
+                                                    (
+                                                        course
+                                                    ) => (
+
+                                                        <TouchableOpacity
+                                                            key={
+                                                                course.course_id
+                                                            }
+                                                            style={
+                                                                styles.dropdownItem
+                                                            }
+                                                            onPress={
+                                                                () => {
+                                                                    setSelectedCourseId(
+                                                                        course.course_id
+                                                                    );
+
+                                                                    setOpenDropdown(
+                                                                        null
+                                                                    );
+                                                                }
+                                                            }
+                                                        >
+
+                                                            <Text
+                                                                style={
+                                                                    styles.dropdownItemText
+                                                                }
+                                                            >
+                                                                {
+                                                                    course.label
+                                                                }
+                                                            </Text>
+
+                                                        </TouchableOpacity>
+
+                                                    )
+                                                )
+                                            }
+
+                                        </View>
+
+                                    )
+                                }
+
+                            </View>
+
+
+                            <View
+                                style={
+                                    styles.filterField
+                                }
+                            >
+
+                                <Text
+                                    style={
+                                        styles.fieldLabel
+                                    }
+                                >
+                                    Date Range
+                                </Text>
+
+
+                                <TouchableOpacity
+                                    style={
+                                        styles.dropdownButton
+                                    }
+                                    onPress={
+                                        () =>
+                                            setOpenDropdown(
+                                                openDropdown ===
+                                                    "range"
+                                                    ? null
+                                                    : "range"
+                                            )
+                                    }
+                                >
+
+                                    <View
+                                        style={
+                                            styles.dropdownWithIcon
+                                        }
+                                    >
+
+                                        <Ionicons
+                                            name="calendar-outline"
+                                            size={18}
+                                            color={
+                                                Colors.textSecondary
+                                            }
+                                        />
+
+
+                                        <Text
+                                            style={
+                                                styles.dropdownText
+                                            }
+                                        >
+                                            {
+                                                selectedRangeLabel
+                                            }
+                                        </Text>
+
+                                    </View>
+
+
+                                    <Ionicons
+                                        name="chevron-down"
+                                        size={18}
+                                        color={
+                                            Colors.textSecondary
+                                        }
+                                    />
+
+                                </TouchableOpacity>
+
+
+                                {
+                                    openDropdown ===
+                                    "range" && (
+
+                                        <View
+                                            style={
+                                                styles.dropdownMenu
+                                            }
+                                        >
+
+                                            {
+                                                [
+                                                    {
+                                                        value:
+                                                            "all",
+
+                                                        label:
+                                                            "All dates",
+                                                    },
+
+                                                    {
+                                                        value:
+                                                            "30",
+
+                                                        label:
+                                                            "Last 30 days",
+                                                    },
+
+                                                    {
+                                                        value:
+                                                            "90",
+
+                                                        label:
+                                                            "Last 90 days",
+                                                    },
+                                                ].map(
+                                                    (
+                                                        option
+                                                    ) => (
+
+                                                        <TouchableOpacity
+                                                            key={
+                                                                option.value
+                                                            }
+                                                            style={
+                                                                styles.dropdownItem
+                                                            }
+                                                            onPress={
+                                                                () => {
+                                                                    setSelectedRange(
+                                                                        option.value as
+                                                                            "all" |
+                                                                            "30" |
+                                                                            "90"
+                                                                    );
+
+                                                                    setOpenDropdown(
+                                                                        null
+                                                                    );
+                                                                }
+                                                            }
+                                                        >
+
+                                                            <Text
+                                                                style={
+                                                                    styles.dropdownItemText
+                                                                }
+                                                            >
+                                                                {
+                                                                    option.label
+                                                                }
+                                                            </Text>
+
+                                                        </TouchableOpacity>
+
+                                                    )
+                                                )
+                                            }
+
+                                        </View>
+
+                                    )
+                                }
+
+                            </View>
+
+
+                            <View
+                                style={
+                                    styles.filterField
+                                }
+                            >
+
+                                <Text
+                                    style={
+                                        styles.fieldLabel
+                                    }
+                                >
+                                    Status
+                                </Text>
+
+
+                                <TouchableOpacity
+                                    style={
+                                        styles.dropdownButton
+                                    }
+                                    onPress={
+                                        () =>
+                                            setOpenDropdown(
+                                                openDropdown ===
+                                                    "status"
+                                                    ? null
+                                                    : "status"
+                                            )
+                                    }
+                                >
+
+                                    <Text
+                                        style={
+                                            styles.dropdownText
+                                        }
+                                    >
+                                        {
+                                            selectedStatusLabel
+                                        }
+                                    </Text>
+
+
+                                    <Ionicons
+                                        name="chevron-down"
+                                        size={18}
+                                        color={
+                                            Colors.textSecondary
+                                        }
+                                    />
+
+                                </TouchableOpacity>
+
+
+                                {
+                                    openDropdown ===
+                                    "status" && (
+
+                                        <View
+                                            style={
+                                                styles.dropdownMenu
+                                            }
+                                        >
+
+                                            {
+                                                [
+                                                    {
+                                                        value:
+                                                            "all",
+
+                                                        label:
+                                                            "All sessions",
+                                                    },
+
+                                                    {
+                                                        value:
+                                                            "completed",
+
+                                                        label:
+                                                            "Completed sessions",
+                                                    },
+
+                                                    {
+                                                        value:
+                                                            "active",
+
+                                                        label:
+                                                            "Active sessions",
+                                                    },
+
+                                                    {
+                                                        value:
+                                                            "incomplete",
+                                                        
+                                                        label:
+                                                            "Incomplete sessions",
+                                                    },
+                                                ].map(
+                                                    (
+                                                        option
+                                                    ) => (
+
+                                                        <TouchableOpacity
+                                                            key={
+                                                                option.value
+                                                            }
+                                                            style={
+                                                                styles.dropdownItem
+                                                            }
+                                                            onPress={
+                                                                () => {
+                                                                    setSelectedStatus(
+                                                                        option.value as
+                                                                            "all" |
+                                                                            "active" |
+                                                                            "completed" |
+                                                                            "incomplete"
+                                                                    );
+
+                                                                    setOpenDropdown(
+                                                                        null
+                                                                    );
+                                                                }
+                                                            }
+                                                        >
+
+                                                            <Text
+                                                                style={
+                                                                    styles.dropdownItemText
+                                                                }
+                                                            >
+                                                                {
+                                                                    option.label
+                                                                }
+                                                            </Text>
+
+                                                        </TouchableOpacity>
+
+                                                    )
+                                                )
+                                            }
+
+                                        </View>
+
+                                    )
+                                }
+
+                            </View>
+
+                        </View>
+
+
+                        <View
+                            style={
+                                styles.filterActions
+                            }
+                        >
+
+                            <TouchableOpacity
+                                style={
+                                    styles.applyButton
+                                }
+                                onPress={
+                                    applyFilters
+                                }
+                            >
+
+                                <Text
+                                    style={
+                                        styles.applyButtonText
+                                    }
+                                >
+                                    Apply Filters
+                                </Text>
+
+                            </TouchableOpacity>
+
+
+                            <TouchableOpacity
+                                style={
+                                    styles.clearButton
+                                }
+                                onPress={
+                                    clearFilters
+                                }
+                            >
+
+                                <Text
+                                    style={
+                                        styles.clearButtonText
+                                    }
+                                >
+                                    Clear Filters
+                                </Text>
+
+                            </TouchableOpacity>
+
+                        </View>
+
+                    </View>
+
+
+                    <View
+                        style={
+                            styles.sessionsHeader
+                        }
+                    >
+
+                        <View>
+
+                            <Text
+                                style={
+                                    styles.sessionsTitle
+                                }
+                            >
+                                Sessions
+                            </Text>
+
+
+                            <Text
+                                style={
+                                    styles.sessionsCount
+                                }
+                            >
+                                {
+                                    filteredSessions.length
+                                }
+                                {
+                                    filteredSessions.length ===
+                                        1
+                                        ? " session"
+                                        : " sessions"
+                                }
+                            </Text>
+
+                        </View>
+
+
+                        <TouchableOpacity
+                            style={
+                                styles.exportSummaryButton
+                            }
+                            onPress={
+                                exportSummary
+                            }
+                        >
+
+                            <Feather
+                                name="download"
+                                size={18}
+                                color={
+                                    Colors.primary
+                                }
+                            />
+
+
+                            <Text
+                                style={
+                                    styles.exportSummaryText
+                                }
+                            >
+                                Export Summary
+                            </Text>
+
+                        </TouchableOpacity>
+
+                    </View>
+
+
+                    {
+                        loading ? (
+
+                            <View
+                                style={
+                                    styles.messageCard
+                                }
+                            >
+
+                                <ActivityIndicator
+                                    size="large"
+                                    color={
+                                        Colors.primary
+                                    }
+                                />
+
+
+                                <Text
+                                    style={
+                                        styles.messageText
+                                    }
+                                >
+                                    Loading session history...
+                                </Text>
+
+                            </View>
+
+                        ) :
+
+                            error ? (
+
+                                <View
+                                    style={
+                                        styles.messageCard
+                                    }
+                                >
+
+                                    <Ionicons
+                                        name="alert-circle-outline"
+                                        size={34}
+                                        color={
+                                            Colors.danger
+                                        }
+                                    />
+
+
+                                    <Text
+                                        style={
+                                            styles.errorText
+                                        }
+                                    >
+                                        {
+                                            error
+                                        }
+                                    </Text>
+
+
+                                    <TouchableOpacity
+                                        style={
+                                            styles.retryButton
+                                        }
+                                        onPress={
+                                            loadSessions
+                                        }
+                                    >
+
+                                        <Text
+                                            style={
+                                                styles.retryButtonText
+                                            }
+                                        >
+                                            Retry
+                                        </Text>
+
+                                    </TouchableOpacity>
+
+                                </View>
+
+                            ) :
+
+                                filteredSessions.length ===
+                                0 ? (
+
+                                    <View
+                                        style={
+                                            styles.messageCard
+                                        }
+                                    >
+
+                                        <Ionicons
+                                            name="calendar-outline"
+                                            size={42}
+                                            color={
+                                                Colors.disabled
+                                            }
+                                        />
+
+
+                                        <Text
+                                            style={
+                                                styles.messageText
+                                            }
+                                        >
+                                            No sessions found.
+                                        </Text>
+
+                                    </View>
+
+                                ) : (
+
+                                    <View
+                                        style={
+                                            styles.tableContainer
+                                        }
+                                    >
+
+                                        <View
+                                            style={
+                                                styles.tableHeaderRow
+                                            }
+                                        >
+
+                                            <Text
+                                                style={[
+                                                    styles.tableHeaderText,
+                                                    styles.colCourse,
+                                                ]}
+                                            >
+                                                COURSE
+                                            </Text>
+
+
+                                            <Text
+                                                style={[
+                                                    styles.tableHeaderText,
+                                                    styles.colRoom,
+                                                ]}
+                                            >
+                                                ROOM
+                                            </Text>
+
+
+                                            <Text
+                                                style={[
+                                                    styles.tableHeaderText,
+                                                    styles.colDate,
+                                                ]}
+                                            >
+                                                DATE
+                                            </Text>
+
+
+                                            <Text
+                                                style={[
+                                                    styles.tableHeaderText,
+                                                    styles.colDuration,
+                                                ]}
+                                            >
+                                                SESSION DURATION
+                                            </Text>
+
+
+                                            <Text
+                                                style={[
+                                                    styles.tableHeaderText,
+                                                    styles.colAttendance,
+                                                ]}
+                                            >
+                                                ATTENDANCE COUNT
+                                            </Text>
+
+
+                                            <Text
+                                                style={[
+                                                    styles.tableHeaderText,
+                                                    styles.colExport,
+                                                ]}
+                                            >
+                                                EXPORT
+                                            </Text>
+
+                                        </View>
+
+
+                                        {
+                                            filteredSessions.map(
+                                                (
+                                                    session
+                                                ) => (
+
+                                                    <View
+                                                        key={
+                                                            session.session_id
+                                                        }
+                                                        style={
+                                                            styles.tableRow
+                                                        }
+                                                    >
+
+                                                        <View
+                                                            style={[
+                                                                styles.tableCell,
+                                                                styles.colCourse,
+                                                            ]}
+                                                        >
+
+                                                            <Text
+                                                                style={
+                                                                    styles.primaryCellText
+                                                                }
+                                                            >
+                                                                {
+                                                                    session.course_code
+                                                                }
+                                                                {
+                                                                    " — "
+                                                                }
+                                                                {
+                                                                    session.course_name
+                                                                }
+                                                            </Text>
+
+                                                        </View>
+
+
+                                                        <View
+                                                            style={[
+                                                                styles.tableCell,
+                                                                styles.colRoom,
+                                                            ]}
+                                                        >
+
+                                                            <Text
+                                                                style={
+                                                                    styles.primaryCellText
+                                                                }
+                                                            >
+                                                                {
+                                                                    session.room ||
+                                                                    "—"
+                                                                }
+                                                            </Text>
+
+                                                        </View>
+
+
+                                                        <View
+                                                            style={[
+                                                                styles.tableCell,
+                                                                styles.colDate,
+                                                            ]}
+                                                        >
+
+                                                            <Text
+                                                                style={
+                                                                    styles.primaryCellText
+                                                                }
+                                                            >
+                                                                {
+                                                                    formatDate(
+                                                                        session.session_date
+                                                                    )
+                                                                }
+                                                            </Text>
+
+
+                                                            <Text
+                                                                style={
+                                                                    styles.secondaryCellText
+                                                                }
+                                                            >
+                                                                {
+                                                                    formatTime(
+                                                                        session.start_time
+                                                                    )
+                                                                }
+                                                            </Text>
+
+                                                        </View>
+
+
+                                                        <View
+                                                            style={[
+                                                                styles.tableCell,
+                                                                styles.colDuration,
+                                                            ]}
+                                                        >
+
+                                                            <Text
+                                                                style={
+                                                                    styles.primaryCellText
+                                                                }
+                                                            >
+                                                                {
+                                                                    session.duration ||
+                                                                    (
+                                                                        session.status ===
+                                                                            "active"
+                                                                            ? "In progress"
+                                                                            : "—"
+                                                                    )
+                                                                }
+                                                            </Text>
+
+                                                        </View>
+
+
+                                                        <View
+                                                            style={[
+                                                                styles.tableCell,
+                                                                styles.colAttendance,
+                                                            ]}
+                                                        >
+
+                                                            <Text
+                                                                style={
+                                                                    styles.primaryCellText
+                                                                }
+                                                            >
+                                                                {
+                                                                    session.attendance_count
+                                                                }
+                                                                {
+                                                                    " / "
+                                                                }
+                                                                {
+                                                                    session.enrolled_count
+                                                                }
+                                                            </Text>
+
+                                                        </View>
+
+
+                                                        <View
+                                                            style={[
+                                                                styles.tableCell,
+                                                                styles.colExport,
+                                                            ]}
+                                                        >
+
+                                                            <TouchableOpacity
+                                                                style={
+                                                                    styles.exportLink
+                                                                }
+                                                                onPress={
+                                                                    () =>
+                                                                        exportSession(
+                                                                            session
+                                                                        )
+                                                                }
+                                                            >
+
+                                                                <Feather
+                                                                    name="download"
+                                                                    size={18}
+                                                                    color={
+                                                                        Colors.primary
+                                                                    }
+                                                                />
+
+
+                                                                <Text
+                                                                    style={
+                                                                        styles.exportLinkText
+                                                                    }
+                                                                >
+                                                                    Export CSV
+                                                                </Text>
+
+                                                            </TouchableOpacity>
+
+                                                        </View>
+
+                                                    </View>
+
+                                                )
+                                            )
+                                        }
+
+                                    </View>
+
+                                )
+                    }
+
+
+                    <View
+                        style={
+                            styles.footer
+                        }
+                    >
+
+                        <Text
+                            style={
+                                styles.footerText
+                            }
+                        >
+                            University of North Texas
+                        </Text>
+
+
+                        <Text
+                            style={
+                                styles.footerDot
+                            }
+                        >
+                            •
+                        </Text>
+
+
+                        <Text
+                            style={
+                                styles.footerText
+                            }
+                        >
+                            GeoFace
+                        </Text>
+
+                    </View>
+
                 </ScrollView>
+
             </View>
-            </View>
+
+        </View>
 
     );
+
 }
 
-const styles = StyleSheet.create({
-    safe: {
-        flex: 1,
-        backgroundColor: "#f2f2f2"
-    },
 
-    container: {
-        flex: 1
-    },
+const styles =
+    StyleSheet.create({
 
-    topHeader: {
-        height: 90,
-        backgroundColor: "#0b7d3b",
-        flexDirection: "row",
-        alignItems: "center",
-        paddingHorizontal: 15,
-        justifyContent: "space-between"
-    },
+        safe: {
+            flex: 1,
+            backgroundColor:
+                Colors.background,
+        },
 
-    logoBox: {
-        width: 90,
-        height: 90,
-        borderRadius: 40,
-        justifyContent: "center",
-        alignItems: "center"
-    },
 
-    logoText: {
-        color: "white",
-        fontSize: 20,
-        fontWeight: "bold"
-    },
+        container: {
+            flex: 1,
+            backgroundColor:
+                Colors.background,
+        },
 
-    logoSubText: {
-        color: "white",
-        fontSize: 8,
-        marginTop: 2,
-        textAlign: "center"
-    },
 
-    dashboardTitle: {
-        color: "white",
-        fontSize: 22,
-        fontWeight: "bold"
-    },
+        topHeader: {
+            minHeight: 86,
 
-    profileBox: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 10
-    },
+            backgroundColor:
+                Colors.surface,
 
-    profileText: {
-        color: "white",
-        fontSize: 16,
-        fontWeight: "bold"
-    },
+            flexDirection:
+                "row",
 
-    profileIcon: {
-        width: 45,
-        height: 45,
-        backgroundColor: "white",
-        borderRadius: 10,
-        justifyContent: "center",
-        alignItems: "center"
-    },
+            alignItems:
+                "center",
 
-    profileIconText: {
-        fontSize: 22
-    },
+            justifyContent:
+                "space-between",
 
-    infoBar: {
-        backgroundColor: "#0b7d3b",
-        marginHorizontal: 10,
-        marginTop: 10,
-        borderRadius: 15,
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        flexDirection: "row",
-        justifyContent: "space-between"
-    },
+            paddingHorizontal: 48,
 
-    infoText: {
-        color: "white",
-        fontSize: 15
-    },
+            borderTopWidth: 10,
 
-    bold: {
-        fontWeight: "bold"
-    },
+            borderTopColor:
+                Colors.primary,
 
-    mainContent: {
-        flexGrow: 1,
-        paddingVertical: 20,
-        paddingHorizontal: 10,
-        justifyContent: "flex-start",
-        alignItems: "center"
-    },
+            borderBottomWidth: 4,
 
-    sessionButtonsRow: {
-        flexDirection: "row",
-        justifyContent: "center",
-        gap: 20,
-        marginBottom: 25
-    },
+            borderBottomColor:
+                Colors.tableBorder,
+        },
 
-    startButton: {
-        backgroundColor: "#0b7d3b",
-        paddingVertical: 15,
-        paddingHorizontal: 35,
-        borderRadius: 40
-    },
 
-    endButton: {
-        backgroundColor: "#ff2c2c",
-        paddingVertical: 15,
-        paddingHorizontal: 35,
-        borderRadius: 40
-    },
+        brandBox: {
+            flexDirection:
+                "row",
 
-    sessionButtonText: {
-        color: "white",
-        fontSize: 18,
-        fontWeight: "bold"
-    },
+            alignItems:
+                "center",
 
-    tableContainer: {
-        width: "100%",
-        maxWidth: 560,
-        backgroundColor: "#ffffff",
-        borderRadius: 4,
-        borderWidth: 1,
-        borderColor: "#000000",
-        padding: 24
-    },
+            gap:
+                Spacing.md,
+        },
 
-    formLine: {
-        minHeight: 48,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        marginBottom: 12
-    },
 
-    formLabel: {
-        color: "#222222",
-        fontSize: 16,
-        fontWeight: "bold"
-    },
+        logoBox: {
+            width: 72,
+            height: 72,
+        },
 
-    studentName: {
-        color: "#222222",
-        fontSize: 16,
-        flexShrink: 1
-    },
 
-    statusField: {
-        flex: 1,
-        position: "relative",
-        zIndex: 20,
-        elevation: 20
-    },
+        brandDivider: {
+            width: 2,
 
-    statusDropdown: {
-        minHeight: 44,
-        borderWidth: 1,
-        borderColor: "#777777",
-        borderRadius: 4,
-        paddingHorizontal: 12,
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        backgroundColor: "#ffffff"
-    },
+            height: 32,
 
-    statusDropdownText: {
-        color: "#222222",
-        fontSize: 16
-    },
+            backgroundColor:
+                Colors.border,
+        },
 
-    dropdownArrow: {
-        color: "#222222",
-        fontSize: 12
-    },
 
-    statusMenu: {
-        position: "absolute",
-        top: 46,
-        left: 0,
-        right: 0,
-        backgroundColor: "#ffffff",
-        borderColor: "#777777",
-        borderWidth: 1,
-        zIndex: 21,
-        elevation: 21
-    },
+        brandText: {
+            color:
+                Colors.textPrimary,
 
-    statusOption: {
-        minHeight: 42,
-        justifyContent: "center",
-        paddingHorizontal: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: "#eeeeee"
-    },
+            fontSize: 22,
 
-    statusOptionText: {
-        color: "#222222",
-        fontSize: 16
-    },
+            fontWeight:
+                "700",
+        },
 
-    selectedStatusOption: {
-        backgroundColor: "#f0f4f0"
-    },
 
-    selectedStatusOptionText: {
-        fontWeight: "bold"
-    },
+        profileBox: {
+            flexDirection:
+                "row",
 
-    reasonLabel: {
-        alignSelf: "flex-start",
-        lineHeight: 20,
-        marginBottom: 8
-    },
+            alignItems:
+                "center",
 
-    reasonInput: {
-        minHeight: 160,
-        width: "100%",
-        borderWidth: 1,
-        borderColor: "#777777",
-        borderRadius: 4,
-        padding: 12,
-        color: "#222222",
-        fontSize: 16,
-        backgroundColor: "#ffffff",
-        marginBottom: 20
-    },
+            gap: 14,
+        },
 
-    formButtons: {
-        flexDirection: "row",
-        justifyContent: "flex-end",
-        gap: 12
-    },
 
-    cancelButton: {
-        backgroundColor: "#666666"
-    },
+        profileText: {
+            color:
+                Colors.textPrimary,
 
-    saveButton: {
-        backgroundColor: "#0b7d3b"
-    },
+            fontSize: 18,
 
-    tableHeaderRow: {
-        flexDirection: "row",
-        marginBottom: 10
-    },
+            fontWeight:
+                "700",
+        },
 
-    tableHeaderText: {
-        fontSize: 16,
-        fontWeight: "bold",
-        color: "#0b7d3b"
-    },
 
-    tableRow: {
-        flexDirection: "row",
-        paddingVertical: 10
-    },
+        profileDivider: {
+            width: 2,
 
-    tableCellText: {
-        fontSize: 15,
-        color: "#222"
-    },
+            height: 28,
 
-    colStudent: {
-        flex: 1.2
-    },
+            backgroundColor:
+                Colors.border,
+        },
 
-    colTime: {
-        flex: 1
-    },
 
-    colStatus: {
-        flex: 1
-    },
+        logoutText: {
+            color:
+                Colors.primary,
 
-    presentText: {
-        color: "#0b7d3b",
-        fontWeight: "bold"
-    },
+            fontSize: 18,
 
-    absentText: {
-        color: "#ff2c2c",
-        fontWeight: "bold"
-    },
+            fontWeight:
+                "700",
+        },
 
-    lateText: {
-        color: "#d7a300",
-        fontWeight: "bold"
-    },
 
-    defaultStatusText: {
-        color: "#222"
-    },
+        pageContent: {
+            paddingHorizontal: 48,
 
-    bottomButtonsRow: {
-        flexDirection: "row",
-        justifyContent: "space-evenly",
-        marginTop: 25
-    },
+            paddingTop: 24,
 
-    smallButton: {
-        backgroundColor: "#0b7d3b",
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        borderRadius: 25
-    },
+            paddingBottom: 24,
+        },
 
-    smallButtonText: {
-        color: "white",
-        fontWeight: "bold",
-        fontSize: 14
-    },
 
-    dropdownButton: {
-        height: 50,
-        borderWidth: 1,
-        borderColor: '#999',
-        borderRadius: 8,
-        paddingHorizontal: 15,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'white',
-    },
+        backLink: {
+            flexDirection:
+                "row",
 
-    buttonText: {
-        color: "#0b7d3b",
-        fontSize: 16,
-    },
+            alignItems:
+                "center",
 
-    arrow: {
-        color: "#0b7d3b",
-        fontSize: 14,
-    },
-    dropdownMenu: {
-        
-        marginTop: 5,
-        borderWidth: 1,
-        borderColor: '#999',
-        borderRadius: 8,
-        backgroundColor: 'white',
-        overflow: 'hidden',
-        color: "#0b7d3b"
-    },  
-    dropdownItem: {
-        padding: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#eee',
-    },
+            gap: 7,
 
-    itemText: {
-        fontSize: 16,
-    },
-    infoField: {
-        flex: 1,
-        paddingHorizontal: 10
-    }
-});
+            alignSelf:
+                "flex-start",
+
+            marginBottom: 18,
+        },
+
+
+        backLinkText: {
+            color:
+                Colors.primary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "700",
+        },
+
+
+        pageHeading: {
+            marginBottom: 24,
+        },
+
+
+        pageTitle: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 36,
+
+            lineHeight: 42,
+
+            fontWeight:
+                "800",
+        },
+
+
+        pageSubtitle: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 20,
+
+            fontWeight:
+                "500",
+
+            marginTop: 4,
+        },
+
+
+        filterCard: {
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.tableBorder,
+
+            borderRadius:
+                Radius.md,
+
+            padding: 26,
+
+            marginBottom: 28,
+
+            zIndex: 100,
+        },
+
+
+        sectionTitle: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 22,
+
+            fontWeight:
+                "800",
+        },
+
+
+        sectionSubtitle: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 15,
+
+            marginTop: 4,
+
+            marginBottom: 18,
+        },
+
+
+        filterRow: {
+            flexDirection:
+                "row",
+
+            alignItems:
+                "flex-start",
+
+            gap: 18,
+
+            zIndex: 100,
+        },
+
+
+        filterField: {
+            flex: 1,
+
+            position:
+                "relative",
+
+            zIndex: 100,
+        },
+
+
+        fieldLabel: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "700",
+
+            marginBottom: 7,
+        },
+
+
+        dropdownButton: {
+            minHeight: 46,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.border,
+
+            borderRadius:
+                Radius.sm,
+
+            paddingHorizontal: 14,
+
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "space-between",
+        },
+
+
+        dropdownWithIcon: {
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            gap: 9,
+
+            flex: 1,
+        },
+
+
+        dropdownText: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 14,
+
+            flexShrink: 1,
+        },
+
+
+        dropdownMenu: {
+            position:
+                "absolute",
+
+            top: 73,
+
+            left: 0,
+
+            right: 0,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.border,
+
+            borderRadius:
+                Radius.sm,
+
+            overflow:
+                "hidden",
+
+            zIndex: 200,
+        },
+
+
+        dropdownItem: {
+            minHeight: 42,
+
+            justifyContent:
+                "center",
+
+            paddingHorizontal: 14,
+
+            borderBottomWidth: 1,
+
+            borderBottomColor:
+                Colors.borderLight,
+        },
+
+
+        dropdownItemText: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 14,
+        },
+
+
+        filterActions: {
+            flexDirection:
+                "row",
+
+            justifyContent:
+                "flex-end",
+
+            gap: 14,
+
+            marginTop: 24,
+        },
+
+
+        applyButton: {
+            minWidth: 260,
+
+            minHeight: 46,
+
+            backgroundColor:
+                Colors.primary,
+
+            borderRadius:
+                Radius.sm,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center",
+        },
+
+
+        applyButtonText: {
+            color:
+                Colors.surface,
+
+            fontSize: 14,
+
+            fontWeight:
+                "800",
+        },
+
+
+        clearButton: {
+            minWidth: 190,
+
+            minHeight: 46,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1.5,
+
+            borderColor:
+                Colors.primary,
+
+            borderRadius:
+                Radius.sm,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center",
+        },
+
+
+        clearButtonText: {
+            color:
+                Colors.primary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "800",
+        },
+
+
+        sessionsHeader: {
+            flexDirection:
+                "row",
+
+            alignItems:
+                "flex-end",
+
+            justifyContent:
+                "space-between",
+
+            marginBottom: 14,
+        },
+
+
+        sessionsTitle: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 28,
+
+            fontWeight:
+                "800",
+        },
+
+
+        sessionsCount: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 14,
+
+            marginTop: 4,
+        },
+
+
+        exportSummaryButton: {
+            minHeight: 44,
+
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center",
+
+            gap: 8,
+
+            borderWidth: 1.5,
+
+            borderColor:
+                Colors.primary,
+
+            borderRadius:
+                Radius.sm,
+
+            paddingHorizontal: 20,
+
+            backgroundColor:
+                Colors.surface,
+        },
+
+
+        exportSummaryText: {
+            color:
+                Colors.primary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "800",
+        },
+
+
+        tableContainer: {
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.tableBorder,
+
+            borderRadius:
+                Radius.sm,
+
+            overflow:
+                "hidden",
+        },
+
+
+        tableHeaderRow: {
+            minHeight: 50,
+
+            flexDirection:
+                "row",
+
+            alignItems:
+                "stretch",
+
+            backgroundColor:
+                Colors.tableHeader,
+
+            borderBottomWidth: 1,
+
+            borderBottomColor:
+                Colors.tableBorder,
+        },
+
+
+        tableHeaderText: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 12,
+
+            fontWeight:
+                "800",
+
+            paddingHorizontal: 18,
+
+            display:
+                "flex",
+
+            alignItems:
+                "center",
+        },
+
+
+        tableRow: {
+            minHeight: 64,
+
+            flexDirection:
+                "row",
+
+            alignItems:
+                "stretch",
+
+            backgroundColor:
+                Colors.surface,
+
+            borderBottomWidth: 1,
+
+            borderBottomColor:
+                Colors.tableBorder,
+        },
+
+
+        tableCell: {
+            paddingHorizontal: 18,
+
+            justifyContent:
+                "center",
+
+            borderRightWidth: 1,
+
+            borderRightColor:
+                Colors.tableBorder,
+        },
+
+
+        primaryCellText: {
+            color:
+                Colors.textPrimary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "500",
+        },
+
+
+        secondaryCellText: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 12,
+
+            marginTop: 3,
+        },
+
+
+        colCourse: {
+            flex: 1.4,
+        },
+
+
+        colRoom: {
+            flex: 0.8,
+        },
+
+
+        colDate: {
+            flex: 1.05,
+        },
+
+
+        colDuration: {
+            flex: 1.05,
+        },
+
+
+        colAttendance: {
+            flex: 1.05,
+        },
+
+
+        colExport: {
+            flex: 1,
+        },
+
+
+        exportLink: {
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            gap: 8,
+        },
+
+
+        exportLinkText: {
+            color:
+                Colors.primary,
+
+            fontSize: 14,
+
+            fontWeight:
+                "800",
+        },
+
+
+        messageCard: {
+            minHeight: 220,
+
+            backgroundColor:
+                Colors.surface,
+
+            borderWidth: 1,
+
+            borderColor:
+                Colors.tableBorder,
+
+            borderRadius:
+                Radius.md,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center",
+
+            padding: 30,
+        },
+
+
+        messageText: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 14,
+
+            marginTop: 12,
+        },
+
+
+        errorText: {
+            color:
+                Colors.danger,
+
+            fontSize: 14,
+
+            marginTop: 10,
+
+            textAlign:
+                "center",
+        },
+
+
+        retryButton: {
+            minWidth: 110,
+
+            minHeight: 42,
+
+            marginTop: 16,
+
+            backgroundColor:
+                Colors.primary,
+
+            borderRadius:
+                Radius.sm,
+
+            alignItems:
+                "center",
+
+            justifyContent:
+                "center",
+        },
+
+
+        retryButtonText: {
+            color:
+                Colors.surface,
+
+            fontSize: 14,
+
+            fontWeight:
+                "800",
+        },
+
+
+        footer: {
+            flexDirection:
+                "row",
+
+            alignItems:
+                "center",
+
+            gap: 8,
+
+            marginTop: 26,
+
+            paddingTop: 18,
+
+            borderTopWidth: 1,
+
+            borderTopColor:
+                Colors.tableBorder,
+        },
+
+
+        footerText: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 12,
+        },
+
+
+        footerDot: {
+            color:
+                Colors.textSecondary,
+
+            fontSize: 12,
+        },
+
+    });

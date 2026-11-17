@@ -43,6 +43,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS attendance_sessions (
         session_id INTEGER PRIMARY KEY AUTOINCREMENT,
         course_id INTEGER,
+        room TEXT,
         session_date TEXT,
         start_time TEXT,
         end_time TEXT,
@@ -52,6 +53,47 @@ def init_db():
         FOREIGN KEY (course_id) REFERENCES courses(course_id)
     );
     """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS session_roster (
+        session_id INTEGER NOT NULL,
+        student_id INTEGER NOT NULL,
+        
+        PRIMARY KEY (session_id, student_id),
+        
+        FOREIGN KEY (session_id)
+            REFERENCES attendance_sessions(session_id)
+            ON DELETE CASCADE,
+
+        FOREIGN KEY (student_id)
+            REFERENCES users(user_id)
+        );
+    """)
+
+    cursor.execute("""
+        INSERT OR IGNORE INTO session_roster (
+            session_id,
+            student_id
+        )
+        SELECT
+            s.session_id,
+            ce.student_id
+        FROM attendance_sessions s
+        JOIN course_enrollments ce
+            ON ce.course_id = s.course_id
+        """)
+
+    cursor.execute("PRAGMA table_info(attendance_sessions)")
+
+    session_columns = {
+        row[1] for row in cursor.fetchall()
+    }
+
+    if "room" not in session_columns:
+        cursor.execute("""
+            ALTER TABLE attendance_sessions
+            ADD COLUMN room TEXT
+        """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS attendance_records (
@@ -170,6 +212,42 @@ def init_db():
                 'Root administrator cannot be deleted'
             );
         END
+    """)
+
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS
+    idx_courses_instructor
+    ON courses(instructor_id)
+    """)
+
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS
+    idx_sessions_course_date
+    ON attendance_sessions(course_id, session_date)
+    """)
+
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS
+    idx_session_roster_student
+    ON session_roster(student_id)
+    """)
+
+    cursor.execute("""
+    CREATE INDEX IF NOT EXISTS
+    idx_geofence_events_attendance_time
+    ON geofence_status_changes(
+        attendance_id,
+        event_time
+    )
+    """)
+
+    cursor.execute("""
+    CREATE UNIQUE INDEX IF NOT EXISTS
+    idx_unique_session_student_attendance
+    ON attendance_records(
+        session_id,
+        student_id
+    )
     """)
 
     conn.commit()

@@ -549,6 +549,7 @@ export default function InstructorDashboard() {
                     },
                     body: JSON.stringify({
                         course_id: selectedCourse.course_id,
+                        room: selectedItem2 === "Room Number" ? null : selectedItem2,
                         center_lat: selectedGeofence.lat,
                         center_lon: selectedGeofence.lon,
                         radius_m: radiusM
@@ -1231,7 +1232,7 @@ export default function InstructorDashboard() {
 
                             <TouchableOpacity
                                 style={styles.smallButton}
-                                onPress={() => loadCheckins(true)}
+                                onPress={() => {loadCheckins(true); loadActiveSession()}}
                             >
                                 <Feather
                                     name="refresh-ccw"
@@ -1241,6 +1242,30 @@ export default function InstructorDashboard() {
 
                                 <Text style={styles.smallButtonText}>
                                     Refresh
+                                </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.smallButton}
+                                onPress={() =>
+                                    router.push({
+                                        pathname: "/auditInstructor",
+                                        params: {
+                                            course_id: String(
+                                                selectedCourse?.course_id ?? ""
+                                            ),
+                                        },
+                                    })
+                                }
+                            >
+                                <Ionicons
+                                    name="time-outline"
+                                    size={18}
+                                    color={Colors.primary}
+                                />
+
+                                <Text style={styles.smallButtonText}>
+                                    Session History
                                 </Text>
                             </TouchableOpacity>
 

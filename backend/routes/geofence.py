@@ -184,6 +184,8 @@ def restore_active_session():
 
 class StartGeofenceSessionRequest(BaseModel):
     course_id: int
+    room: str | None = None
+
     center_lat: float
     center_lon: float
 
@@ -282,12 +284,42 @@ def start_geofence_session(
     cursor = conn.cursor()
 
     try:
-        # Create the attendance session first so SQLite
-        # generates the real session ID.
+        instructor_id = current_user["user_id"]
+
+        # ---------------------------------------------------------
+        # VERIFY THIS INSTRUCTOR IS ASSIGNED TO THIS COURSE
+        # ---------------------------------------------------------
+        cursor.execute(
+            """
+            SELECT course_id
+            FROM courses
+            WHERE course_id = ?
+              AND instructor_id = ?
+              AND is_active = 1
+            LIMIT 1
+            """,
+            (
+                payload.course_id,
+                instructor_id,
+            ),
+        )
+
+        course = cursor.fetchone()
+
+        if not course:
+            raise HTTPException(
+                status_code=403,
+                detail="You are not assigned to this course.",
+            )
+
+        # ---------------------------------------------------------
+        # CREATE ATTENDANCE SESSION
+        # ---------------------------------------------------------
         cursor.execute(
             """
             INSERT INTO attendance_sessions (
                 course_id,
+                room,
                 session_date,
                 start_time,
                 end_time,
@@ -295,10 +327,11 @@ def start_geofence_session(
                 geofence_lng,
                 geofence_radius
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 payload.course_id,
+                payload.room,
                 now.strftime("%Y-%m-%d"),
                 now.strftime("%H:%M:%S"),
                 None,
@@ -310,7 +343,34 @@ def start_geofence_session(
 
         session_id = cursor.lastrowid
 
-        # Use the same session ID in Tile38.
+        # ---------------------------------------------------------
+        # FREEZE THE COURSE ROSTER FOR THIS SESSION
+        # ---------------------------------------------------------
+        cursor.execute(
+            """
+            INSERT INTO session_roster (
+                session_id,
+                student_id
+            )
+            SELECT
+                ?,
+                ce.student_id
+            FROM course_enrollments ce
+            JOIN users u
+                ON u.user_id = ce.student_id
+            WHERE ce.course_id = ?
+              AND u.role = 'student'
+              AND u.is_active = 1
+            """,
+            (
+                session_id,
+                payload.course_id,
+            ),
+        )
+
+        # ---------------------------------------------------------
+        # CREATE TILE38 GEOFENCE
+        # ---------------------------------------------------------
         geofence_saved = save_geofence(
             session_id=str(session_id),
             center_lat=payload.center_lat,
@@ -322,9 +382,12 @@ def start_geofence_session(
                 "Tile38 did not confirm geofence creation"
             )
 
-        # Only save the SQLite session permanently if
-        # Tile38 was also successfully configured.
+        # Only save SQLite changes if everything above succeeded.
         conn.commit()
+
+    except HTTPException:
+        conn.rollback()
+        raise
 
     except Exception as e:
         conn.rollback()
@@ -337,8 +400,9 @@ def start_geofence_session(
     finally:
         conn.close()
 
-    # Only mark the session active after both SQLite
-    # and Tile38 succeeded.
+    # -------------------------------------------------------------
+    # MARK SESSION ACTIVE IN MEMORY
+    # -------------------------------------------------------------
     ACTIVE_SESSION["id"] = str(session_id)
     ACTIVE_SESSION["center_lat"] = payload.center_lat
     ACTIVE_SESSION["center_lon"] = payload.center_lon
@@ -350,6 +414,7 @@ def start_geofence_session(
         "session": ACTIVE_SESSION,
         "engine": "tile38",
     }
+
 
 # =========================
 # UPDATE ACTIVE SESSION
